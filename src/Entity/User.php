@@ -1,31 +1,30 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Entity;
 
-use App\Enum\UserRole;
 use App\Repository\UserRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: 'users')]
-class User implements UserInterface, PasswordAuthenticatedUserInterface
+#[ORM\Index(name: 'idx_user_email', fields: ['email'])]
+#[UniqueEntity(fields: ['email'])]
+class User extends AbstractEntity implements UserInterface, PasswordAuthenticatedUserInterface
 {
-    #[ORM\Id]
-    #[ORM\Column(type: 'uuid', unique: true)]
-    #[ORM\GeneratedValue(strategy: 'NONE')]
-    private ?string $id = null;
-
     #[ORM\Column(length: 180, unique: true)]
-    private ?string $email = null;
+    private string $email;
+
+    #[ORM\Column(type: Types::JSON)]
+    private array $roles = [];
 
     #[ORM\Column]
-    private ?string $password = null;
-
-    #[ORM\Column(type: 'simple_array')]
-    private array $roles = [];
+    private string $password;
 
     #[ORM\Column(length: 100, nullable: true)]
     private ?string $firstName = null;
@@ -34,38 +33,47 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     private ?string $lastName = null;
 
     #[ORM\Column]
-    private ?\DateTimeImmutable $createdAt = null;
+    private bool $isActive = true;
 
     #[ORM\Column]
-    private ?\DateTimeImmutable $updatedAt = null;
+    private bool $isVerified = false;
 
     public function __construct()
     {
-        $this->id = Uuid::v4()->toRfc4122();
-        $this->createdAt = new \DateTimeImmutable();
-        $this->updatedAt = new \DateTimeImmutable();
-        $this->roles = [UserRole::Student->value];
+        parent::__construct();
+        $this->roles = ['ROLE_USER'];
     }
 
-    public function getId(): ?string
-    {
-        return $this->id;
-    }
-
-    public function getEmail(): ?string
+    public function getEmail(): string
     {
         return $this->email;
     }
 
     public function setEmail(string $email): self
     {
-        $this->email = $email;
-        $this->updatedAt = new \DateTimeImmutable();
+        $this->email = mb_strtolower(trim($email));
 
         return $this;
     }
 
-    public function getPassword(): ?string
+    public function getUserIdentifier(): string
+    {
+        return $this->email;
+    }
+
+    public function getRoles(): array
+    {
+        return array_values(array_unique($this->roles));
+    }
+
+    public function setRoles(array $roles): self
+    {
+        $this->roles = array_values(array_unique($roles));
+
+        return $this;
+    }
+
+    public function getPassword(): string
     {
         return $this->password;
     }
@@ -73,30 +81,12 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setPassword(string $password): self
     {
         $this->password = $password;
-        $this->updatedAt = new \DateTimeImmutable();
 
         return $this;
     }
 
-    public function getUserIdentifier(): string
+    public function eraseCredentials(): void
     {
-        return (string) $this->email;
-    }
-
-    public function getRoles(): array
-    {
-        $roles = $this->roles;
-        $roles[] = 'ROLE_USER';
-
-        return array_unique($roles);
-    }
-
-    public function setRoles(array $roles): self
-    {
-        $this->roles = $roles;
-        $this->updatedAt = new \DateTimeImmutable();
-
-        return $this;
     }
 
     public function getFirstName(): ?string
@@ -106,8 +96,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function setFirstName(?string $firstName): self
     {
-        $this->firstName = $firstName;
-        $this->updatedAt = new \DateTimeImmutable();
+        $this->firstName = $firstName !== null ? trim($firstName) : null;
 
         return $this;
     }
@@ -119,23 +108,43 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function setLastName(?string $lastName): self
     {
-        $this->lastName = $lastName;
-        $this->updatedAt = new \DateTimeImmutable();
+        $this->lastName = $lastName !== null ? trim($lastName) : null;
 
         return $this;
     }
 
-    public function getCreatedAt(): ?\DateTimeImmutable
+    public function getFullName(): string
     {
-        return $this->createdAt;
+        return trim(($this->firstName ?? '') . ' ' . ($this->lastName ?? ''));
     }
 
-    public function getUpdatedAt(): ?\DateTimeImmutable
+    public function isActive(): bool
     {
-        return $this->updatedAt;
+        return $this->isActive;
     }
 
-    public function eraseCredentials(): void
+    public function activate(): void
     {
+        $this->isActive = true;
+    }
+
+    public function deactivate(): void
+    {
+        $this->isActive = false;
+    }
+
+    public function isVerified(): bool
+    {
+        return $this->isVerified;
+    }
+
+    public function verify(): void
+    {
+        $this->isVerified = true;
+    }
+
+    public function isDeleted(): bool
+    {
+        return null !== $this->deletedAt;
     }
 }

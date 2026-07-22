@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Repository;
 
 use App\Entity\PasswordResetToken;
@@ -13,35 +15,22 @@ class PasswordResetTokenRepository extends ServiceEntityRepository
         parent::__construct($registry, PasswordResetToken::class);
     }
 
-    public function findValidByTokenHash(string $tokenHash, \DateTimeImmutable $now): ?PasswordResetToken
+    public function findBySelector(string $selector): ?PasswordResetToken
     {
         return $this->createQueryBuilder('t')
-            ->where('t.tokenHash = :tokenHash')
-            ->andWhere('t.expiresAt > :now')
-            ->andWhere('t.usedAt IS NULL')
-            ->setParameter('tokenHash', $tokenHash)
+            ->where('t.selector = :selector')
+            ->setParameter('selector', $selector)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    public function deleteExpiredTokens(\DateTimeImmutable $now): int
+    {
+        return $this->createQueryBuilder('t')
+            ->delete()
+            ->where('t.expiresAt < :now')
             ->setParameter('now', $now)
             ->getQuery()
-            ->getOneOrNullResult();
-    }
-
-    public function findLatestByEmail(string $email): ?PasswordResetToken
-    {
-        return $this->createQueryBuilder('t')
-            ->where('t.email = :email')
-            ->setParameter('email', $email)
-            ->orderBy('t.createdAt', 'DESC')
-            ->setMaxResults(1)
-            ->getQuery()
-            ->getOneOrNullResult();
-    }
-
-    public function findByToken(string $token): ?PasswordResetToken
-    {
-        return $this->createQueryBuilder('t')
-            ->where('t.token = :token')
-            ->setParameter('token', $token)
-            ->getQuery()
-            ->getOneOrNullResult();
+            ->execute();
     }
 }

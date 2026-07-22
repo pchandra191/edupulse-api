@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Repository;
 
 use App\Entity\User;
@@ -13,8 +15,13 @@ class UserRepository extends ServiceEntityRepository
         parent::__construct($registry, User::class);
     }
 
-    public function findOneByEmail(string $email): ?User
+    public function findActiveByIdentifier(string $identifier): ?User
     {
-        return $this->findOneBy(['email' => $email]);
+        $qb = $this->createQueryBuilder('u')
+            ->where('u.email = :identifier')
+            ->andWhere('u.deletedAt IS NULL')
+            ->setParameter('identifier', mb_strtolower(trim($identifier)));
+
+        return $qb->getQuery()->getOneOrNullResult();
     }
 }

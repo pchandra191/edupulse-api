@@ -1,63 +1,65 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Entity;
 
 use App\Repository\PasswordResetTokenRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
-use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: PasswordResetTokenRepository::class)]
 #[ORM\Table(name: 'password_reset_tokens')]
-#[ORM\HasLifecycleCallbacks]
-class PasswordResetToken
+#[ORM\Index(name: 'idx_reset_token_selector', fields: ['selector'])]
+#[ORM\Index(name: 'idx_reset_token_email', fields: ['email'])]
+#[ORM\Index(name: 'idx_reset_token_expires', fields: ['expiresAt'])]
+class PasswordResetToken extends AbstractEntity
 {
-    #[ORM\Id]
-    #[ORM\Column(type: 'uuid', unique: true)]
-    #[ORM\GeneratedValue(strategy: 'NONE')]
-    private ?string $id = null;
-
     #[ORM\Column(length: 180)]
-    private ?string $email = null;
-
-    #[ORM\Column(length: 255)]
-    private ?string $tokenHash = null;
+    private string $email;
 
     #[ORM\Column(length: 64, unique: true)]
-    private ?string $token = null;
+    private string $selector;
+
+    #[ORM\Column(length: 255)]
+    private string $tokenHash;
 
     #[ORM\Column]
-    private ?\DateTimeImmutable $expiresAt = null;
+    private \DateTimeImmutable $expiresAt;
 
-    #[ORM\Column]
-    private ?\DateTimeImmutable $createdAt = null;
-
-    #[ORM\Column(nullable: true)]
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $usedAt = null;
 
     public function __construct()
     {
-        $this->id = Uuid::v4()->toRfc4122();
-        $this->createdAt = new \DateTimeImmutable();
+        parent::__construct();
     }
 
-    public function getId(): ?string
-    {
-        return $this->id;
-    }
-
-    public function getEmail(): ?string
+    public function getEmail(): string
     {
         return $this->email;
     }
 
     public function setEmail(string $email): self
     {
-        $this->email = $email;
+        $this->email = mb_strtolower(trim($email));
 
         return $this;
     }
 
-    public function getTokenHash(): ?string
+    public function getSelector(): string
+    {
+        return $this->selector;
+    }
+
+    public function setSelector(string $selector): self
+    {
+        $this->selector = $selector;
+
+        return $this;
+    }
+
+    public function getTokenHash(): string
     {
         return $this->tokenHash;
     }
@@ -69,19 +71,7 @@ class PasswordResetToken
         return $this;
     }
 
-    public function getToken(): ?string
-    {
-        return $this->token;
-    }
-
-    public function setToken(string $token): self
-    {
-        $this->token = $token;
-
-        return $this;
-    }
-
-    public function getExpiresAt(): ?\DateTimeImmutable
+    public function getExpiresAt(): \DateTimeImmutable
     {
         return $this->expiresAt;
     }
@@ -91,11 +81,6 @@ class PasswordResetToken
         $this->expiresAt = $expiresAt;
 
         return $this;
-    }
-
-    public function getCreatedAt(): ?\DateTimeImmutable
-    {
-        return $this->createdAt;
     }
 
     public function getUsedAt(): ?\DateTimeImmutable
@@ -113,5 +98,10 @@ class PasswordResetToken
     public function isValid(\DateTimeImmutable $now): bool
     {
         return null === $this->usedAt && $this->expiresAt > $now;
+    }
+
+    public function markAsUsed(): void
+    {
+        $this->usedAt = new \DateTimeImmutable();
     }
 }

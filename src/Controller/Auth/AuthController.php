@@ -1,19 +1,24 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Controller\Auth;
 
-use App\DTO\Auth\ForgotPasswordRequestDTO;
-use App\DTO\Auth\ResetPasswordRequestDTO;
+use App\DTO\Auth\ChangePasswordRequestDTO;
 use App\DTO\Auth\CurrentUserResponseDTO;
+use App\DTO\Auth\ForgotPasswordRequestDTO;
 use App\DTO\Auth\LoginRequest;
+use App\DTO\Auth\LoginResponseDTO;
 use App\DTO\Auth\LogoutRequestDTO;
 use App\DTO\Auth\RefreshTokenRequestDTO;
+use App\DTO\Auth\RefreshResponseDTO;
+use App\DTO\Auth\ResetPasswordRequestDTO;
 use App\Service\Auth\AuthService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Core\Security;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 class AuthController
@@ -59,12 +64,17 @@ class AuthController
             ], Response::HTTP_BAD_REQUEST);
         }
 
+        /** @var LoginResponseDTO $result */
         $result = $this->authService->login($loginRequest);
 
         return new JsonResponse([
             'success' => true,
             'message' => 'Login successful.',
-            'data' => $result,
+            'data' => [
+                'token' => $result->token,
+                'refresh_token' => $result->refreshToken,
+                'expires_at' => $result->expiresAt?->format(\DateTimeInterface::ATOM),
+            ],
         ], Response::HTTP_OK);
     }
 
@@ -81,11 +91,11 @@ class AuthController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        $refreshTokenRequest = new RefreshTokenRequestDTO(
-            $data['refresh_token'] ?? ''
+        $refreshRequest = new RefreshTokenRequestDTO(
+            $data['refreshToken'] ?? ''
         );
 
-        $errors = $this->validator->validate($refreshTokenRequest);
+        $errors = $this->validator->validate($refreshRequest);
 
         if (count($errors) > 0) {
             $formattedErrors = [];
@@ -101,12 +111,17 @@ class AuthController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        $result = $this->authService->refresh($refreshTokenRequest);
+        /** @var RefreshResponseDTO $result */
+        $result = $this->authService->refresh($refreshRequest);
 
         return new JsonResponse([
             'success' => true,
             'message' => 'Token refreshed successfully.',
-            'data' => $result,
+            'data' => [
+                'token' => $result->token,
+                'refresh_token' => $result->refreshToken,
+                'expires_at' => $result->expiresAt?->format(\DateTimeInterface::ATOM),
+            ],
         ], Response::HTTP_OK);
     }
 
@@ -124,7 +139,7 @@ class AuthController
         }
 
         $logoutRequest = new LogoutRequestDTO(
-            $data['refresh_token'] ?? ''
+            $data['refreshToken'] ?? ''
         );
 
         $errors = $this->validator->validate($logoutRequest);
@@ -165,12 +180,19 @@ class AuthController
             ], Response::HTTP_UNAUTHORIZED);
         }
 
+        /** @var CurrentUserResponseDTO $profile */
         $profile = $this->authService->getCurrentUserProfile($user);
 
         return new JsonResponse([
             'success' => true,
-            'message' => '',
-            'data' => $profile,
+            'message' => 'User profile retrieved successfully.',
+            'data' => [
+                'id' => $profile->id,
+                'email' => $profile->email,
+                'firstName' => $profile->firstName,
+                'lastName' => $profile->lastName,
+                'roles' => $profile->roles,
+            ],
         ], Response::HTTP_OK);
     }
 
@@ -253,7 +275,7 @@ class AuthController
 
         try {
             $this->authService->resetPassword($resetPasswordRequest);
-        } catch (AuthenticationException $e) {
+        } catch (\App\Exception\AuthenticationException $e) {
             return new JsonResponse([
                 'success' => false,
                 'message' => $e->getMessage(),
