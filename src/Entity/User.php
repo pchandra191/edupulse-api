@@ -1,9 +1,10 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Enum\UserRole;
+use App\Enum\UserStatus;
 use App\Repository\UserRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -32,8 +33,14 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
     #[ORM\Column(length: 100, nullable: true)]
     private ?string $lastName = null;
 
-    #[ORM\Column]
-    private bool $isActive = true;
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $phone = null;
+
+    #[ORM\Column(length: 100, nullable: true)]
+    private ?string $department = null;
+
+    #[ORM\Column(type: Types::STRING, length: 20)]
+    private string $status = UserStatus::Active->value;
 
     #[ORM\Column]
     private bool $isVerified = false;
@@ -41,7 +48,7 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
     public function __construct()
     {
         parent::__construct();
-        $this->roles = ['ROLE_USER'];
+        $this->roles = [];
     }
 
     public function getEmail(): string
@@ -63,12 +70,32 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
 
     public function getRoles(): array
     {
-        return array_values(array_unique($this->roles));
+        return array_unique($this->roles);
     }
 
     public function setRoles(array $roles): self
     {
         $this->roles = array_values(array_unique($roles));
+
+        return $this;
+    }
+
+    public function getRole(): UserRole
+    {
+        $roles = $this->getRoles();
+
+        foreach (UserRole::cases() as $role) {
+            if (in_array($role->value, $roles, true)) {
+                return $role;
+            }
+        }
+
+        return UserRole::Student;
+    }
+
+    public function setRole(UserRole $role): self
+    {
+        $this->roles = [$role->value];
 
         return $this;
     }
@@ -118,19 +145,55 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
         return trim(($this->firstName ?? '') . ' ' . ($this->lastName ?? ''));
     }
 
+    public function getPhone(): ?string
+    {
+        return $this->phone;
+    }
+
+    public function setPhone(?string $phone): self
+    {
+        $this->phone = $phone !== null ? trim($phone) : null;
+
+        return $this;
+    }
+
+    public function getDepartment(): ?string
+    {
+        return $this->department;
+    }
+
+    public function setDepartment(?string $department): self
+    {
+        $this->department = $department !== null ? trim($department) : null;
+
+        return $this;
+    }
+
+    public function getStatus(): UserStatus
+    {
+        return UserStatus::from($this->status);
+    }
+
+    public function setStatus(UserStatus $status): self
+    {
+        $this->status = $status->value;
+
+        return $this;
+    }
+
     public function isActive(): bool
     {
-        return $this->isActive;
+        return $this->status === UserStatus::Active->value;
     }
 
     public function activate(): void
     {
-        $this->isActive = true;
+        $this->status = UserStatus::Active->value;
     }
 
     public function deactivate(): void
     {
-        $this->isActive = false;
+        $this->status = UserStatus::Inactive->value;
     }
 
     public function isVerified(): bool

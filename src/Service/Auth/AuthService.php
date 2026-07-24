@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Service\Auth;
@@ -69,13 +68,15 @@ readonly class AuthService
 
         $token = $this->issueJwt($user);
         $refreshToken = $this->createRefreshToken($user);
+        $userProfile = $this->getCurrentUserProfile($user);
 
         $this->logger->info('Login successful', ['email' => $request->email]);
 
         return new LoginResponseDTO(
-            token: $token,
+            accessToken: $token,
             refreshToken: $refreshToken->getRefreshToken(),
             expiresAt: $this->getJwtExpiration($token),
+            user: $userProfile,
         );
     }
 
@@ -118,7 +119,7 @@ readonly class AuthService
         $this->logger->info('Refresh token successful');
 
         return new RefreshResponseDTO(
-            token: $token,
+            accessToken: $token,
             refreshToken: $newRefreshToken->getRefreshToken(),
             expiresAt: $this->getJwtExpiration($token),
         );

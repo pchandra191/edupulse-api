@@ -14,7 +14,7 @@ class PasswordPolicyValidator extends \Symfony\Component\Validator\ConstraintVal
 {
     public function validate(mixed $value, Constraint $constraint): void
     {
-        if (!constraint instanceof PasswordPolicy) {
+        if (!$constraint instanceof PasswordPolicy) {
             return;
         }
 

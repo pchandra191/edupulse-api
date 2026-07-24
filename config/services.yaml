@@ -2,6 +2,7 @@
 
 parameters:
     app.refresh_token_ttl: 2592000
+    app.api_version: 'v1'
     app.mailer_from: '%env(MAILER_FROM)%'
     app.mailer_from_name: 'EduPulse AI'
 
@@ -23,3 +24,7 @@ services:
     App\Service\Auth\AuthService:
         arguments:
             $refreshTokenTtl: '%app.refresh_token_ttl%'
+
+    App\Common\Api\Response\ApiResponseFactory:
+        arguments:
+            $apiVersion: '%app.api_version%'

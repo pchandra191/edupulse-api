@@ -29,6 +29,9 @@ security:
         - { path: ^/api/v1/auth/forgot-password, roles: PUBLIC_ACCESS }
         - { path: ^/api/v1/auth/reset-password, roles: PUBLIC_ACCESS }
         - { path: ^/api/v1/auth/change-password, roles: PUBLIC_ACCESS }
+        - { path: ^/api/v1/users/\d+/reset-password, roles: ROLE_SUPER_ADMIN }
+        - { path: ^/api/v1/users/\d+/status, roles: ROLE_INSTITUTE }
+        - { path: ^/api/v1/users, roles: [ROLE_SUPER_ADMIN, ROLE_INSTITUTE] }
         - { path: ^/api/v1, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/, roles: IS_AUTHENTICATED_FULLY }
 

@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Controller\Auth;
@@ -71,9 +70,16 @@ class AuthController
             'success' => true,
             'message' => 'Login successful.',
             'data' => [
-                'token' => $result->token,
+                'accessToken' => $result->accessToken,
                 'refresh_token' => $result->refreshToken,
                 'expires_at' => $result->expiresAt?->format(\DateTimeInterface::ATOM),
+                'user' => [
+                    'id' => $result->user->id,
+                    'email' => $result->user->email,
+                    'first_name' => $result->user->firstName,
+                    'last_name' => $result->user->lastName,
+                    'roles' => $result->user->roles,
+                ],
             ],
         ], Response::HTTP_OK);
     }
@@ -118,7 +124,7 @@ class AuthController
             'success' => true,
             'message' => 'Token refreshed successfully.',
             'data' => [
-                'token' => $result->token,
+                'accessToken' => $result->accessToken,
                 'refresh_token' => $result->refreshToken,
                 'expires_at' => $result->expiresAt?->format(\DateTimeInterface::ATOM),
             ],

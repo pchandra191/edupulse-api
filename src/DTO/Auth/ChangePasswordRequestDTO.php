@@ -5,6 +5,7 @@ namespace App\DTO\Auth;
 use App\Validator\Constraints\PasswordPolicy;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Constraints\NotBlank;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 readonly class ChangePasswordRequestDTO
 {
@@ -22,7 +23,7 @@ readonly class ChangePasswordRequestDTO
     }
 
     #[Assert\Callback]
-    public function validatePasswordsMatch(\Symfony\Component\Validator\ExecutionContextInterface $context): void
+    public function validatePasswordsMatch(\Symfony\Component\Validator\Context\ExecutionContextInterface $context): void
     {
         if ($this->newPassword !== $this->confirmPassword) {
             $context->buildViolation('Password confirmation does not match.')
