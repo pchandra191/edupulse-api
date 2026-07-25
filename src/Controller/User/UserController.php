@@ -41,8 +41,8 @@ class UserController extends AbstractApiController
             department: $request->query->get('department'),
             page: max(1, (int) $request->query->get('page', 1)),
             limit: max(1, min(100, (int) $request->query->get('limit', 10))),
-            sortBy: $request->query->get('sortBy', 'createdAt'),
-            sortOrder: $request->query->get('sortOrder', 'DESC'),
+            sortBy: $request->query->get('sortBy', 'firstName'),
+            sortOrder: $request->query->get('sortOrder', 'ASC'),
         );
 
         $result = $this->userService->getUsers($filter);
