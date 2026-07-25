@@ -148,8 +148,18 @@ class UserRepository extends ServiceEntityRepository
             return;
         }
 
-        $qb->andWhere($qb->expr()->like('u.roles', ':role'))
-           ->setParameter('role', '%' . $role . '%');
+        $conn = $this->getEntityManager()->getConnection();
+        $sql = 'SELECT id FROM users WHERE CAST(roles AS TEXT) LIKE :role';
+        $rows = $conn->fetchAllAssociative($sql, ['role' => '%' . $role . '%']);
+
+        $ids = array_map(static fn(array $row): string => $row['id'], $rows);
+
+        if ([] === $ids) {
+            $qb->andWhere('1 = 0');
+        } else {
+            $qb->andWhere('u.id IN (:role_ids)')
+               ->setParameter('role_ids', $ids);
+        }
     }
 
     private function applyStatusFilter(QueryBuilder $qb, ?string $status): void
@@ -174,7 +184,7 @@ class UserRepository extends ServiceEntityRepository
 
     private function applySorting(QueryBuilder $qb, string $sortBy, string $sortOrder): void
     {
-        $allowedSortFields = ['createdAt', 'updatedAt', 'firstName', 'email', 'role', 'department'];
+        $allowedSortFields = ['createdAt', 'updatedAt', 'firstName', 'email', 'department'];
 
         if (!in_array($sortBy, $allowedSortFields, true)) {
             $sortBy = 'createdAt';
