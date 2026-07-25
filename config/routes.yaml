@@ -11,3 +11,8 @@ user_api:
     resource: '../src/Controller/User/'
     type: attribute
     prefix: /api/%app.api_version%
+
+role_api:
+    resource: '../src/Controller/Role/'
+    type: attribute
+    prefix: /api/%app.api_version%
