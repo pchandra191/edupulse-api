@@ -19,6 +19,9 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use App\Service\Role\RolePermissionService;
+use Symfony\Component\Uid\Uuid;
+
 
 class AuthController
 {
@@ -26,6 +29,7 @@ class AuthController
         private AuthService $authService,
         private ValidatorInterface $validator,
         private Security $security,
+        private RolePermissionService $rolePermissionService,
     ) {
     }
 
@@ -198,6 +202,7 @@ class AuthController
                 'firstName' => $profile->firstName,
                 'lastName' => $profile->lastName,
                 'roles' => $profile->roles,
+                'permissions' => $this->rolePermissionService->getUserEffectivePermissions(new Uuid($profile->id)),
             ],
         ], Response::HTTP_OK);
     }
