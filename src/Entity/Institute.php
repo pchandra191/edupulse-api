@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\AcademicYear;
 use App\Enum\InstituteStatus;
 use App\Repository\InstituteRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -88,10 +89,18 @@ class Institute extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'institute', targetEntity: User::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $users;
 
+    #[ORM\OneToMany(mappedBy: 'institute', targetEntity: AcademicYear::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $academicYears;
+
+    #[ORM\OneToMany(mappedBy: 'institute', targetEntity: AcademicClass::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $classes;
+
     public function __construct()
     {
         parent::__construct();
         $this->users = new ArrayCollection();
+        $this->academicYears = new ArrayCollection();
+        $this->classes = new ArrayCollection();
     }
 
     public function getName(): string
@@ -299,6 +308,58 @@ class Institute extends AbstractEntity
         if ($this->users->removeElement($user)) {
             if ($user->getInstitute() === $this) {
                 $user->setInstitute(null);
+            }
+        }
+
+        return $this;
+    }
+
+    public function getAcademicYears(): Collection
+    {
+        return $this->academicYears;
+    }
+
+    public function addAcademicYear(AcademicYear $academicYear): self
+    {
+        if (!$this->academicYears->contains($academicYear)) {
+            $this->academicYears[] = $academicYear;
+            $academicYear->setInstitute($this);
+        }
+
+        return $this;
+    }
+
+    public function removeAcademicYear(AcademicYear $academicYear): self
+    {
+        if ($this->academicYears->removeElement($academicYear)) {
+            if ($academicYear->getInstitute() === $this) {
+                $academicYear->setInstitute(new Institute());
+            }
+        }
+
+        return $this;
+    }
+
+    public function getClasses(): Collection
+    {
+        return $this->classes;
+    }
+
+    public function addClass(AcademicClass $class): self
+    {
+        if (!$this->classes->contains($class)) {
+            $this->classes[] = $class;
+            $class->setInstitute($this);
+        }
+
+        return $this;
+    }
+
+    public function removeClass(AcademicClass $class): self
+    {
+        if ($this->classes->removeElement($class)) {
+            if ($class->getInstitute() === $this) {
+                $class->setInstitute(new Institute());
             }
         }
 

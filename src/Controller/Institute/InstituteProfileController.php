@@ -31,7 +31,7 @@ class InstituteProfileController extends AbstractApiController
         try {
             $profile = $this->instituteProfileService->getProfile();
         } catch (AuthenticationException $e) {
-            return $this->notFound();
+            return $this->notFound($e->getMessage());
         }
 
         return $this->success('Institute profile retrieved successfully.', $profile);
@@ -78,7 +78,7 @@ class InstituteProfileController extends AbstractApiController
         try {
             $profile = $this->instituteProfileService->updateProfile($updateRequest);
         } catch (AuthenticationException $e) {
-            return $this->notFound();
+            return $this->notFound($e->getMessage());
         } catch (\App\Common\Exception\BusinessException $e) {
             return $this->error($e->getMessage());
         }
