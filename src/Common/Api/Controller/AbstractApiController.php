@@ -50,6 +50,11 @@ abstract class AbstractApiController
         return new JsonResponse($this->responseFactory->error($message, meta: $meta), JsonResponse::HTTP_FORBIDDEN);
     }
 
+    protected function unprocessableEntity(string $message = '', array $errors = [], array $meta = []): JsonResponse
+    {
+        return new JsonResponse($this->responseFactory->error($message, $errors, $meta), JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+    }
+
     protected function unauthorized(string $message = 'Authentication required.', array $meta = []): JsonResponse
     {
         return new JsonResponse($this->responseFactory->error($message, meta: $meta), JsonResponse::HTTP_UNAUTHORIZED);

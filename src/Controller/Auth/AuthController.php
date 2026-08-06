@@ -202,6 +202,13 @@ class AuthController
                 'firstName' => $profile->firstName,
                 'lastName' => $profile->lastName,
                 'roles' => $profile->roles,
+                'institute' => $profile->institute !== null ? [
+                    'id' => $profile->institute->id,
+                    'name' => $profile->institute->name,
+                    'code' => $profile->institute->code,
+                    'logo' => $profile->institute->logo,
+                    'status' => $profile->institute->status,
+                ] : null,
                 'permissions' => $this->rolePermissionService->getUserEffectivePermissions(new Uuid($profile->id)),
             ],
         ], Response::HTTP_OK);

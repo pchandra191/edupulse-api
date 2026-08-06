@@ -10,6 +10,7 @@ readonly class CurrentUserResponseDTO
         public ?string $firstName,
         public ?string $lastName,
         public array $roles,
+        public ?InstituteResponseDTO $institute = null,
     ) {
     }
 }

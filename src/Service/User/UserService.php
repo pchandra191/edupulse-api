@@ -38,7 +38,13 @@ readonly class UserService
 
     public function getUsers(UserFilterRequest $filter): UserListResponse
     {
-        $result = $this->userRepository->findPaginated($filter);
+        [$instituteId, $excludeSuperAdmin] = $this->getTenantRestrictions();
+
+        $result = $this->userRepository->findPaginated(
+            $filter,
+            $instituteId,
+            $excludeSuperAdmin,
+        );
 
         $items = array_map(
             fn (User $user) => $this->mapToResponse($user),
@@ -87,7 +93,9 @@ readonly class UserService
 
     public function getUser(Uuid $id): UserResponse
     {
-        $user = $this->userRepository->findByUuid($id);
+        [$instituteId, $excludeSuperAdmin] = $this->getTenantRestrictions();
+
+        $user = $this->userRepository->findByUuid($id, $instituteId, $excludeSuperAdmin);
 
         if (!$user instanceof User) {
             throw new AuthenticationException('User not found.');
@@ -140,7 +148,9 @@ readonly class UserService
 
     public function updateUser(Uuid $id, UpdateUserRequest $request): UserResponse
     {
-        $user = $this->userRepository->findByUuid($id);
+        [$instituteId, $excludeSuperAdmin] = $this->getTenantRestrictions();
+
+        $user = $this->userRepository->findByUuid($id, $instituteId, $excludeSuperAdmin);
 
         if (!$user instanceof User) {
             throw new AuthenticationException('User not found.');
@@ -169,7 +179,9 @@ readonly class UserService
 
     public function changeStatus(Uuid $id, UserStatus $status): UserResponse
     {
-        $user = $this->userRepository->findByUuid($id);
+        [$instituteId, $excludeSuperAdmin] = $this->getTenantRestrictions();
+
+        $user = $this->userRepository->findByUuid($id, $instituteId, $excludeSuperAdmin);
 
         if (!$user instanceof User) {
             throw new AuthenticationException('User not found.');
@@ -353,5 +365,28 @@ readonly class UserService
 
             $user->setRoles($request->roles);
         }
+    }
+
+    private function getTenantRestrictions(): array
+    {
+        $user = $this->security->getUser();
+
+        if (!$user instanceof User) {
+            return [null, false];
+        }
+
+        if (in_array(UserRole::SuperAdmin->value, $user->getRoles(), true)) {
+            return [null, false];
+        }
+
+        if (in_array(UserRole::Institute->value, $user->getRoles(), true)) {
+            $institute = $user->getInstitute();
+
+            if ($institute) {
+                return [(string) $institute->getId(), true];
+            }
+        }
+
+        return [null, false];
     }
 }
