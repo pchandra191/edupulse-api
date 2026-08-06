@@ -23,4 +23,18 @@ class InstituteRepository extends ServiceEntityRepository
     {
         return $this->findOneBy(['email' => mb_strtolower(trim($email))]);
     }
+
+    public function getNextCode(): string
+    {
+        $sql = 'SELECT MAX(CAST(SUBSTRING(code FROM 4) AS INTEGER)) AS max_num FROM institutes WHERE code LIKE :prefix';
+        $result = $this->getEntityManager()->getConnection()->fetchAssociative($sql, ['prefix' => 'INS%']);
+
+        $nextNum = 1;
+
+        if ($result && isset($result['max_num']) && is_numeric($result['max_num'])) {
+            $nextNum = (int) $result['max_num'] + 1;
+        }
+
+        return 'INS' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
+    }
 }

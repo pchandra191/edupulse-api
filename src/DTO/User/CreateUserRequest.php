@@ -39,6 +39,9 @@ readonly class CreateUserRequest
 
         #[Assert\Length(max: 100)]
         public ?string $department = null,
+
+        #[Assert\Length(max: 255)]
+        public ?string $instituteName = null,
     ) {
     }
 

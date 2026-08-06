@@ -12,10 +12,13 @@ use App\DTO\User\UserResponse;
 use App\DTO\User\AdminResetPasswordRequestDTO;
 use App\Common\Api\Response\PaginationResponse;
 use App\Common\Exception\BusinessException;
+use App\Entity\Institute;
 use App\Entity\User;
+use App\Enum\InstituteStatus;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Exception\AuthenticationException;
+use App\Repository\InstituteRepository;
 use App\Repository\UserRepository;
 use DateTimeInterface;
 use DateTimeImmutable;
@@ -29,6 +32,7 @@ readonly class UserService
 {
     public function __construct(
         private UserRepository $userRepository,
+        private InstituteRepository $instituteRepository,
         private EntityManagerInterface $entityManager,
         private UserPasswordHasherInterface $passwordHasher,
         private LoggerInterface $logger,
@@ -123,6 +127,11 @@ readonly class UserService
             $this->entityManager->beginTransaction();
 
             $user = $this->mapToEntity($request);
+            $institute = $this->createInstituteIfNeeded($request, $user);
+
+            if ($institute instanceof Institute) {
+                $user->setInstitute($institute);
+            }
 
             $hashedPassword = $this->passwordHasher->hashPassword($user, $request->password);
             $user->setPassword($hashedPassword);
@@ -388,5 +397,43 @@ readonly class UserService
         }
 
         return [null, false];
+    }
+
+    private function createInstituteIfNeeded(CreateUserRequest $request, User $user): ?Institute
+    {
+        if (!in_array(UserRole::Institute->value, $request->roles, true)) {
+            return null;
+        }
+
+        $name = $request->instituteName ?? $this->deriveInstituteNameFromEmail($request->email);
+
+        $institute = new Institute();
+        $institute->setName($name);
+        $institute->setCode($this->instituteRepository->getNextCode());
+        $institute->setEmail($request->email);
+        $institute->setStatus(InstituteStatus::Active);
+
+        $this->entityManager->persist($institute);
+
+        return $institute;
+    }
+
+    private function deriveInstituteNameFromEmail(string $email): string
+    {
+        $localPart = explode('@', $email)[0] ?? $email;
+
+        $localPart = preg_replace('/[^a-zA-Z]/', ' ', $localPart) ?: $localPart;
+
+        $localPart = ucwords(strtolower($localPart));
+
+        $localPart = preg_replace('/\s+/', ' ', $localPart) ?: $localPart;
+
+        $localPart = trim($localPart);
+
+        if ($localPart === '') {
+            return 'New Institute';
+        }
+
+        return $localPart;
     }
 }
