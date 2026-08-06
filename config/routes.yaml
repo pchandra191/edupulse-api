@@ -16,3 +16,8 @@ role_api:
     resource: '../src/Controller/Role/'
     type: attribute
     prefix: /api/%app.api_version%
+
+institute_api:
+    resource: '../src/Controller/Institute/'
+    type: attribute
+    prefix: /api/%app.api_version%

@@ -6,6 +6,7 @@ namespace App\Repository;
 use App\Entity\User;
 use App\DTO\User\UserFilterRequest;
 use App\DTO\PaginatedResult;
+use App\Enum\UserRole;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -57,14 +58,18 @@ class UserRepository extends ServiceEntityRepository
         ];
     }
 
-    public function findPaginated(UserFilterRequest $filter): PaginatedResult
-    {
+    public function findPaginated(
+        UserFilterRequest $filter,
+        ?string $instituteId = null,
+        bool $excludeSuperAdmin = false
+    ): PaginatedResult {
         $qb = $this->createQueryBuilder('u');
 
         $this->applySearch($qb, $filter->search);
         $this->applyRoleFilter($qb, $filter->role);
         $this->applyStatusFilter($qb, $filter->status);
         $this->applyDepartmentFilter($qb, $filter->department);
+        $this->applyTenantFilter($qb, $instituteId, $excludeSuperAdmin);
         $this->applySorting($qb, $filter->sortBy, $filter->sortOrder);
 
         $totalItems = $this->getTotalCount($qb);
@@ -88,22 +93,26 @@ class UserRepository extends ServiceEntityRepository
         );
     }
 
-    public function findByUuid(Uuid $id): ?User
+    public function findByUuid(Uuid $id, ?string $instituteId = null, bool $excludeSuperAdmin = false): ?User
     {
         $qb = $this->createQueryBuilder('u')
             ->where('u.id = :id')
             ->andWhere('u.deletedAt IS NULL')
             ->setParameter('id', $id);
 
+        $this->applyTenantFilter($qb, $instituteId, $excludeSuperAdmin);
+
         return $qb->getQuery()->getOneOrNullResult();
     }
 
-    public function findByEmail(string $email): ?User
+    public function findByEmail(string $email, ?string $instituteId = null, bool $excludeSuperAdmin = false): ?User
     {
         $qb = $this->createQueryBuilder('u')
             ->where('u.email = :email')
             ->andWhere('u.deletedAt IS NULL')
             ->setParameter('email', mb_strtolower(trim($email)));
+
+        $this->applyTenantFilter($qb, $instituteId, $excludeSuperAdmin);
 
         return $qb->getQuery()->getOneOrNullResult();
     }
@@ -121,7 +130,7 @@ class UserRepository extends ServiceEntityRepository
                ->setParameter('ignoreUser', $ignoreUser);
         }
 
-        return (int) $qb->getQuery()->getSingleScalarResult() > 0;
+        return (bool) $qb->getQuery()->getSingleScalarResult();
     }
 
     private function applySearch(QueryBuilder $qb, ?string $search): void
@@ -180,6 +189,27 @@ class UserRepository extends ServiceEntityRepository
 
         $qb->andWhere('u.department = :department')
            ->setParameter('department', $department);
+    }
+
+    private function applyTenantFilter(QueryBuilder $qb, ?string $instituteId, bool $excludeSuperAdmin): void
+    {
+        if ($instituteId !== null) {
+            $qb->andWhere('u.institute = :institute')
+               ->setParameter('institute', Uuid::fromString($instituteId));
+        }
+
+        if ($excludeSuperAdmin) {
+            $conn = $this->getEntityManager()->getConnection();
+            $sql = 'SELECT id FROM users WHERE CAST(roles AS TEXT) LIKE :role';
+            $rows = $conn->fetchAllAssociative($sql, ['role' => '%' . UserRole::SuperAdmin->value . '%']);
+
+            $superAdminIds = array_map(static fn(array $row): string => $row['id'], $rows);
+
+            if (!empty($superAdminIds)) {
+                $qb->andWhere('u.id NOT IN (:super_admin_ids)')
+                   ->setParameter('super_admin_ids', $superAdminIds);
+            }
+        }
     }
 
     private function applySorting(QueryBuilder $qb, string $sortBy, string $sortOrder): void

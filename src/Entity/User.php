@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\Institute;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Repository\UserRepository;
@@ -11,6 +12,8 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: 'users')]
@@ -44,6 +47,10 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
 
     #[ORM\Column]
     private bool $isVerified = false;
+
+    #[ORM\ManyToOne(targetEntity: Institute::class, inversedBy: 'users')]
+    #[ORM\JoinColumn(name: 'institute_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Institute $institute = null;
 
     public function __construct()
     {
@@ -209,5 +216,31 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
     public function isDeleted(): bool
     {
         return null !== $this->deletedAt;
+    }
+
+    #[Assert\Callback]
+    public function validateInstitute(ExecutionContextInterface $context, mixed $payload): void
+    {
+        if ($this->getRole() === UserRole::SuperAdmin) {
+            return;
+        }
+
+        if (null === $this->institute) {
+            $context->buildViolation('Institute is required for this role.')
+                ->atPath('institute')
+                ->addViolation();
+        }
+    }
+
+    public function getInstitute(): ?Institute
+    {
+        return $this->institute;
+    }
+
+    public function setInstitute(?Institute $institute): self
+    {
+        $this->institute = $institute;
+
+        return $this;
     }
 }

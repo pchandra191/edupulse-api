@@ -6,18 +6,22 @@ namespace App\Service\Auth;
 use App\DTO\Auth\ChangePasswordRequestDTO;
 use App\DTO\Auth\CurrentUserResponseDTO;
 use App\DTO\Auth\ForgotPasswordRequestDTO;
+use App\DTO\Auth\InstituteResponseDTO;
 use App\DTO\Auth\LoginRequest;
 use App\DTO\Auth\LoginResponseDTO;
 use App\DTO\Auth\LogoutRequestDTO;
 use App\DTO\Auth\RefreshTokenRequestDTO;
 use App\DTO\Auth\RefreshResponseDTO;
 use App\DTO\Auth\ResetPasswordRequestDTO;
+use App\Entity\Institute;
 use App\Entity\PasswordResetToken;
 use App\Entity\User;
+use App\Enum\InstituteStatus;
 use App\Exception\AuthenticationException;
 use App\Exception\ExpiredResetTokenException;
 use App\Exception\InvalidCredentialsException;
 use App\Exception\InvalidRefreshTokenException;
+use App\Exception\InstituteNotActiveException;
 use App\Exception\UserDisabledException;
 use App\Exception\UserNotVerifiedException;
 use App\Repository\PasswordResetTokenRepository;
@@ -86,12 +90,25 @@ readonly class AuthService
             throw new \LogicException('Authenticated user is not an instance of App\Entity\User.');
         }
 
+        $institute = null;
+
+        if ($user->getInstitute() instanceof Institute) {
+            $institute = new InstituteResponseDTO(
+                id: (string) $user->getInstitute()->getId(),
+                name: $user->getInstitute()->getName(),
+                code: $user->getInstitute()->getCode(),
+                logo: $user->getInstitute()->getLogo(),
+                status: $user->getInstitute()->getStatus()->value,
+            );
+        }
+
         return new CurrentUserResponseDTO(
             id: (string) $user->getId(),
             email: $user->getEmail(),
             firstName: $user->getFirstName(),
             lastName: $user->getLastName(),
             roles: $user->getRoles(),
+            institute: $institute,
         );
     }
 
@@ -246,6 +263,14 @@ readonly class AuthService
 
         if ($user->isDeleted()) {
             throw InvalidCredentialsException::create();
+        }
+
+        if ($user->getInstitute() instanceof Institute) {
+            $instituteStatus = $user->getInstitute()->getStatus();
+
+            if (!$instituteStatus->equals(InstituteStatus::Active)) {
+                throw InstituteNotActiveException::create($instituteStatus->value);
+            }
         }
     }
 

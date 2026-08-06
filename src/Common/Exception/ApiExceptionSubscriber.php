@@ -8,6 +8,7 @@ use App\Exception\AuthenticationException;
 use App\Exception\ExpiredResetTokenException;
 use App\Exception\InvalidCredentialsException;
 use App\Exception\InvalidRefreshTokenException;
+use App\Exception\InstituteNotActiveException;
 use App\Exception\PasswordPolicyException;
 use App\Exception\UserDisabledException;
 use App\Exception\UserNotVerifiedException;
@@ -65,6 +66,10 @@ class ApiExceptionSubscriber implements EventSubscriberInterface
         }
 
         if ($exception instanceof UserDisabledException) {
+            return $this->json(403, $exception->getMessage());
+        }
+
+        if ($exception instanceof InstituteNotActiveException) {
             return $this->json(403, $exception->getMessage());
         }
 
