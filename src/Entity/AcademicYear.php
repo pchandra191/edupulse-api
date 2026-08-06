@@ -3,8 +3,11 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\AcademicClass;
 use App\Enum\AcademicYearStatus;
 use App\Repository\AcademicYearRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -47,9 +50,13 @@ class AcademicYear extends AbstractEntity
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $description = null;
 
+    #[ORM\OneToMany(mappedBy: 'academicYear', targetEntity: AcademicClass::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $classes;
+
     public function __construct()
     {
         parent::__construct();
+        $this->classes = new ArrayCollection();
     }
 
     public function getInstitute(): Institute
@@ -144,6 +151,32 @@ class AcademicYear extends AbstractEntity
     public function setDescription(?string $description): self
     {
         $this->description = $description !== null ? trim($description) : null;
+
+        return $this;
+    }
+
+    public function getClasses(): Collection
+    {
+        return $this->classes;
+    }
+
+    public function addClass(AcademicClass $class): self
+    {
+        if (!$this->classes->contains($class)) {
+            $this->classes[] = $class;
+            $class->setAcademicYear($this);
+        }
+
+        return $this;
+    }
+
+    public function removeClass(AcademicClass $class): self
+    {
+        if ($this->classes->removeElement($class)) {
+            if ($class->getAcademicYear() === $this) {
+                $class->setAcademicYear(new AcademicYear());
+            }
+        }
 
         return $this;
     }

@@ -268,7 +268,7 @@ readonly class AuthService
         if ($user->getInstitute() instanceof Institute) {
             $instituteStatus = $user->getInstitute()->getStatus();
 
-            if (!$instituteStatus->equals(InstituteStatus::Active)) {
+            if ($instituteStatus !== InstituteStatus::Active) {
                 throw InstituteNotActiveException::create($instituteStatus->value);
             }
         }

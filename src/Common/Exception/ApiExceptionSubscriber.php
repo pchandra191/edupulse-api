@@ -114,7 +114,13 @@ class ApiExceptionSubscriber implements EventSubscriberInterface
             'class' => $exception::class,
         ]);
 
-        return $this->json(500, 'Internal server error.');
+        $message = 'Internal server error.';
+
+        if ($_ENV['APP_DEBUG'] ?? $_SERVER['APP_DEBUG'] ?? false) {
+            $message = $exception->getMessage();
+        }
+
+        return $this->json(500, $message);
     }
 
     private function handleValidation(ValidationFailedException $exception): JsonResponse

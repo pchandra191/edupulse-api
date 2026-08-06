@@ -26,3 +26,8 @@ academic_year_api:
     resource: '../src/Controller/AcademicYear/'
     type: attribute
     prefix: /api/%app.api_version%
+
+class_api:
+    resource: '../src/Controller/ClassModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
