@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\AcademicYear;
 use App\Enum\InstituteStatus;
 use App\Repository\InstituteRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -88,10 +89,14 @@ class Institute extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'institute', targetEntity: User::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $users;
 
+    #[ORM\OneToMany(mappedBy: 'institute', targetEntity: AcademicYear::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $academicYears;
+
     public function __construct()
     {
         parent::__construct();
         $this->users = new ArrayCollection();
+        $this->academicYears = new ArrayCollection();
     }
 
     public function getName(): string
@@ -299,6 +304,32 @@ class Institute extends AbstractEntity
         if ($this->users->removeElement($user)) {
             if ($user->getInstitute() === $this) {
                 $user->setInstitute(null);
+            }
+        }
+
+        return $this;
+    }
+
+    public function getAcademicYears(): Collection
+    {
+        return $this->academicYears;
+    }
+
+    public function addAcademicYear(AcademicYear $academicYear): self
+    {
+        if (!$this->academicYears->contains($academicYear)) {
+            $this->academicYears[] = $academicYear;
+            $academicYear->setInstitute($this);
+        }
+
+        return $this;
+    }
+
+    public function removeAcademicYear(AcademicYear $academicYear): self
+    {
+        if ($this->academicYears->removeElement($academicYear)) {
+            if ($academicYear->getInstitute() === $this) {
+                $academicYear->setInstitute(new Institute());
             }
         }
 
