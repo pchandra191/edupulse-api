@@ -31,3 +31,8 @@ class_api:
     resource: '../src/Controller/ClassModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+subject_api:
+    resource: '../src/Controller/SubjectModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
