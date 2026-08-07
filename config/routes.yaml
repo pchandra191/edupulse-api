@@ -36,3 +36,8 @@ subject_api:
     resource: '../src/Controller/SubjectModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+section_api:
+    resource: '../src/Controller/SectionModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
