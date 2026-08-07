@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
+use App\Entity\Subject;
 use App\Enum\InstituteStatus;
 use App\Repository\InstituteRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -95,12 +97,16 @@ class Institute extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'institute', targetEntity: AcademicClass::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $classes;
 
+    #[ORM\OneToMany(mappedBy: 'institute', targetEntity: Subject::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $subjects;
+
     public function __construct()
     {
         parent::__construct();
         $this->users = new ArrayCollection();
         $this->academicYears = new ArrayCollection();
         $this->classes = new ArrayCollection();
+        $this->subjects = new ArrayCollection();
     }
 
     public function getName(): string
@@ -360,6 +366,32 @@ class Institute extends AbstractEntity
         if ($this->classes->removeElement($class)) {
             if ($class->getInstitute() === $this) {
                 $class->setInstitute(new Institute());
+            }
+        }
+
+        return $this;
+    }
+
+    public function getSubjects(): Collection
+    {
+        return $this->subjects;
+    }
+
+    public function addSubject(Subject $subject): self
+    {
+        if (!$this->subjects->contains($subject)) {
+            $this->subjects[] = $subject;
+            $subject->setInstitute($this);
+        }
+
+        return $this;
+    }
+
+    public function removeSubject(Subject $subject): self
+    {
+        if ($this->subjects->removeElement($subject)) {
+            if ($subject->getInstitute() === $this) {
+                $subject->setInstitute(new Institute());
             }
         }
 

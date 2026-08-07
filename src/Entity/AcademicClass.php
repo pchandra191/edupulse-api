@@ -5,6 +5,8 @@ namespace App\Entity;
 
 use App\Enum\ClassStatus;
 use App\Repository\AcademicClassRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -41,9 +43,13 @@ class AcademicClass extends AbstractEntity
     #[ORM\Column(type: Types::STRING, length: 20)]
     private string $status = ClassStatus::Active->value;
 
+    #[ORM\OneToMany(mappedBy: 'academicClass', targetEntity: ClassSubject::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $classSubjects;
+
     public function __construct()
     {
         parent::__construct();
+        $this->classSubjects = new ArrayCollection();
     }
 
     public function getInstitute(): Institute
@@ -121,5 +127,10 @@ class AcademicClass extends AbstractEntity
     public function isActive(): bool
     {
         return $this->status === ClassStatus::Active->value;
+    }
+
+    public function getClassSubjects(): Collection
+    {
+        return $this->classSubjects;
     }
 }
