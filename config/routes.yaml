@@ -41,3 +41,8 @@ section_api:
     resource: '../src/Controller/SectionModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+teacher_assignment_api:
+    resource: '../src/Controller/TeacherAssignmentModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
