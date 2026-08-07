@@ -86,6 +86,8 @@ class UserController extends AbstractApiController
             department: $data['department'] ?? null,
             roles: $roles,
             password: $data['password'] ?? '',
+            instituteName: $data['instituteName'] ?? null,
+            instituteId: $data['instituteId'] ?? null,
         );
 
         $errors = $this->validator->validate($createRequest);

@@ -122,15 +122,19 @@ readonly class UserService
     public function createUser(CreateUserRequest $request): UserResponse
     {
         $this->validateUniqueEmail($request->email);
+        $this->validateTeacherInstitute($request);
 
         try {
             $this->entityManager->beginTransaction();
 
             $user = $this->mapToEntity($request);
             $institute = $this->createInstituteIfNeeded($request, $user);
+            $teacherInstitute = $this->resolveTeacherInstitute($request);
 
             if ($institute instanceof Institute) {
                 $user->setInstitute($institute);
+            } elseif ($teacherInstitute instanceof Institute) {
+                $user->setInstitute($teacherInstitute);
             }
 
             $hashedPassword = $this->passwordHasher->hashPassword($user, $request->password);
@@ -141,6 +145,12 @@ readonly class UserService
             $this->entityManager->commit();
 
             return $this->mapToResponse($user);
+        } catch (BusinessException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            throw $e;
         } catch (\Throwable $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -416,6 +426,64 @@ readonly class UserService
         $this->entityManager->persist($institute);
 
         return $institute;
+    }
+
+    private function validateTeacherInstitute(CreateUserRequest $request): void
+    {
+        if (!in_array(UserRole::Teacher->value, $request->roles, true)) {
+            return;
+        }
+
+        $currentUser = $this->security->getUser();
+
+        if (!$currentUser instanceof User) {
+            throw new BusinessException('Unauthenticated.');
+        }
+
+        if (in_array(UserRole::SuperAdmin->value, $currentUser->getRoles(), true)) {
+            if (empty($request->instituteId)) {
+                throw new BusinessException('Institute is required when creating a teacher.');
+            }
+        }
+    }
+
+    private function resolveTeacherInstitute(CreateUserRequest $request): ?Institute
+    {
+        if (!in_array(UserRole::Teacher->value, $request->roles, true)) {
+            return null;
+        }
+
+        $currentUser = $this->security->getUser();
+
+        if (!$currentUser instanceof User) {
+            throw new BusinessException('Unauthenticated.');
+        }
+
+        if (in_array(UserRole::Institute->value, $currentUser->getRoles(), true)) {
+            $institute = $currentUser->getInstitute();
+
+            if ($institute) {
+                return $institute;
+            }
+
+            throw new BusinessException('Institute not found for authenticated user.');
+        }
+
+        if (in_array(UserRole::SuperAdmin->value, $currentUser->getRoles(), true)) {
+            if (empty($request->instituteId)) {
+                throw new BusinessException('Institute is required when creating a teacher.');
+            }
+
+            $institute = $this->instituteRepository->find($request->instituteId);
+
+            if (!$institute instanceof Institute) {
+                throw new BusinessException('Selected institute not found.');
+            }
+
+            return $institute;
+        }
+
+        throw new BusinessException('Unable to determine institute for teacher.');
     }
 
     private function deriveInstituteNameFromEmail(string $email): string
