@@ -123,19 +123,19 @@ readonly class UserService
     public function createUser(CreateUserRequest $request): UserResponse
     {
         $this->validateUniqueEmail($request->email);
-        $this->validateTeacherInstitute($request);
+        $this->validateAssignedInstitute($request);
 
         try {
             $this->entityManager->beginTransaction();
 
             $user = $this->mapToEntity($request);
             $institute = $this->createInstituteIfNeeded($request, $user);
-            $teacherInstitute = $this->resolveTeacherInstitute($request);
+            $assignedInstitute = $this->resolveInstitute($request);
 
             if ($institute instanceof Institute) {
                 $user->setInstitute($institute);
-            } elseif ($teacherInstitute instanceof Institute) {
-                $user->setInstitute($teacherInstitute);
+            } elseif ($assignedInstitute instanceof Institute) {
+                $user->setInstitute($assignedInstitute);
             }
 
             $hashedPassword = $this->passwordHasher->hashPassword($user, $request->password);
@@ -447,9 +447,12 @@ readonly class UserService
         return $institute;
     }
 
-    private function validateTeacherInstitute(CreateUserRequest $request): void
+    private function validateAssignedInstitute(CreateUserRequest $request): void
     {
-        if (!in_array(UserRole::Teacher->value, $request->roles, true)) {
+        $requiresInstitute = in_array(UserRole::Teacher->value, $request->roles, true)
+            || in_array(UserRole::Student->value, $request->roles, true);
+
+        if (!$requiresInstitute) {
             return;
         }
 
@@ -461,14 +464,17 @@ readonly class UserService
 
         if (in_array(UserRole::SuperAdmin->value, $currentUser->getRoles(), true)) {
             if (empty($request->instituteId)) {
-                throw new BusinessException('Institute is required when creating a teacher.');
+                throw new BusinessException('Institute is required when creating a teacher or student.');
             }
         }
     }
 
-    private function resolveTeacherInstitute(CreateUserRequest $request): ?Institute
+    private function resolveInstitute(CreateUserRequest $request): ?Institute
     {
-        if (!in_array(UserRole::Teacher->value, $request->roles, true)) {
+        $requiresInstitute = in_array(UserRole::Teacher->value, $request->roles, true)
+            || in_array(UserRole::Student->value, $request->roles, true);
+
+        if (!$requiresInstitute) {
             return null;
         }
 
@@ -490,7 +496,7 @@ readonly class UserService
 
         if (in_array(UserRole::SuperAdmin->value, $currentUser->getRoles(), true)) {
             if (empty($request->instituteId)) {
-                throw new BusinessException('Institute is required when creating a teacher.');
+                throw new BusinessException('Institute is required when creating a teacher or student.');
             }
 
             $institute = $this->instituteRepository->find($request->instituteId);
@@ -502,7 +508,7 @@ readonly class UserService
             return $institute;
         }
 
-        throw new BusinessException('Unable to determine institute for teacher.');
+        throw new BusinessException('Unable to determine institute for teacher or student.');
     }
 
     private function deriveInstituteNameFromEmail(string $email): string
