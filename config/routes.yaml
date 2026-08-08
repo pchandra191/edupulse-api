@@ -46,3 +46,8 @@ teacher_assignment_api:
     resource: '../src/Controller/TeacherAssignmentModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+student_enrollment_api:
+    resource: '../src/Controller/StudentEnrollmentModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
