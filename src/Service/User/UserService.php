@@ -182,6 +182,12 @@ readonly class UserService
             $this->entityManager->commit();
 
             return $this->mapToResponse($user);
+        } catch (BusinessException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            throw $e;
         } catch (\Throwable $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -358,7 +364,7 @@ readonly class UserService
             $user->setLastName($request->lastName);
         }
 
-        if ($request->phone !== null) {
+        if ($request->phone !== null && $request->phone !== $user->getPhone()) {
             $this->validateUniquePhone($request->phone, $user->getId());
             $user->setPhone($request->phone);
         }
