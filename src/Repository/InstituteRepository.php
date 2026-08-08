@@ -37,4 +37,26 @@ class InstituteRepository extends ServiceEntityRepository
 
         return 'INS' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
     }
+
+    public function findActiveOptions(): array
+    {
+        $qb = $this->createQueryBuilder('i')
+            ->select('i.id, i.name, i.code, i.email, i.phone, i.website, i.logo, i.addressLine1, i.addressLine2, i.city, i.state, i.country, i.postalCode, i.timezone, i.currency, i.status, i.createdAt, i.updatedAt')
+            ->where('i.status = :status')
+            ->setParameter('status', 'ACTIVE')
+            ->orderBy('i.name', 'ASC');
+
+        return $qb->getQuery()->getArrayResult();
+    }
+
+    public function findOneActiveById(string $id): ?Institute
+    {
+        return $this->createQueryBuilder('i')
+            ->where('i.id = :id')
+            ->setParameter('id', $id)
+            ->andWhere('i.status = :status')
+            ->setParameter('status', 'ACTIVE')
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
 }
