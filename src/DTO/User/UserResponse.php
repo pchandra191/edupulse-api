@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\DTO\User;
 
+use App\DTO\Auth\InstituteResponseDTO;
 use App\Enum\UserStatus;
 
 readonly class UserResponse
@@ -17,6 +18,7 @@ readonly class UserResponse
         public array $roles,
         public UserStatus $status,
         public bool $isVerified,
+        public ?InstituteResponseDTO $institute,
         public string $createdAt,
         public ?string $updatedAt,
     ) {

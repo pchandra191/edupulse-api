@@ -5,6 +5,7 @@ namespace App\Service\User;
 
 use App\DTO\PaginatedResult;
 use App\DTO\Response\UserListResponse;
+use App\DTO\Auth\InstituteResponseDTO;
 use App\DTO\User\CreateUserRequest;
 use App\DTO\User\UserFilterRequest;
 use App\DTO\User\UpdateUserRequest;
@@ -290,8 +291,20 @@ readonly class UserService
             roles: $user->getRoles(),
             status: $user->getStatus(),
             isVerified: $user->isVerified(),
+            institute: $user->getInstitute() ? $this->mapInstituteToResponse($user->getInstitute()) : null,
             createdAt: $user->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $user->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+        );
+    }
+
+    private function mapInstituteToResponse(Institute $institute): InstituteResponseDTO
+    {
+        return new InstituteResponseDTO(
+            id: (string) $institute->getId(),
+            name: $institute->getName(),
+            code: $institute->getCode(),
+            logo: $institute->getLogo(),
+            status: $institute->getStatus()->value,
         );
     }
 
