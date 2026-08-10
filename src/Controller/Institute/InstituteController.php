@@ -15,7 +15,7 @@ use App\Service\Institute\InstituteService;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Http\Attribute\Security;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -29,7 +29,7 @@ class InstituteController extends AbstractApiController
         parent::__construct($responseFactory);
     }
 
-    #[Security("is_granted('ROLE_SUPER_ADMIN')")]
+    #[IsGranted('ROLE_SUPER_ADMIN')]
     #[Route('/institutes/options', name: 'institute_options', methods: ['GET'])]
     public function options(): JsonResponse
     {
@@ -38,7 +38,7 @@ class InstituteController extends AbstractApiController
         return $this->success('Institutes retrieved successfully.', $options);
     }
 
-    #[Security("is_granted('ROLE_SUPER_ADMIN')")]
+    #[IsGranted('ROLE_SUPER_ADMIN')]
     #[Route('/institutes', name: 'institute_list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
@@ -55,7 +55,7 @@ class InstituteController extends AbstractApiController
         return $this->paginated('Institutes retrieved successfully.', $result->items, $result->pagination);
     }
 
-    #[Security("is_granted('ROLE_SUPER_ADMIN')")]
+    #[IsGranted('ROLE_SUPER_ADMIN')]
     #[Route('/institutes/{id}', name: 'institute_show', methods: ['GET'])]
     public function show(string $id): JsonResponse
     {
@@ -68,7 +68,7 @@ class InstituteController extends AbstractApiController
         return $this->success('Institute retrieved successfully.', $institute);
     }
 
-    #[Security("is_granted('ROLE_SUPER_ADMIN')")]
+    #[IsGranted('ROLE_SUPER_ADMIN')]
     #[Route('/institutes/{id}', name: 'institute_update', methods: ['PUT'])]
     public function update(string $id, Request $request): JsonResponse
     {

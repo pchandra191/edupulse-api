@@ -32,6 +32,9 @@ readonly class CreateTeacherAssignmentRequestDTO
 
         #[Assert\NotBlank]
         public string $status = 'ACTIVE',
+
+        #[Assert\Length(max: 36)]
+        public ?string $instituteId = null,
     ) {
     }
 }
