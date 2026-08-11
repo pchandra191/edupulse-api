@@ -8,11 +8,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 readonly class UpdateSectionRequestDTO
 {
     public function __construct(
-        #[Assert\NotBlank]
         #[Assert\Length(max: 100)]
         public ?string $name = null,
 
-        #[Assert\NotBlank]
         #[Assert\Length(max: 20)]
         public ?string $code = null,
 
@@ -22,7 +20,7 @@ readonly class UpdateSectionRequestDTO
         #[Assert\Length(max: 1000)]
         public ?string $description = null,
 
-        #[Assert\NotBlank]
+        #[Assert\Choice(choices: ['ACTIVE', 'INACTIVE', 'ARCHIVED'])]
         public ?string $status = null,
     ) {
     }

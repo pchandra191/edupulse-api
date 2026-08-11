@@ -4,7 +4,9 @@ declare(strict_types=1);
 namespace App\Service\SectionModule;
 
 use App\DTO\SectionModule\AcademicClassResponse;
+use App\DTO\SectionModule\AcademicYearResponse;
 use App\DTO\SectionModule\CreateSectionRequestDTO;
+use App\DTO\SectionModule\InstituteResponse;
 use App\DTO\SectionModule\SectionFilterRequest;
 use App\DTO\SectionModule\SectionResponseDTO;
 use App\DTO\SectionModule\UpdateSectionRequestDTO;
@@ -188,10 +190,19 @@ readonly class SectionService
     private function mapToResponse(Section $section): SectionResponseDTO
     {
         $academicClass = $section->getAcademicClass();
+        $academicYear = $academicClass->getAcademicYear();
+        $institute = $academicYear->getInstitute();
 
         return new SectionResponseDTO(
+            institute: new InstituteResponse(
+                id: (string) $institute->getId(),
+                name: $institute->getName(),
+            ),
             id: (string) $section->getId(),
-            academicClassId: (string) $academicClass->getId(),
+            academicYear: new AcademicYearResponse(
+                id: (string) $academicYear->getId(),
+                name: $academicYear->getName(),
+            ),
             academicClass: new AcademicClassResponse(
                 id: (string) $academicClass->getId(),
                 name: $academicClass->getName(),
