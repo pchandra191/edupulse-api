@@ -203,6 +203,7 @@ readonly class SectionService
                 id: (string) $academicYear->getId(),
                 name: $academicYear->getName(),
             ),
+            academicClassId: (string) $academicClass->getId(),
             academicClass: new AcademicClassResponse(
                 id: (string) $academicClass->getId(),
                 name: $academicClass->getName(),

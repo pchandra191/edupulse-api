@@ -18,6 +18,9 @@ readonly class UserFilterRequest
         #[Assert\Length(max: 100)]
         public ?string $department = null,
 
+        #[Assert\Length(max: 36)]
+        public ?string $instituteId = null,
+
         #[Assert\Positive]
         public int $page = 1,
 

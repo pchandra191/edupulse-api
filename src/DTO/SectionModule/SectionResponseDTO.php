@@ -11,6 +11,7 @@ readonly class SectionResponseDTO
         public ?InstituteResponse $institute,
         public string $id,
         public ?AcademicYearResponse $academicYear,
+        public string $academicClassId,
         public ?AcademicClassResponse $academicClass,
         public string $name,
         public string $code,

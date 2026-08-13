@@ -255,6 +255,7 @@ class SectionControllerTest extends WebTestCase
         $this->assertSame(200, $response->getStatusCode());
 
         $data = json_decode($response->getContent(), true);
+        file_put_contents('F:/Projects/React/edupulse-api/tmp_section_get.txt', 'EXPECTED INSTITUTE: ' . $this->testInstituteId . PHP_EOL . print_r($data['data'], true) . PHP_EOL);
         $this->assertTrue($data['success']);
         $this->assertSame('Test Section', $data['data']['name']);
         $this->assertSame('TS01', $data['data']['code']);
