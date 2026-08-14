@@ -7,6 +7,7 @@ use App\DTO\StudentEnrollmentModule\AcademicClassResponse;
 use App\DTO\StudentEnrollmentModule\AcademicYearResponse;
 use App\DTO\StudentEnrollmentModule\CreateEnrollmentSectionRequestDTO;
 use App\DTO\StudentEnrollmentModule\CreateStudentEnrollmentRequestDTO;
+use App\DTO\StudentEnrollmentModule\InstituteResponse;
 use App\DTO\StudentEnrollmentModule\SectionResponse;
 use App\DTO\StudentEnrollmentModule\StudentEnrollmentFilterRequest;
 use App\DTO\StudentEnrollmentModule\StudentEnrollmentResponseDTO;
@@ -121,7 +122,7 @@ readonly class StudentEnrollmentService
             }
         }
 
-        if ($this->studentEnrollmentRepository->hasActiveEnrollment($student->getId(), $academicYear->getId())) {
+        if ($this->studentEnrollmentRepository->hasActiveEnrollment($student->getId(), $academicYear->getId(), $academicClass->getId())) {
             throw new \App\Common\Exception\BusinessException('Student already has an enrollment for this academic year.');
         }
 
@@ -131,8 +132,8 @@ readonly class StudentEnrollmentService
             }
         }
 
-        if ($this->studentEnrollmentRepository->admissionNumberExistsForInstitute($request->admissionNumber, $academicClass->getInstitute()->getId())) {
-            throw new \App\Common\Exception\BusinessException('Admission number already exists for this institute.');
+        if ($this->studentEnrollmentRepository->admissionNumberExistsForInstitute($request->admissionNumber, $academicClass->getInstitute()->getId(), $academicYear->getId())) {
+            throw new \App\Common\Exception\BusinessException('Admission number already exists for this institute in the selected academic year.');
         }
 
         try {
@@ -142,6 +143,7 @@ readonly class StudentEnrollmentService
             $enrollment->setStudent($student);
             $enrollment->setAcademicYear($academicYear);
             $enrollment->setAcademicClass($academicClass);
+            $enrollment->setInstituteId($academicClass->getInstitute()->getId());
             $enrollment->setRollNumber($request->rollNumber);
             $enrollment->setAdmissionNumber($request->admissionNumber);
             $enrollment->setAdmissionDate($admissionDate);
@@ -168,7 +170,7 @@ readonly class StudentEnrollmentService
                 'error' => $e->getMessage(),
             ]);
 
-            throw new \App\Common\Exception\BusinessException('Failed to create student enrollment. Please try again.', previous: $e);
+            throw new \App\Common\Exception\BusinessException('Failed to create student enrollment. Please check the data and try again.', previous: $e);
         }
     }
 
@@ -178,6 +180,12 @@ readonly class StudentEnrollmentService
 
         if (!$enrollment instanceof StudentEnrollment) {
             throw new AuthenticationException('Student enrollment not found.');
+        }
+
+        if ($request->admissionNumber !== null && $request->admissionNumber !== $enrollment->getAdmissionNumber()) {
+            if ($this->studentEnrollmentRepository->admissionNumberExistsForInstitute($request->admissionNumber, $enrollment->getAcademicClass()->getInstitute()->getId(), $enrollment->getAcademicYear()->getId(), $enrollment->getId())) {
+                throw new \App\Common\Exception\BusinessException('Admission number already exists for this institute in the selected academic year.');
+            }
         }
 
         try {
@@ -197,7 +205,7 @@ readonly class StudentEnrollmentService
                 'error' => $e->getMessage(),
             ]);
 
-            throw new \App\Common\Exception\BusinessException('Failed to update student enrollment. Please try again.', previous: $e);
+            throw new \App\Common\Exception\BusinessException('Failed to update student enrollment. Please check the data and try again.', previous: $e);
         }
     }
 
@@ -295,7 +303,7 @@ readonly class StudentEnrollmentService
                 'error' => $e->getMessage(),
             ]);
 
-            throw new \App\Common\Exception\BusinessException('Failed to add section. Please try again.', previous: $e);
+            throw new \App\Common\Exception\BusinessException('Failed to add section to enrollment. Please try again.', previous: $e);
         }
     }
 
@@ -325,7 +333,7 @@ readonly class StudentEnrollmentService
                 'error' => $e->getMessage(),
             ]);
 
-            throw new \App\Common\Exception\BusinessException('Failed to remove section. Please try again.', previous: $e);
+            throw new \App\Common\Exception\BusinessException('Failed to remove section from enrollment. Please try again.', previous: $e);
         }
     }
 
@@ -340,10 +348,6 @@ readonly class StudentEnrollmentService
         }
 
         if ($request->admissionNumber !== null && $request->admissionNumber !== $enrollment->getAdmissionNumber()) {
-            if ($this->studentEnrollmentRepository->admissionNumberExistsForInstitute($request->admissionNumber, $enrollment->getAcademicClass()->getInstitute()->getId(), $enrollment->getId())) {
-                throw new \App\Common\Exception\BusinessException('Admission number already exists for this institute.');
-            }
-
             $enrollment->setAdmissionNumber($request->admissionNumber);
         }
 
@@ -399,6 +403,7 @@ readonly class StudentEnrollmentService
         $student = $enrollment->getStudent();
         $academicYear = $enrollment->getAcademicYear();
         $academicClass = $enrollment->getAcademicClass();
+        $institute = $academicYear->getInstitute();
 
         $sections = array_map(
             fn (EnrollmentSection $es) => new SectionResponse(
@@ -412,6 +417,10 @@ readonly class StudentEnrollmentService
 
         return new StudentEnrollmentResponseDTO(
             id: (string) $enrollment->getId(),
+            institute: new InstituteResponse(
+                id: (string) $institute->getId(),
+                name: $institute->getName(),
+            ),
             student: new StudentResponse(
                 id: (string) $student->getId(),
                 name: trim($student->getFirstName() . ' ' . $student->getLastName()),

@@ -9,11 +9,12 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: StudentEnrollmentRepository::class)]
 #[ORM\Table(name: 'student_enrollments')]
-#[ORM\UniqueConstraint(name: 'uniq_enrollment_student_year', columns: ['student_id', 'academic_year_id'])]
+#[ORM\UniqueConstraint(name: 'uniq_enrollment_student_year_class', columns: ['student_id', 'academic_year_id', 'academic_class_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_enrollment_roll', columns: ['academic_year_id', 'academic_class_id', 'roll_number'])]
 class StudentEnrollment extends AbstractEntity
 {
@@ -31,6 +32,9 @@ class StudentEnrollment extends AbstractEntity
     #[ORM\ManyToOne(targetEntity: AcademicClass::class)]
     #[ORM\JoinColumn(name: 'academic_class_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
     private AcademicClass $academicClass;
+
+    #[ORM\Column(name: 'institute_id', type: 'uuid', nullable: true)]
+    private ?Uuid $instituteId = null;
 
     #[ORM\Column(length: 20, nullable: true)]
     private ?string $rollNumber = null;
@@ -115,6 +119,18 @@ class StudentEnrollment extends AbstractEntity
     public function setAdmissionNumber(string $admissionNumber): self
     {
         $this->admissionNumber = mb_strtoupper(trim($admissionNumber));
+
+        return $this;
+    }
+
+    public function getInstituteId(): ?Uuid
+    {
+        return $this->instituteId;
+    }
+
+    public function setInstituteId(?Uuid $instituteId): self
+    {
+        $this->instituteId = $instituteId;
 
         return $this;
     }

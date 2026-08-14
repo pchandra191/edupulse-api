@@ -31,6 +31,7 @@ readonly class CreateTeacherAssignmentRequestDTO
         public ?string $remarks = null,
 
         #[Assert\NotBlank]
+        #[Assert\Choice(choices: ['ACTIVE', 'INACTIVE', 'TRANSFERRED', 'ARCHIVED'])]
         public string $status = 'ACTIVE',
 
         #[Assert\Length(max: 36)]

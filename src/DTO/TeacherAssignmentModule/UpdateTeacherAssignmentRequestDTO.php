@@ -30,6 +30,7 @@ readonly class UpdateTeacherAssignmentRequestDTO
         public ?string $remarks = null,
 
         #[Assert\Length(max: 20)]
+        #[Assert\Choice(choices: ['ACTIVE', 'INACTIVE', 'TRANSFERRED', 'ARCHIVED'])]
         public ?string $status = null,
     ) {
     }

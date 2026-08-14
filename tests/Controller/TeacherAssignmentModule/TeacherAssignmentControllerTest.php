@@ -637,4 +637,83 @@ class TeacherAssignmentControllerTest extends WebTestCase
         $data = json_decode($response->getContent(), true);
         $this->assertStringContainsString('already exists', strtolower($data['message']));
     }
+
+    public function testSuperAdminCanCreateTeacherAssignmentWithTransferredStatus(): void
+    {
+        $client = $this->client;
+
+        $payload = json_encode([
+            'teacherId' => (string) $this->testTeacherId,
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'assignmentType' => 'SUBJECT_TEACHER',
+            'status' => 'TRANSFERRED',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/teacher-assignments', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(201, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('TRANSFERRED', $data['data']['status']);
+    }
+
+    public function testSuperAdminCanUpdateTeacherAssignmentToTransferredStatus(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $assignment = new TeacherAssignment();
+        $assignment->setTeacher($entityManager->getRepository(User::class)->find($this->testTeacherId));
+        $assignment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $assignment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $assignment->setAssignmentType('SUBJECT_TEACHER');
+        $assignment->setStatus(\App\Enum\TeacherAssignmentStatus::Active);
+        $entityManager->persist($assignment);
+        $entityManager->flush();
+
+        $payload = json_encode([
+            'status' => 'TRANSFERRED',
+        ]);
+
+        $client->request('PUT', '/api/v1/teacher-assignments/' . $assignment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('TRANSFERRED', $data['data']['status']);
+    }
+
+    public function testInvalidTeacherAssignmentStatusReturnsValidationError(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $assignment = new TeacherAssignment();
+        $assignment->setTeacher($entityManager->getRepository(User::class)->find($this->testTeacherId));
+        $assignment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $assignment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $assignment->setAssignmentType('SUBJECT_TEACHER');
+        $assignment->setStatus(\App\Enum\TeacherAssignmentStatus::Active);
+        $entityManager->persist($assignment);
+        $entityManager->flush();
+
+        $payload = json_encode([
+            'status' => 'INVALID_STATUS',
+        ]);
+
+        $client->request('PUT', '/api/v1/teacher-assignments/' . $assignment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(422, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertArrayHasKey('errors', $data);
+        $this->assertArrayHasKey('status', $data['errors']);
+    }
 }
