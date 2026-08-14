@@ -14,6 +14,7 @@ use App\Enum\AcademicYearStatus;
 use App\Enum\ClassStatus;
 use App\Enum\EnrollmentSectionStatus;
 use App\Enum\InstituteStatus;
+use App\Enum\SectionStatus;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -987,5 +988,55 @@ class StudentEnrollmentControllerTest extends WebTestCase
         $data = json_decode($client->getResponse()->getContent(), true);
         $this->assertTrue($data['success']);
         $this->assertSame('A11-UPDATE-Y2', $data['data']['admissionNumber']);
+    }
+
+    public function testSuperAdminCanUpdateEnrollmentSectionStatus(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $section = new Section();
+        $section->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $section->setCode('SEC' . substr(uniqid(), -6));
+        $section->setName('Test Section for Status');
+        $section->setStatus(\App\Enum\SectionStatus::Active);
+        $entityManager->persist($section);
+        $entityManager->flush();
+
+        $enrollment = new StudentEnrollment();
+        $enrollment->setStudent($entityManager->getRepository(User::class)->find($this->testStudentId));
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setInstituteId($this->testInstituteId);
+        $enrollment->setAdmissionNumber('ADM-SEC-STATUS-' . uniqid());
+        $enrollment->setAdmissionDate(new \DateTimeImmutable('2024-01-01'));
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $enrollmentSection = new EnrollmentSection();
+        $enrollmentSection->setStudentEnrollment($enrollment);
+        $enrollmentSection->setSection($section);
+        $enrollmentSection->setStatus(EnrollmentSectionStatus::Active);
+        $entityManager->persist($enrollmentSection);
+        $entityManager->flush();
+
+        $payload = json_encode([
+            'status' => 'LEFT',
+        ]);
+
+        $client->request('PUT', '/api/v1/student-enrollments/' . $enrollment->getId() . '/sections/' . $section->getId(), [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertStringContainsString('status updated', strtolower($data['message']));
+
+        $refreshedEnrollmentSection = $entityManager->getRepository(EnrollmentSection::class)->find($enrollmentSection->getId());
+        $this->assertNotNull($refreshedEnrollmentSection);
+        $this->assertSame(EnrollmentSectionStatus::Left->value, $refreshedEnrollmentSection->getStatus()->value);
     }
 }

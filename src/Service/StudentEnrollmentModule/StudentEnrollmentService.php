@@ -382,6 +382,39 @@ readonly class StudentEnrollmentService
         }
     }
 
+    public function updateEnrollmentSectionStatus(Uuid $enrollmentId, Uuid $sectionId, string $status, ?Uuid $instituteId): void
+    {
+        $enrollment = $this->studentEnrollmentRepository->findById($enrollmentId, $instituteId);
+
+        if (!$enrollment instanceof StudentEnrollment) {
+            throw new AuthenticationException('Student enrollment not found.');
+        }
+
+        $enrollmentSection = $this->enrollmentSectionRepository->findByEnrollmentAndSection($enrollmentId, $sectionId);
+
+        if (!$enrollmentSection instanceof EnrollmentSection) {
+            throw new AuthenticationException('Enrollment section not found.');
+        }
+
+        try {
+            $enrollmentSection->setStatus(EnrollmentSectionStatus::from($status));
+
+            if (EnrollmentSectionStatus::from($status) === EnrollmentSectionStatus::Left) {
+                $enrollmentSection->setLeftAt(new \DateTimeImmutable());
+            }
+
+            $this->entityManager->flush();
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to update enrollment section status.', [
+                'enrollment_id' => (string) $enrollmentId,
+                'section_id' => (string) $sectionId,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to update section status. Please try again.', previous: $e);
+        }
+    }
+
     private function updateFields(StudentEnrollment $enrollment, UpdateStudentEnrollmentRequestDTO $request): void
     {
         if ($request->rollNumber !== null && $request->rollNumber !== $enrollment->getRollNumber()) {

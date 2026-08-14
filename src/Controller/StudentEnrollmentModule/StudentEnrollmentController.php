@@ -9,6 +9,7 @@ use App\DTO\StudentEnrollmentModule\CreateEnrollmentSectionRequestDTO;
 use App\DTO\StudentEnrollmentModule\CreateStudentEnrollmentRequestDTO;
 use App\DTO\StudentEnrollmentModule\StudentEnrollmentFilterRequest;
 use App\DTO\StudentEnrollmentModule\StudentEnrollmentResponseDTO;
+use App\DTO\StudentEnrollmentModule\UpdateEnrollmentSectionRequestDTO;
 use App\DTO\StudentEnrollmentModule\UpdateStudentEnrollmentRequestDTO;
 use App\Entity\User;
 use App\Exception\AuthenticationException;
@@ -265,6 +266,46 @@ class StudentEnrollmentController extends AbstractApiController
         }
 
         return $this->success('Section removed from enrollment successfully.');
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/student-enrollments/{id}/sections/{sectionId}', name: 'student_enrollment_section_update', methods: ['PUT'])]
+    public function updateSectionStatus(string $id, string $sectionId, Request $request): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+
+        if (!is_array($data)) {
+            return $this->error('Invalid JSON payload.');
+        }
+
+        $updateRequest = new UpdateEnrollmentSectionRequestDTO(
+            status: (string) ($data['status'] ?? ''),
+        );
+
+        $errors = $this->validator->validate($updateRequest);
+
+        if (count($errors) > 0) {
+            $formattedErrors = [];
+
+            foreach ($errors as $error) {
+                $formattedErrors[$error->getPropertyPath()][] = $error->getMessage();
+            }
+
+            return $this->unprocessableEntity('Validation failed.', $formattedErrors);
+        }
+
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $this->studentEnrollmentService->updateEnrollmentSectionStatus($this->parseUuid($id), $this->parseUuid($sectionId), $updateRequest->status, $instituteId);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            return $this->unprocessableEntity($e->getMessage());
+        }
+
+        return $this->success('Section status updated successfully.');
     }
 
     private function getCurrentInstituteId(): ?Uuid

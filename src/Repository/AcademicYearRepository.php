@@ -53,15 +53,26 @@ class AcademicYearRepository extends ServiceEntityRepository
         $this->applySearch($qb, $search);
         $this->applySorting($qb, $sortBy, $sortOrder);
 
-        $totalItems = $this->getTotalCount($qb);
+        $qb->setFirstResult(null)
+           ->setMaxResults(null);
 
-        $offset = ($page - 1) * $limit;
-        $qb->setFirstResult($offset)
-           ->setMaxResults($limit);
+        $allItems = $qb->getQuery()->getResult();
 
-        $items = $qb->getQuery()->getResult();
+        $searchLower = mb_strtolower(trim($search ?? ''));
 
+        if ($searchLower !== '') {
+            $allItems = array_filter($allItems, function (AcademicYear $item) use ($searchLower): bool {
+                $startDate = $item->getStartDate()->format('Y-m-d');
+                $endDate = $item->getEndDate()->format('Y-m-d');
+                $searchable = strtolower($item->getName() . ' ' . $item->getCode() . ' ' . $startDate . ' ' . $endDate);
+                return str_contains($searchable, $searchLower);
+            });
+        }
+
+        $totalItems = count($allItems);
         $totalPages = $limit > 0 ? (int) ceil($totalItems / $limit) : 0;
+        $offset = ($page - 1) * $limit;
+        $items = array_slice($allItems, $offset, $limit);
 
         return [
             'items' => $items,
