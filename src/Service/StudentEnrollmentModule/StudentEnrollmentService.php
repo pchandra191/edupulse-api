@@ -29,6 +29,7 @@ use App\Repository\EnrollmentSectionRepository;
 use App\Repository\InstituteRepository;
 use App\Repository\StudentEnrollmentRepository;
 use DateTimeInterface;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -123,7 +124,7 @@ readonly class StudentEnrollmentService
         }
 
         if ($this->studentEnrollmentRepository->hasActiveEnrollment($student->getId(), $academicYear->getId(), $academicClass->getId())) {
-            throw new \App\Common\Exception\BusinessException('Student already has an enrollment for this academic year.');
+            throw new \App\Common\Exception\BusinessException('Student already has an enrollment for this academic year and class.');
         }
 
         if ($request->rollNumber !== null && $request->rollNumber !== '') {
@@ -160,6 +161,28 @@ readonly class StudentEnrollmentService
             $this->entityManager->commit();
 
             return $this->mapToResponse($enrollment);
+        } catch (UniqueConstraintViolationException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            $this->logger->error('Unique constraint violation during student enrollment creation.', [
+                'student_id' => $request->studentId,
+                'error' => $e->getMessage(),
+            ]);
+
+            $message = $e->getMessage();
+            if (str_contains($message, 'uniq_enrollment_admission')) {
+                throw new \App\Common\Exception\BusinessException('Admission number already exists for this institute in the selected academic year.', previous: $e);
+            }
+            if (str_contains($message, 'uniq_enrollment_roll')) {
+                throw new \App\Common\Exception\BusinessException('Roll number already exists for this class in the selected academic year.', previous: $e);
+            }
+            if (str_contains($message, 'uniq_enrollment_student_year_class')) {
+                throw new \App\Common\Exception\BusinessException('Student already has an enrollment for this academic year and class.', previous: $e);
+            }
+
+            throw new \App\Common\Exception\BusinessException('Failed to create student enrollment due to a data conflict. Please check the data and try again.', previous: $e);
         } catch (\Throwable $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -195,6 +218,28 @@ readonly class StudentEnrollmentService
             $this->entityManager->commit();
 
             return $this->mapToResponse($enrollment);
+        } catch (UniqueConstraintViolationException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            $this->logger->error('Unique constraint violation during student enrollment update.', [
+                'enrollment_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $message = $e->getMessage();
+            if (str_contains($message, 'uniq_enrollment_admission')) {
+                throw new \App\Common\Exception\BusinessException('Admission number already exists for this institute in the selected academic year.', previous: $e);
+            }
+            if (str_contains($message, 'uniq_enrollment_roll')) {
+                throw new \App\Common\Exception\BusinessException('Roll number already exists for this class in the selected academic year.', previous: $e);
+            }
+            if (str_contains($message, 'uniq_enrollment_student_year_class')) {
+                throw new \App\Common\Exception\BusinessException('Student already has an enrollment for this academic year and class.', previous: $e);
+            }
+
+            throw new \App\Common\Exception\BusinessException('Failed to update student enrollment due to a data conflict. Please check the data and try again.', previous: $e);
         } catch (\Throwable $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
