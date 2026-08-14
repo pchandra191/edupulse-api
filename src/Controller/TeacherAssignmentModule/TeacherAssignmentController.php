@@ -74,6 +74,7 @@ class TeacherAssignmentController extends AbstractApiController
             assignmentType: (string) ($data['assignmentType'] ?? 'SUBJECT_TEACHER'),
             remarks: $data['remarks'] ?? null,
             status: (string) ($data['status'] ?? 'ACTIVE'),
+            instituteId: $data['instituteId'] ?? null,
         );
 
         $errors = $this->validator->validate($createRequest);
@@ -90,6 +91,19 @@ class TeacherAssignmentController extends AbstractApiController
 
         try {
             $instituteId = $this->getCurrentInstituteId();
+
+            if ($instituteId === null) {
+                if (!$createRequest->instituteId) {
+                    return $this->unprocessableEntity('Validation failed.', ['instituteId' => ['Institute ID is required.']]);
+                }
+
+                try {
+                    $instituteId = new Uuid($createRequest->instituteId);
+                } catch (\InvalidArgumentException $e) {
+                    return $this->unprocessableEntity('Validation failed.', ['instituteId' => ['Invalid UUID format.']]);
+                }
+            }
+
             $assignment = $this->teacherAssignmentService->createTeacherAssignment($instituteId, $createRequest);
         } catch (AuthenticationException $e) {
             return $this->notFound();

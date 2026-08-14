@@ -8,7 +8,9 @@ use App\Entity\AcademicClass;
 readonly class SectionResponseDTO
 {
     public function __construct(
+        public ?InstituteResponse $institute,
         public string $id,
+        public ?AcademicYearResponse $academicYear,
         public string $academicClassId,
         public ?AcademicClassResponse $academicClass,
         public string $name,
@@ -18,6 +20,24 @@ readonly class SectionResponseDTO
         public string $status,
         public string $createdAt,
         public ?string $updatedAt,
+    ) {
+    }
+}
+
+readonly class InstituteResponse
+{
+    public function __construct(
+        public string $id,
+        public string $name,
+    ) {
+    }
+}
+
+readonly class AcademicYearResponse
+{
+    public function __construct(
+        public string $id,
+        public string $name,
     ) {
     }
 }

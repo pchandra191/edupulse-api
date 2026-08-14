@@ -1,0 +1,32 @@
+EXPECTED INSTITUTE: 019ffbe8-9994-7d94-bed2-d8d68422cf60
+Array
+(
+    [institute] => Array
+        (
+            [id] => 019ffbe8-9994-7d94-bed2-d8d68422cf60
+            [name] => Test Institute for Sections
+        )
+
+    [id] => 019ffbe8-9bad-7c23-b17d-56d73610889d
+    [academicYear] => Array
+        (
+            [id] => 019ffbe8-9994-7dd8-bed2-d8d684588304
+            [name] => Test Academic Year 6a7dedb8b0f80
+        )
+
+    [academicClassId] => 019ffbe8-99ca-7480-8847-1dc4c09b1190
+    [academicClass] => Array
+        (
+            [id] => 019ffbe8-99ca-7480-8847-1dc4c09b1190
+            [name] => Test Class 6a7dedb8b0f80
+        )
+
+    [name] => Test Section
+    [code] => TS01
+    [capacity] => 
+    [description] => 
+    [status] => ACTIVE
+    [createdAt] => 2026-08-13T16:15:53+00:00
+    [updatedAt] => 2026-08-13T16:15:53+00:00
+)
+

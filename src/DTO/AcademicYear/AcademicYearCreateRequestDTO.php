@@ -26,6 +26,9 @@ readonly class AcademicYearCreateRequestDTO
 
         #[Assert\Length(max: 500)]
         public ?string $description = null,
+
+        #[Assert\Length(max: 36)]
+        public ?string $instituteId = null,
     ) {
     }
 }

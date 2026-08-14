@@ -127,14 +127,15 @@ class StudentEnrollmentRepository extends ServiceEntityRepository
         return (int) $qb->getQuery()->getSingleScalarResult() > 0;
     }
 
-    public function admissionNumberExistsForInstitute(string $admissionNumber, Uuid $instituteId, ?Uuid $excludeId = null): bool
+    public function admissionNumberExistsForInstitute(string $admissionNumber, Uuid $instituteId, Uuid $academicYearId, ?Uuid $excludeId = null): bool
     {
         $qb = $this->createQueryBuilder('se')
-            ->innerJoin('se.academicClass', 'c')
             ->select('COUNT(se.id)')
-            ->where('c.institute = :institute')
+            ->where('se.instituteId = :institute')
+            ->andWhere('se.academicYear = :academicYear')
             ->andWhere('se.admissionNumber = :admissionNumber')
             ->setParameter('institute', $instituteId)
+            ->setParameter('academicYear', $academicYearId)
             ->setParameter('admissionNumber', mb_strtoupper($admissionNumber));
 
         if (null !== $excludeId) {
@@ -145,14 +146,16 @@ class StudentEnrollmentRepository extends ServiceEntityRepository
         return (int) $qb->getQuery()->getSingleScalarResult() > 0;
     }
 
-    public function hasActiveEnrollment(Uuid $studentId, Uuid $academicYearId): bool
+    public function hasActiveEnrollment(Uuid $studentId, Uuid $academicYearId, Uuid $academicClassId): bool
     {
         return (bool) $this->createQueryBuilder('se')
             ->select('COUNT(se.id)')
             ->where('se.student = :student')
             ->andWhere('se.academicYear = :academicYear')
+            ->andWhere('se.academicClass = :class')
             ->setParameter('student', $studentId)
             ->setParameter('academicYear', $academicYearId)
+            ->setParameter('class', $academicClassId)
             ->getQuery()
             ->getSingleScalarResult();
     }

@@ -7,6 +7,7 @@ readonly class TeacherAssignmentResponseDTO
 {
     public function __construct(
         public string $id,
+        public ?InstituteResponse $institute,
         public TeacherResponse $teacher,
         public AcademicYearResponse $academicYear,
         public AcademicClassResponse $academicClass,
@@ -17,6 +18,15 @@ readonly class TeacherAssignmentResponseDTO
         public string $status,
         public string $createdAt,
         public ?string $updatedAt,
+    ) {
+    }
+}
+
+readonly class InstituteResponse
+{
+    public function __construct(
+        public string $id,
+        public string $name,
     ) {
     }
 }

@@ -45,6 +45,10 @@ readonly class UserService
     {
         [$instituteId, $excludeSuperAdmin] = $this->getTenantRestrictions();
 
+        if ($instituteId === null && $filter->instituteId !== null) {
+            $instituteId = $filter->instituteId;
+        }
+
         $result = $this->userRepository->findPaginated(
             $filter,
             $instituteId,

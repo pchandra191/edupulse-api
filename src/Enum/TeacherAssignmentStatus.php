@@ -7,5 +7,6 @@ enum TeacherAssignmentStatus: string
 {
     case Active = 'ACTIVE';
     case Inactive = 'INACTIVE';
+    case Transferred = 'TRANSFERRED';
     case Archived = 'ARCHIVED';
 }

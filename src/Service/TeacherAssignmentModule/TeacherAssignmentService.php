@@ -6,6 +6,7 @@ namespace App\Service\TeacherAssignmentModule;
 use App\DTO\TeacherAssignmentModule\AcademicClassResponse;
 use App\DTO\TeacherAssignmentModule\AcademicYearResponse;
 use App\DTO\TeacherAssignmentModule\CreateTeacherAssignmentRequestDTO;
+use App\DTO\TeacherAssignmentModule\InstituteResponse;
 use App\DTO\TeacherAssignmentModule\SectionResponse;
 use App\DTO\TeacherAssignmentModule\SubjectResponse;
 use App\DTO\TeacherAssignmentModule\TeacherAssignmentFilterRequest;
@@ -321,9 +322,14 @@ readonly class TeacherAssignmentService
         $academicClass = $assignment->getAcademicClass();
         $section = $assignment->getSection();
         $subject = $assignment->getSubject();
+        $institute = $academicYear->getInstitute();
 
         return new TeacherAssignmentResponseDTO(
             id: (string) $assignment->getId(),
+            institute: new InstituteResponse(
+                id: (string) $institute->getId(),
+                name: $institute->getName(),
+            ),
             teacher: new TeacherResponse(
                 id: (string) $teacher->getId(),
                 name: trim($teacher->getFirstName() . ' ' . $teacher->getLastName()),

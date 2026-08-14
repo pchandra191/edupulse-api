@@ -39,6 +39,7 @@ class UserController extends AbstractApiController
             role: $request->query->get('role'),
             status: $request->query->get('status'),
             department: $request->query->get('department'),
+            instituteId: $request->query->get('instituteId'),
             page: max(1, (int) $request->query->get('page', 1)),
             limit: max(1, min(100, (int) $request->query->get('limit', 10))),
             sortBy: $request->query->get('sortBy', 'firstName'),

@@ -14,6 +14,7 @@ readonly class StudentEnrollmentResponseDTO
 {
     public function __construct(
         public string $id,
+        public ?InstituteResponse $institute,
         public StudentResponse $student,
         public AcademicYearResponse $academicYear,
         public AcademicClassResponse $academicClass,
@@ -26,6 +27,15 @@ readonly class StudentEnrollmentResponseDTO
         public array $sections,
         public string $createdAt,
         public ?string $updatedAt,
+    ) {
+    }
+}
+
+readonly class InstituteResponse
+{
+    public function __construct(
+        public string $id,
+        public string $name,
     ) {
     }
 }
