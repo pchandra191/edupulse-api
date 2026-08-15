@@ -50,7 +50,7 @@ class InstituteRepository extends ServiceEntityRepository
     public function findActiveOptions(): array
     {
         $qb = $this->createQueryBuilder('i')
-            ->select('i.id, i.name, i.code, i.email, i.phone, i.website, i.logo, i.addressLine1, i.addressLine2, i.city, i.state, i.country, i.postalCode, i.timezone, i.currency, i.status, i.createdAt, i.updatedAt')
+            ->select('i.id, i.name, i.code, i.email, i.phone, i.website, i.logo, i.addressLine1, i.addressLine2, i.city, i.state, i.country, i.postalCode, i.timezone, i.currency, i.status, i.onboardingCompletedAt, i.createdAt, i.updatedAt')
             ->where('i.status = :status')
             ->setParameter('status', 'ACTIVE')
             ->orderBy('i.name', 'ASC');

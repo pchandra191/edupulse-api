@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Entity\Institute;
+use App\Enum\TeacherDepartment;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Repository\UserRepository;
@@ -40,6 +41,7 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
     private ?string $phone = null;
 
     #[ORM\Column(length: 100, nullable: true)]
+    #[Assert\Choice(choices: ['SCIENCE', 'MATHEMATICS', 'COMMERCE', 'HUMANITIES', 'SOCIAL_SCIENCE', 'ENGLISH', 'LANGUAGES', 'COMPUTER_SCIENCE', 'INFORMATION_TECHNOLOGY', 'PHYSICAL_EDUCATION', 'ADMINISTRATION', 'OTHER'])]
     private ?string $department = null;
 
     #[ORM\Column(type: Types::STRING, length: 20)]
@@ -164,14 +166,22 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
         return $this;
     }
 
-    public function getDepartment(): ?string
+    public function getDepartment(): ?TeacherDepartment
     {
-        return $this->department;
+        if (null === $this->department) {
+            return null;
+        }
+
+        try {
+            return TeacherDepartment::from($this->department);
+        } catch (\ValueError) {
+            return null;
+        }
     }
 
-    public function setDepartment(?string $department): self
+    public function setDepartment(?TeacherDepartment $department): self
     {
-        $this->department = $department !== null ? trim($department) : null;
+        $this->department = $department?->value;
 
         return $this;
     }

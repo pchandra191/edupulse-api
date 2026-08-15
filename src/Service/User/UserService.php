@@ -16,6 +16,7 @@ use App\Common\Exception\BusinessException;
 use App\Entity\Institute;
 use App\Entity\User;
 use App\Enum\InstituteStatus;
+use App\Enum\TeacherDepartment;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Exception\AuthenticationException;
@@ -276,7 +277,9 @@ readonly class UserService
         $user->setFirstName($request->firstName);
         $user->setLastName($request->lastName);
         $user->setPhone($request->phone);
-        $user->setDepartment($request->department);
+        $user->setDepartment(
+            null !== $request->department ? TeacherDepartment::from($request->department) : null
+        );
         $user->setRoles($request->roles);
         $user->setStatus(UserStatus::Active);
 
@@ -291,7 +294,7 @@ readonly class UserService
             firstName: $user->getFirstName(),
             lastName: $user->getLastName(),
             phone: $user->getPhone(),
-            department: $user->getDepartment(),
+            department: $user->getDepartment()?->value,
             roles: $user->getRoles(),
             status: $user->getStatus(),
             isVerified: $user->isVerified(),
@@ -387,7 +390,9 @@ readonly class UserService
         }
 
         if ($request->department !== null) {
-            $user->setDepartment($request->department);
+            $user->setDepartment(
+                null !== $request->department ? TeacherDepartment::from($request->department) : null
+            );
         }
 
         if ($request->status !== null) {

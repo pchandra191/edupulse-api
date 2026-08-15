@@ -7,6 +7,8 @@ use App\DTO\Institute\InstituteProfileResponseDTO;
 use App\DTO\Institute\InstituteProfileUpdateRequestDTO;
 use App\Entity\Institute;
 use App\Entity\User;
+use App\Enum\Currency;
+use App\Enum\Timezone;
 use App\Exception\AuthenticationException;
 use App\Repository\InstituteRepository;
 use DateTimeInterface;
@@ -123,12 +125,16 @@ readonly class InstituteProfileService
             $institute->setPostalCode($request->postalCode);
         }
 
-        if ($request->timezone !== $institute->getTimezone()) {
-            $institute->setTimezone($request->timezone);
+        if ($request->timezone !== ($institute->getTimezone()?->value ?? null)) {
+            $institute->setTimezone(
+                null !== $request->timezone ? Timezone::from($request->timezone) : null
+            );
         }
 
-        if ($request->currency !== $institute->getCurrency()) {
-            $institute->setCurrency($request->currency);
+        if ($request->currency !== ($institute->getCurrency()?->value ?? null)) {
+            $institute->setCurrency(
+                null !== $request->currency ? Currency::from($request->currency) : null
+            );
         }
     }
 
@@ -148,9 +154,11 @@ readonly class InstituteProfileService
             state: $institute->getState(),
             country: $institute->getCountry(),
             postalCode: $institute->getPostalCode(),
-            timezone: $institute->getTimezone(),
-            currency: $institute->getCurrency(),
+            timezone: $institute->getTimezone()?->value,
+            currency: $institute->getCurrency()?->value,
             status: $institute->getStatus()->value,
+            onboardingCompleted: $institute->isOnboardingCompleted(),
+            onboardingCompletedAt: $institute->getOnboardingCompletedAt()?->format(DateTimeInterface::ATOM),
             createdAt: $institute->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $institute->getUpdatedAt()?->format(DateTimeInterface::ATOM),
         );
