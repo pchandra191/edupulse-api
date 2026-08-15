@@ -22,6 +22,8 @@ readonly class InstituteProfileResponseDTO
         public ?string $timezone,
         public ?string $currency,
         public string $status,
+        public bool $onboardingCompleted,
+        public ?string $onboardingCompletedAt,
         public string $createdAt,
         public ?string $updatedAt,
     ) {

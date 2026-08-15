@@ -11,6 +11,8 @@ use App\DTO\Response\InstituteListResponse;
 use App\Common\Exception\BusinessException;
 use App\Repository\InstituteRepository;
 use App\Entity\Institute;
+use App\Enum\Currency;
+use App\Enum\Timezone;
 use App\Exception\AuthenticationException;
 use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -60,6 +62,8 @@ readonly class InstituteService
                     timezone: isset($row['timezone']) ? (string) $row['timezone'] : null,
                     currency: isset($row['currency']) ? (string) $row['currency'] : null,
                     status: (string) $row['status'],
+                    onboardingCompleted: null !== $row['onboardingCompletedAt'],
+                    onboardingCompletedAt: $row['onboardingCompletedAt'] instanceof DateTimeInterface ? $row['onboardingCompletedAt']->format(DateTimeInterface::ATOM) : null,
                     createdAt: (string) $createdAt,
                     updatedAt: $updatedAt !== null ? (string) $updatedAt : null,
                 );
@@ -128,6 +132,35 @@ readonly class InstituteService
             ]);
 
             throw new BusinessException('Failed to update institute. Please try again.', previous: $e);
+        }
+    }
+
+    public function completeOnboarding(Uuid $id): InstituteProfileResponseDTO
+    {
+        $institute = $this->instituteRepository->findById((string) $id);
+
+        if (!$institute instanceof Institute) {
+            throw new AuthenticationException('Institute not found.');
+        }
+
+        try {
+            $this->entityManager->beginTransaction();
+            $institute->setOnboardingCompletedAt(new \DateTimeImmutable());
+            $this->entityManager->flush();
+            $this->entityManager->commit();
+
+            return $this->mapToProfileResponse($institute);
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            $this->logger->error('Failed to complete institute onboarding.', [
+                'institute_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new BusinessException('Failed to complete onboarding. Please try again.', previous: $e);
         }
     }
 
@@ -207,12 +240,16 @@ readonly class InstituteService
             $institute->setPostalCode($request->postalCode);
         }
 
-        if ($request->timezone !== $institute->getTimezone()) {
-            $institute->setTimezone($request->timezone);
+        if ($request->timezone !== ($institute->getTimezone()?->value ?? null)) {
+            $institute->setTimezone(
+                null !== $request->timezone ? Timezone::from($request->timezone) : null
+            );
         }
 
-        if ($request->currency !== $institute->getCurrency()) {
-            $institute->setCurrency($request->currency);
+        if ($request->currency !== ($institute->getCurrency()?->value ?? null)) {
+            $institute->setCurrency(
+                null !== $request->currency ? Currency::from($request->currency) : null
+            );
         }
     }
 
@@ -232,9 +269,11 @@ readonly class InstituteService
             state: $institute->getState(),
             country: $institute->getCountry(),
             postalCode: $institute->getPostalCode(),
-            timezone: $institute->getTimezone(),
-            currency: $institute->getCurrency(),
+            timezone: $institute->getTimezone()?->value,
+            currency: $institute->getCurrency()?->value,
             status: $institute->getStatus()->value,
+            onboardingCompleted: $institute->isOnboardingCompleted(),
+            onboardingCompletedAt: $institute->getOnboardingCompletedAt()?->format(DateTimeInterface::ATOM),
             createdAt: $institute->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $institute->getUpdatedAt()?->format(DateTimeInterface::ATOM),
         );
@@ -256,9 +295,11 @@ readonly class InstituteService
             state: $institute->getState(),
             country: $institute->getCountry(),
             postalCode: $institute->getPostalCode(),
-            timezone: $institute->getTimezone(),
-            currency: $institute->getCurrency(),
+            timezone: $institute->getTimezone()?->value,
+            currency: $institute->getCurrency()?->value,
             status: $institute->getStatus()->value,
+            onboardingCompleted: $institute->isOnboardingCompleted(),
+            onboardingCompletedAt: $institute->getOnboardingCompletedAt()?->format(DateTimeInterface::ATOM),
             createdAt: $institute->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $institute->getUpdatedAt()?->format(DateTimeInterface::ATOM),
         );

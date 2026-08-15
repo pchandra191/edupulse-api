@@ -9,6 +9,9 @@ use App\DTO\Institute\InstituteFilterRequest;
 use App\DTO\Institute\InstituteOptionResponse;
 use App\DTO\Institute\InstituteProfileResponseDTO;
 use App\DTO\Institute\InstituteProfileUpdateRequestDTO;
+use App\Entity\User;
+use App\Enum\Currency;
+use App\Enum\Timezone;
 use App\Exception\AuthenticationException;
 use App\Common\Exception\BusinessException;
 use App\Service\Institute\InstituteService;
@@ -16,14 +19,17 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Component\Security\Http\Attribute\Security;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Uid\Uuid;
+use Symfony\Bundle\SecurityBundle\Security as SecurityService;
 
 class InstituteController extends AbstractApiController
 {
     public function __construct(
         private InstituteService $instituteService,
         private ValidatorInterface $validator,
+        private SecurityService $security,
         ApiResponseFactory $responseFactory,
     ) {
         parent::__construct($responseFactory);
@@ -115,6 +121,83 @@ class InstituteController extends AbstractApiController
         }
 
         return $this->updated('Institute updated successfully.', $institute);
+    }
+
+    #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/institutes/{id}/onboarding/complete', name: 'institute_onboarding_complete', methods: ['POST'])]
+    public function completeOnboarding(string $id): JsonResponse
+    {
+        $instituteId = $this->parseUuid($id);
+
+        if (!$this->security->isGranted('ROLE_SUPER_ADMIN')) {
+            $user = $this->security->getUser();
+
+            if (!$user instanceof User) {
+                return $this->accessDenied('You do not have permission to modify this institute.');
+            }
+
+            $userInstituteId = $user->getInstitute()?->getId();
+
+            if ((string) $userInstituteId !== (string) $instituteId) {
+                return $this->accessDenied('You do not have permission to modify this institute.');
+            }
+        }
+
+        try {
+            $institute = $this->instituteService->completeOnboarding($instituteId);
+        } catch (AuthenticationException $e) {
+            return $this->notFound($e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error($e->getMessage());
+        }
+
+        return $this->success('Onboarding completed successfully.', $institute);
+    }
+
+    #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/currencies', name: 'currency_list', methods: ['GET'])]
+    public function currencies(): JsonResponse
+    {
+        $currencies = array_map(
+            fn (Currency $currency) => [
+                'id' => $currency->value,
+                'code' => $currency->value,
+                'name' => match ($currency) {
+                    Currency::INR => 'Indian Rupee',
+                    Currency::USD => 'US Dollar',
+                    Currency::EUR => 'Euro',
+                    Currency::GBP => 'British Pound',
+                    Currency::AED => 'UAE Dirham',
+                    Currency::SGD => 'Singapore Dollar',
+                },
+            ],
+            Currency::cases()
+        );
+
+        return $this->success('Currencies retrieved successfully.', $currencies);
+    }
+
+    #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/timezones', name: 'timezone_list', methods: ['GET'])]
+    public function timezones(): JsonResponse
+    {
+        $timezones = array_map(
+            fn (Timezone $timezone) => [
+                'id' => $timezone->value,
+                'code' => $timezone->value,
+                'name' => match ($timezone) {
+                    Timezone::INR => 'India',
+                    Timezone::USD => 'United States',
+                    Timezone::EUR => 'Germany',
+                    Timezone::GBP => 'United Kingdom',
+                    Timezone::AED => 'United Arab Emirates',
+                    Timezone::SGD => 'Singapore',
+                },
+            ],
+            Timezone::cases()
+        );
+
+        return $this->success('Timezones retrieved successfully.', $timezones);
     }
 
     private function parseUuid(string $id): Uuid

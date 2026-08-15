@@ -1,24 +1,24 @@
-EXPECTED INSTITUTE: 019ffbe8-9994-7d94-bed2-d8d68422cf60
+EXPECTED INSTITUTE: 01a0072c-49d0-7ed6-8f55-972e69311c3f
 Array
 (
     [institute] => Array
         (
-            [id] => 019ffbe8-9994-7d94-bed2-d8d68422cf60
+            [id] => 01a0072c-49d0-7ed6-8f55-972e69311c3f
             [name] => Test Institute for Sections
         )
 
-    [id] => 019ffbe8-9bad-7c23-b17d-56d73610889d
+    [id] => 01a0072c-4c0a-79b9-8a01-9e982bd3197a
     [academicYear] => Array
         (
-            [id] => 019ffbe8-9994-7dd8-bed2-d8d684588304
-            [name] => Test Academic Year 6a7dedb8b0f80
+            [id] => 01a0072c-49d0-7f3a-8f55-972e697d8a22
+            [name] => Test Academic Year 6a80cff21f7ae
         )
 
-    [academicClassId] => 019ffbe8-99ca-7480-8847-1dc4c09b1190
+    [academicClassId] => 01a0072c-4a12-7416-ab27-4b97613a2e33
     [academicClass] => Array
         (
-            [id] => 019ffbe8-99ca-7480-8847-1dc4c09b1190
-            [name] => Test Class 6a7dedb8b0f80
+            [id] => 01a0072c-4a12-7416-ab27-4b97613a2e33
+            [name] => Test Class 6a80cff21f7ae
         )
 
     [name] => Test Section
@@ -26,7 +26,7 @@ Array
     [capacity] => 
     [description] => 
     [status] => ACTIVE
-    [createdAt] => 2026-08-13T16:15:53+00:00
-    [updatedAt] => 2026-08-13T16:15:53+00:00
+    [createdAt] => 2026-08-15T20:45:39+00:00
+    [updatedAt] => 2026-08-15T20:45:39+00:00
 )
 

@@ -6,7 +6,9 @@ namespace App\Entity;
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
 use App\Entity\Subject;
+use App\Enum\Currency;
 use App\Enum\InstituteStatus;
+use App\Enum\Timezone;
 use App\Repository\InstituteRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -78,15 +80,20 @@ class Institute extends AbstractEntity
     private ?string $postalCode = null;
 
     #[Assert\Length(max: 100)]
+    #[Assert\Choice(choices: ['Asia/Kolkata', 'America/New_York', 'Europe/Berlin', 'Europe/London', 'Asia/Dubai', 'Asia/Singapore'])]
     #[ORM\Column(length: 100, nullable: true)]
     private ?string $timezone = null;
 
     #[Assert\Length(max: 3)]
-    #[ORM\Column(length: 3, nullable: true)]
+    #[Assert\Choice(choices: ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'])]
+    #[ORM\Column(type: Types::STRING, length: 3, nullable: true)]
     private ?string $currency = null;
 
     #[ORM\Column(type: Types::STRING, length: 20)]
     private string $status = InstituteStatus::Active->value;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeInterface $onboardingCompletedAt = null;
 
     #[ORM\OneToMany(mappedBy: 'institute', targetEntity: User::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $users;
@@ -253,26 +260,26 @@ class Institute extends AbstractEntity
         return $this;
     }
 
-    public function getTimezone(): ?string
+    public function getTimezone(): ?Timezone
     {
-        return $this->timezone;
+        return null !== $this->timezone ? Timezone::from($this->timezone) : null;
     }
 
-    public function setTimezone(?string $timezone): self
+    public function setTimezone(?Timezone $timezone): self
     {
-        $this->timezone = $timezone !== null ? trim($timezone) : null;
+        $this->timezone = $timezone?->value;
 
         return $this;
     }
 
-    public function getCurrency(): ?string
+    public function getCurrency(): ?Currency
     {
-        return $this->currency;
+        return null !== $this->currency ? Currency::from($this->currency) : null;
     }
 
-    public function setCurrency(?string $currency): self
+    public function setCurrency(?Currency $currency): self
     {
-        $this->currency = $currency !== null ? trim($currency) : null;
+        $this->currency = $currency?->value;
 
         return $this;
     }
@@ -292,6 +299,23 @@ class Institute extends AbstractEntity
     public function isActive(): bool
     {
         return $this->status === InstituteStatus::Active->value;
+    }
+
+    public function getOnboardingCompletedAt(): ?\DateTimeInterface
+    {
+        return $this->onboardingCompletedAt;
+    }
+
+    public function setOnboardingCompletedAt(?\DateTimeInterface $onboardingCompletedAt): self
+    {
+        $this->onboardingCompletedAt = $onboardingCompletedAt;
+
+        return $this;
+    }
+
+    public function isOnboardingCompleted(): bool
+    {
+        return null !== $this->onboardingCompletedAt;
     }
 
     public function getUsers(): Collection

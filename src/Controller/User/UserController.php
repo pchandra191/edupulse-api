@@ -11,6 +11,7 @@ use App\DTO\User\UpdateUserRequest;
 use App\DTO\User\UserFilterRequest;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
+use App\Enum\TeacherDepartment;
 use App\Exception\AuthenticationException;
 use App\Common\Exception\BusinessException;
 use App\Service\User\UserService;
@@ -207,6 +208,22 @@ class UserController extends AbstractApiController
         $this->userService->resetPassword($this->parseUuid($id), $resetRequest);
 
         return $this->success('Password reset successfully.');
+    }
+
+    #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/departments', name: 'department_list', methods: ['GET'])]
+    public function departments(): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $departments = array_map(
+            fn (TeacherDepartment $department) => [
+                'id' => $department->value,
+                'code' => $department->value,
+                'name' => $department->getLabel(),
+            ],
+            TeacherDepartment::cases()
+        );
+
+        return $this->success('Departments retrieved successfully.', $departments);
     }
 
     private function parseUuid(string $id): Uuid
