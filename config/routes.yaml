@@ -51,3 +51,8 @@ student_enrollment_api:
     resource: '../src/Controller/StudentEnrollmentModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+examination_api:
+    resource: '../src/Controller/ExaminationModule/'
+    type: attribute
+    prefix: /api/%app.api_version%

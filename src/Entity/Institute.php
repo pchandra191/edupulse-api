@@ -107,6 +107,9 @@ class Institute extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'institute', targetEntity: Subject::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $subjects;
 
+    #[ORM\OneToMany(mappedBy: 'institute', targetEntity: Examination::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $examinations;
+
     public function __construct()
     {
         parent::__construct();
@@ -114,6 +117,7 @@ class Institute extends AbstractEntity
         $this->academicYears = new ArrayCollection();
         $this->classes = new ArrayCollection();
         $this->subjects = new ArrayCollection();
+        $this->examinations = new ArrayCollection();
     }
 
     public function getName(): string
@@ -416,6 +420,32 @@ class Institute extends AbstractEntity
         if ($this->subjects->removeElement($subject)) {
             if ($subject->getInstitute() === $this) {
                 $subject->setInstitute(new Institute());
+            }
+        }
+
+        return $this;
+    }
+
+    public function getExaminations(): Collection
+    {
+        return $this->examinations;
+    }
+
+    public function addExamination(Examination $examination): self
+    {
+        if (!$this->examinations->contains($examination)) {
+            $this->examinations[] = $examination;
+            $examination->setInstitute($this);
+        }
+
+        return $this;
+    }
+
+    public function removeExamination(Examination $examination): self
+    {
+        if ($this->examinations->removeElement($examination)) {
+            if ($examination->getInstitute() === $this) {
+                $examination->setInstitute(new Institute());
             }
         }
 
