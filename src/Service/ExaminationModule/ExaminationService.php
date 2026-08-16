@@ -346,8 +346,7 @@ readonly class ExaminationService
         $duration = $request->duration;
 
         if ($startTime !== null && $endTime !== null && $duration === null) {
-            $durationMinutes = $endTime->getTimestamp() - $startTime->getTimestamp();
-            $duration = (int) round($durationMinutes / 60);
+            $duration = $this->calculateDurationInMinutes($startTime, $endTime);
         }
 
         if ($startTime === null && $endTime === null && ($duration === null || $duration <= 0)) {
@@ -621,8 +620,7 @@ readonly class ExaminationService
         $duration = $request->duration;
 
         if ($startTime !== null && $endTime !== null && $duration === null) {
-            $durationMinutes = $endTime->getTimestamp() - $startTime->getTimestamp();
-            $duration = (int) round($durationMinutes / 60);
+            $duration = $this->calculateDurationInMinutes($startTime, $endTime);
         }
 
         if ($duration !== null && $duration !== $examSubject->getDuration()) {
@@ -713,5 +711,13 @@ readonly class ExaminationService
             createdAt: $examSubject->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $examSubject->getUpdatedAt()?->format(DateTimeInterface::ATOM),
         );
+    }
+
+    private function calculateDurationInMinutes(\DateTimeImmutable $startTime, \DateTimeImmutable $endTime): int
+    {
+        $startMinutes = (int) $startTime->format('H') * 60 + (int) $startTime->format('i');
+        $endMinutes = (int) $endTime->format('H') * 60 + (int) $endTime->format('i');
+
+        return $endMinutes - $startMinutes;
     }
 }
