@@ -230,8 +230,8 @@ class ExaminationController extends AbstractApiController
             startTime: $data['startTime'] ?? null,
             endTime: $data['endTime'] ?? null,
             duration: isset($data['duration']) ? (int) $data['duration'] : null,
-            maxMarks: isset($data['maxMarks']) ? (int) $data['maxMarks'] : null,
-            passingMarks: isset($data['passingMarks']) ? (int) $data['passingMarks'] : null,
+            maxMarks: isset($data['maxMarks']) ? (int) $data['maxMarks'] : (isset($data['maximumMarks']) ? (int) $data['maximumMarks'] : null),
+            passingMarks: isset($data['passingMarks']) ? (int) $data['passingMarks'] : (isset($data['minimumMarks']) ? (int) $data['minimumMarks'] : null),
             status: isset($data['status']) ? strtoupper((string) $data['status']) : 'DRAFT',
             remarks: $data['remarks'] ?? null,
         );

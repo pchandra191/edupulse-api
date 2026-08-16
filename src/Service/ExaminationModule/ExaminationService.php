@@ -343,7 +343,14 @@ readonly class ExaminationService
             throw new \InvalidArgumentException('Start time must be before end time.');
         }
 
-        if ($startTime === null && $endTime === null && ($request->duration === null || $request->duration <= 0)) {
+        $duration = $request->duration;
+
+        if ($startTime !== null && $endTime !== null && $duration === null) {
+            $durationMinutes = $endTime->getTimestamp() - $startTime->getTimestamp();
+            $duration = (int) round($durationMinutes / 60);
+        }
+
+        if ($startTime === null && $endTime === null && ($duration === null || $duration <= 0)) {
             throw new \InvalidArgumentException('Either start/end times or a positive duration must be provided.');
         }
 
@@ -371,7 +378,7 @@ readonly class ExaminationService
             $examSubject->setExamDate($examDate);
             $examSubject->setStartTime($startTime);
             $examSubject->setEndTime($endTime);
-            $examSubject->setDuration($request->duration);
+            $examSubject->setDuration($duration);
             $examSubject->setMaxMarks($request->maxMarks);
             $examSubject->setPassingMarks($request->passingMarks);
             $examSubject->setStatus(ExaminationStatus::from($request->status));
@@ -611,12 +618,19 @@ readonly class ExaminationService
             throw new \InvalidArgumentException('Start time must be before end time.');
         }
 
-        if ($request->duration !== null && $request->duration !== $examSubject->getDuration()) {
-            if ($request->duration <= 0) {
+        $duration = $request->duration;
+
+        if ($startTime !== null && $endTime !== null && $duration === null) {
+            $durationMinutes = $endTime->getTimestamp() - $startTime->getTimestamp();
+            $duration = (int) round($durationMinutes / 60);
+        }
+
+        if ($duration !== null && $duration !== $examSubject->getDuration()) {
+            if ($duration <= 0) {
                 throw new \InvalidArgumentException('Duration must be a positive integer.');
             }
 
-            $examSubject->setDuration($request->duration);
+            $examSubject->setDuration($duration);
         }
 
         if ($request->maxMarks !== null && $request->maxMarks !== $examSubject->getMaxMarks()) {
