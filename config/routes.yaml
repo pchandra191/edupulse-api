@@ -56,3 +56,8 @@ examination_api:
     resource: '../src/Controller/ExaminationModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+question_paper_api:
+    resource: '../src/Controller/QuestionPaperModule/'
+    type: attribute
+    prefix: /api/%app.api_version%

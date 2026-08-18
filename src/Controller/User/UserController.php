@@ -31,7 +31,7 @@ class UserController extends AbstractApiController
         parent::__construct($responseFactory);
     }
 
-    #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN') or is_granted('ROLE_TEACHER')")]
     #[Route('/users', name: 'user_list', methods: ['GET'])]
     public function list(Request $request): \Symfony\Component\HttpFoundation\JsonResponse
     {
@@ -52,7 +52,7 @@ class UserController extends AbstractApiController
         return $this->success(data: $result);
     }
 
-    #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN') or is_granted('ROLE_TEACHER')")]
     #[Route('/users/{id}', name: 'user_get', methods: ['GET'])]
     public function get(string $id): \Symfony\Component\HttpFoundation\JsonResponse
     {

@@ -56,11 +56,15 @@ class AcademicYear extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'academicYear', targetEntity: Examination::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $examinations;
 
+    #[ORM\OneToMany(mappedBy: 'academicYear', targetEntity: QuestionPaper::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $questionPapers;
+
     public function __construct()
     {
         parent::__construct();
         $this->classes = new ArrayCollection();
         $this->examinations = new ArrayCollection();
+        $this->questionPapers = new ArrayCollection();
     }
 
     public function getInstitute(): Institute
@@ -205,6 +209,32 @@ class AcademicYear extends AbstractEntity
         if ($this->examinations->removeElement($examination)) {
             if ($examination->getAcademicYear() === $this) {
                 $examination->setAcademicYear(new AcademicYear());
+            }
+        }
+
+        return $this;
+    }
+
+    public function getQuestionPapers(): Collection
+    {
+        return $this->questionPapers;
+    }
+
+    public function addQuestionPaper(QuestionPaper $questionPaper): self
+    {
+        if (!$this->questionPapers->contains($questionPaper)) {
+            $this->questionPapers[] = $questionPaper;
+            $questionPaper->setAcademicYear($this);
+        }
+
+        return $this;
+    }
+
+    public function removeQuestionPaper(QuestionPaper $questionPaper): self
+    {
+        if ($this->questionPapers->removeElement($questionPaper)) {
+            if ($questionPaper->getAcademicYear() === $this) {
+                $questionPaper->setAcademicYear(new AcademicYear());
             }
         }
 
