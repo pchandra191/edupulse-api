@@ -696,7 +696,7 @@ readonly class QuestionPaperService
             $this->entityManager->beginTransaction();
 
             foreach ($orderedIds as $order => $questionId) {
-                $question = $this->questionRepository->findById($questionId, $paperId);
+                $question = $this->questionRepository->findById(Uuid::fromString($questionId), $paperId);
 
                 if ($question instanceof Question) {
                     $question->setDisplayOrder($order + 1);
