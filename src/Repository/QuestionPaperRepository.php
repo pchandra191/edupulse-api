@@ -6,10 +6,13 @@ namespace App\Repository;
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
 use App\Entity\Examination;
+use App\Entity\Question;
 use App\Entity\QuestionPaper;
 use App\Entity\Section;
 use App\Entity\Subject;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Uid\Uuid;
@@ -57,7 +60,15 @@ class QuestionPaperRepository extends ServiceEntityRepository
         string $sortBy,
         string $sortOrder
     ): array {
-        $qb = $this->createQueryBuilder('qp');
+        $qb = $this->createQueryBuilder('qp')
+            ->leftJoin('qp.institute', 'i')
+            ->addSelect('i')
+            ->leftJoin('qp.academicYear', 'ay')
+            ->addSelect('ay')
+            ->leftJoin('qp.subject', 's')
+            ->addSelect('s')
+            ->leftJoin('qp.examination', 'e')
+            ->addSelect('e');
 
         if ($instituteId !== null) {
             $qb->where('qp.institute = :institute')
@@ -185,5 +196,83 @@ class QuestionPaperRepository extends ServiceEntityRepository
         $countQb->resetDQLPart('orderBy');
 
         return (int) $countQb->getQuery()->getSingleScalarResult();
+    }
+
+    /**
+     * @return array<string, Collection<int, AcademicClass>>
+     */
+    public function findClassesByPaperIds(array $paperIds): array
+    {
+        if (empty($paperIds)) {
+            return [];
+        }
+
+        $qb = $this->createQueryBuilder('qp')
+            ->select('qp.id AS paperId, c.id, c.name, c.code')
+            ->innerJoin('qp.classes', 'c')
+            ->where('qp.id IN (:paperIds)')
+            ->setParameter('paperIds', $paperIds);
+
+        $results = $qb->getQuery()->getArrayResult();
+
+        $byPaper = [];
+        foreach ($results as $row) {
+            $paperId = (string) $row['paperId'];
+            $byPaper[$paperId][] = $row;
+        }
+
+        return $byPaper;
+    }
+
+    /**
+     * @return array<string, Collection<int, Section>>
+     */
+    public function findSectionsByPaperIds(array $paperIds): array
+    {
+        if (empty($paperIds)) {
+            return [];
+        }
+
+        $qb = $this->createQueryBuilder('qp')
+            ->select('qp.id AS paperId, s.id, s.name, s.code')
+            ->innerJoin('qp.sections', 's')
+            ->where('qp.id IN (:paperIds)')
+            ->setParameter('paperIds', $paperIds);
+
+        $results = $qb->getQuery()->getArrayResult();
+
+        $byPaper = [];
+        foreach ($results as $row) {
+            $paperId = (string) $row['paperId'];
+            $byPaper[$paperId][] = $row;
+        }
+
+        return $byPaper;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    public function findQuestionCountsByPaperIds(array $paperIds): array
+    {
+        if (empty($paperIds)) {
+            return [];
+        }
+
+        $qb = $this->getEntityManager()->createQueryBuilder()
+            ->select('IDENTITY(q.questionPaper) AS paperId, COUNT(q.id) AS questionCount')
+            ->from(Question::class, 'q')
+            ->where('q.questionPaper IN (:paperIds)')
+            ->setParameter('paperIds', $paperIds)
+            ->groupBy('q.questionPaper');
+
+        $results = $qb->getQuery()->getArrayResult();
+
+        $counts = [];
+        foreach ($results as $row) {
+            $counts[(string) $row['paperId']] = (int) $row['questionCount'];
+        }
+
+        return $counts;
     }
 }

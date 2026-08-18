@@ -49,4 +49,29 @@ class QuestionOptionRepository extends ServiceEntityRepository
             ->getQuery()
             ->execute();
     }
+
+    /**
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function findByQuestionIds(array $questionIds): array
+    {
+        if (empty($questionIds)) {
+            return [];
+        }
+
+        $qb = $this->createQueryBuilder('qo')
+            ->select('qo.id, IDENTITY(qo.question) AS questionId, qo.optionText, qo.displayOrder')
+            ->where('qo.question IN (:questionIds)')
+            ->setParameter('questionIds', $questionIds)
+            ->orderBy('qo.displayOrder', 'ASC');
+
+        $results = $qb->getQuery()->getArrayResult();
+
+        $byQuestion = [];
+        foreach ($results as $row) {
+            $byQuestion[(string) $row['questionId']][] = $row;
+        }
+
+        return $byQuestion;
+    }
 }

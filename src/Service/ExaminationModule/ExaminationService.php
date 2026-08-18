@@ -66,8 +66,15 @@ readonly class ExaminationService
             $filter->sortOrder,
         );
 
+        $examinationIds = [];
+        foreach ($result['items'] as $examination) {
+            $examinationIds[] = $examination->getId()->toRfc4122();
+        }
+
+        $examSubjectCounts = $this->examinationRepository->findExamSubjectCountsByExaminationIds($examinationIds);
+
         $items = array_map(
-            fn (Examination $examination) => $this->mapToResponse($examination),
+            fn (Examination $examination) => $this->mapToListItemResponse($examination, $examSubjectCounts),
             $result['items'],
         );
 
@@ -664,6 +671,32 @@ readonly class ExaminationService
         if ($request->remarks !== null && $request->remarks !== $examSubject->getRemarks()) {
             $examSubject->setRemarks($request->remarks);
         }
+    }
+
+    private function mapToListItemResponse(Examination $examination, array $examSubjectCounts): ExaminationResponseDTO
+    {
+        $institute = $examination->getInstitute();
+        $academicYear = $examination->getAcademicYear();
+        $academicClass = $examination->getAcademicClass();
+
+        return new ExaminationResponseDTO(
+            id: (string) $examination->getId(),
+            instituteId: (string) $institute->getId(),
+            instituteName: $institute->getName(),
+            academicYearId: (string) $academicYear->getId(),
+            academicYearName: $academicYear->getName(),
+            academicClassId: (string) $academicClass->getId(),
+            academicClassName: $academicClass->getName(),
+            name: $examination->getName(),
+            code: $examination->getCode(),
+            description: $examination->getDescription(),
+            startDate: $examination->getStartDate()->format('Y-m-d'),
+            endDate: $examination->getEndDate()->format('Y-m-d'),
+            status: $examination->getStatus()->value,
+            subjectsCount: $examSubjectCounts[$examination->getId()->toRfc4122()] ?? 0,
+            createdAt: $examination->getCreatedAt()->format(DateTimeInterface::ATOM),
+            updatedAt: $examination->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+        );
     }
 
     private function mapToResponse(Examination $examination): ExaminationResponseDTO

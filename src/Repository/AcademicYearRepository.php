@@ -43,7 +43,9 @@ class AcademicYearRepository extends ServiceEntityRepository
 
     public function findPaginated(?Uuid $instituteId, ?string $search, int $page, int $limit, string $sortBy, string $sortOrder): array
     {
-        $qb = $this->createQueryBuilder('a');
+        $qb = $this->createQueryBuilder('a')
+            ->leftJoin('a.institute', 'i')
+            ->addSelect('i');
 
         if ($instituteId !== null) {
             $qb->where('a.institute = :institute')
@@ -53,26 +55,15 @@ class AcademicYearRepository extends ServiceEntityRepository
         $this->applySearch($qb, $search);
         $this->applySorting($qb, $sortBy, $sortOrder);
 
-        $qb->setFirstResult(null)
-           ->setMaxResults(null);
+        $totalItems = $this->getTotalCount($qb);
 
-        $allItems = $qb->getQuery()->getResult();
-
-        $searchLower = mb_strtolower(trim($search ?? ''));
-
-        if ($searchLower !== '') {
-            $allItems = array_filter($allItems, function (AcademicYear $item) use ($searchLower): bool {
-                $startDate = $item->getStartDate()->format('Y-m-d');
-                $endDate = $item->getEndDate()->format('Y-m-d');
-                $searchable = strtolower($item->getName() . ' ' . $item->getCode() . ' ' . $startDate . ' ' . $endDate);
-                return str_contains($searchable, $searchLower);
-            });
-        }
-
-        $totalItems = count($allItems);
-        $totalPages = $limit > 0 ? (int) ceil($totalItems / $limit) : 0;
         $offset = ($page - 1) * $limit;
-        $items = array_slice($allItems, $offset, $limit);
+        $qb->setFirstResult($offset)
+           ->setMaxResults($limit);
+
+        $items = $qb->getQuery()->getResult();
+
+        $totalPages = $limit > 0 ? (int) ceil($totalItems / $limit) : 0;
 
         return [
             'items' => $items,

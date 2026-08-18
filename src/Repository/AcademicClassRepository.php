@@ -52,7 +52,11 @@ class AcademicClassRepository extends ServiceEntityRepository
         string $sortBy,
         string $sortOrder
     ): array {
-        $qb = $this->createQueryBuilder('c');
+        $qb = $this->createQueryBuilder('c')
+            ->leftJoin('c.academicYear', 'ay')
+            ->addSelect('ay')
+            ->leftJoin('c.institute', 'i')
+            ->addSelect('i');
 
         if ($instituteId !== null) {
             $qb->where('c.institute = :institute')
