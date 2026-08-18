@@ -5,6 +5,7 @@ namespace App\Repository;
 
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
+use App\Entity\ExamSubject;
 use App\Entity\Examination;
 use App\Entity\Institute;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -58,7 +59,13 @@ class ExaminationRepository extends ServiceEntityRepository
         string $sortBy,
         string $sortOrder
     ): array {
-        $qb = $this->createQueryBuilder('e');
+        $qb = $this->createQueryBuilder('e')
+            ->leftJoin('e.institute', 'i')
+            ->addSelect('i')
+            ->leftJoin('e.academicYear', 'ay')
+            ->addSelect('ay')
+            ->leftJoin('e.academicClass', 'ac')
+            ->addSelect('ac');
 
         if ($instituteId !== null) {
             $qb->where('e.institute = :institute')
@@ -204,5 +211,31 @@ class ExaminationRepository extends ServiceEntityRepository
         $countQb->resetDQLPart('orderBy');
 
         return (int) $countQb->getQuery()->getSingleScalarResult();
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    public function findExamSubjectCountsByExaminationIds(array $examinationIds): array
+    {
+        if (empty($examinationIds)) {
+            return [];
+        }
+
+        $qb = $this->getEntityManager()->createQueryBuilder()
+            ->select('IDENTITY(es.examination) AS examinationId, COUNT(es.id) AS subjectCount')
+            ->from(ExamSubject::class, 'es')
+            ->where('es.examination IN (:examinationIds)')
+            ->setParameter('examinationIds', $examinationIds)
+            ->groupBy('es.examination');
+
+        $results = $qb->getQuery()->getArrayResult();
+
+        $counts = [];
+        foreach ($results as $row) {
+            $counts[(string) $row['examinationId']] = (int) $row['subjectCount'];
+        }
+
+        return $counts;
     }
 }

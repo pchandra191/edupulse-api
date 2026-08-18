@@ -53,11 +53,14 @@ class SectionRepository extends ServiceEntityRepository
         string $sortBy,
         string $sortOrder
     ): array {
-        $qb = $this->createQueryBuilder('s');
+        $qb = $this->createQueryBuilder('s')
+            ->leftJoin('s.academicClass', 'c')
+            ->addSelect('c')
+            ->leftJoin('c.institute', 'i')
+            ->addSelect('i');
 
         if ($instituteId !== null) {
-            $qb->innerJoin('s.academicClass', 'c')
-               ->where('c.institute = :institute')
+            $qb->where('i.id = :institute')
                ->setParameter('institute', $instituteId);
         }
 

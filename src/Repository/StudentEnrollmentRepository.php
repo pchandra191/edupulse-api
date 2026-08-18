@@ -6,6 +6,7 @@ namespace App\Repository;
 use App\Entity\StudentEnrollment;
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
+use App\Entity\EnrollmentSection;
 use App\Entity\Institute;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -59,11 +60,18 @@ class StudentEnrollmentRepository extends ServiceEntityRepository
         string $sortBy,
         string $sortOrder
     ): array {
-        $qb = $this->createQueryBuilder('se');
+        $qb = $this->createQueryBuilder('se')
+            ->leftJoin('se.student', 'u')
+            ->addSelect('u')
+            ->leftJoin('se.academicYear', 'ay')
+            ->addSelect('ay')
+            ->leftJoin('se.academicClass', 'c')
+            ->addSelect('c')
+            ->leftJoin('ay.institute', 'i')
+            ->addSelect('i');
 
         if ($instituteId !== null) {
-            $qb->innerJoin('se.academicClass', 'c')
-               ->where('c.institute = :institute')
+            $qb->where('i.id = :institute')
                ->setParameter('institute', $instituteId);
         }
 
@@ -252,5 +260,33 @@ class StudentEnrollmentRepository extends ServiceEntityRepository
         $countQb->resetDQLPart('groupBy');
 
         return (int) $countQb->getQuery()->getSingleScalarResult();
+    }
+
+    /**
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function findEnrollmentSectionsByEnrollmentIds(array $enrollmentIds): array
+    {
+        if (empty($enrollmentIds)) {
+            return [];
+        }
+
+        $qb = $this->getEntityManager()->createQueryBuilder()
+            ->select('es.id, IDENTITY(es.studentEnrollment) AS enrollmentId, es.status, es.joinedAt, es.leftAt, s.id AS sectionId, s.name AS sectionName, s.code AS sectionCode')
+            ->from(EnrollmentSection::class, 'es')
+            ->innerJoin('es.section', 's')
+            ->where('es.studentEnrollment IN (:enrollmentIds)')
+            ->setParameter('enrollmentIds', $enrollmentIds)
+            ->orderBy('es.createdAt', 'DESC');
+
+        $results = $qb->getQuery()->getArrayResult();
+
+        $byEnrollment = [];
+        foreach ($results as $row) {
+            $enrollmentId = (string) $row['enrollmentId'];
+            $byEnrollment[$enrollmentId][] = $row;
+        }
+
+        return $byEnrollment;
     }
 }

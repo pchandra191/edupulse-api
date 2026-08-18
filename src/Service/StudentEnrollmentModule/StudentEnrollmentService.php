@@ -63,8 +63,15 @@ readonly class StudentEnrollmentService
             $filter->sortOrder,
         );
 
+        $enrollmentIds = [];
+        foreach ($result['items'] as $enrollment) {
+            $enrollmentIds[] = $enrollment->getId()->toRfc4122();
+        }
+
+        $enrollmentSectionsByEnrollment = $this->studentEnrollmentRepository->findEnrollmentSectionsByEnrollmentIds($enrollmentIds);
+
         $items = array_map(
-            fn (StudentEnrollment $enrollment) => $this->mapToResponse($enrollment),
+            fn (StudentEnrollment $enrollment) => $this->mapToListItemResponse($enrollment, $enrollmentSectionsByEnrollment),
             $result['items'],
         );
 
@@ -474,6 +481,56 @@ readonly class StudentEnrollmentService
             ->setParameter('true', true);
 
         $qb->getQuery()->execute();
+    }
+
+    private function mapToListItemResponse(StudentEnrollment $enrollment, array $enrollmentSectionsByEnrollment): StudentEnrollmentResponseDTO
+    {
+        $student = $enrollment->getStudent();
+        $academicYear = $enrollment->getAcademicYear();
+        $academicClass = $enrollment->getAcademicClass();
+        $institute = $academicYear->getInstitute();
+        $enrollmentId = $enrollment->getId()->toRfc4122();
+
+        $sections = array_map(
+            fn (array $row) => new SectionResponse(
+                id: $row['sectionId'],
+                name: $row['sectionName'],
+                code: $row['sectionCode'],
+                status: $row['status'],
+            ),
+            $enrollmentSectionsByEnrollment[$enrollmentId] ?? [],
+        );
+
+        return new StudentEnrollmentResponseDTO(
+            id: $enrollmentId,
+            institute: new InstituteResponse(
+                id: (string) $institute->getId(),
+                name: $institute->getName(),
+            ),
+            student: new StudentResponse(
+                id: (string) $student->getId(),
+                name: trim($student->getFirstName() . ' ' . $student->getLastName()),
+                email: $student->getEmail(),
+            ),
+            academicYear: new AcademicYearResponse(
+                id: (string) $academicYear->getId(),
+                name: $academicYear->getName(),
+            ),
+            academicClass: new AcademicClassResponse(
+                id: (string) $academicClass->getId(),
+                name: $academicClass->getName(),
+                code: $academicClass->getCode(),
+            ),
+            rollNumber: $enrollment->getRollNumber(),
+            admissionNumber: $enrollment->getAdmissionNumber(),
+            admissionDate: $enrollment->getAdmissionDate()?->format('Y-m-d'),
+            remarks: $enrollment->getRemarks(),
+            isCurrent: $enrollment->isCurrent(),
+            status: $enrollment->getStatus()->value,
+            sections: $sections,
+            createdAt: $enrollment->getCreatedAt()->format(DateTimeInterface::ATOM),
+            updatedAt: $enrollment->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+        );
     }
 
     private function mapToResponse(StudentEnrollment $enrollment): StudentEnrollmentResponseDTO

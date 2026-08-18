@@ -66,8 +66,17 @@ readonly class QuestionPaperService
             $filter->sortOrder,
         );
 
+        $paperIds = [];
+        foreach ($result['items'] as $paper) {
+            $paperIds[] = $paper->getId()->toRfc4122();
+        }
+
+        $classesByPaper = $this->questionPaperRepository->findClassesByPaperIds($paperIds);
+        $sectionsByPaper = $this->questionPaperRepository->findSectionsByPaperIds($paperIds);
+        $questionCounts = $this->questionPaperRepository->findQuestionCountsByPaperIds($paperIds);
+
         $items = array_map(
-            fn (QuestionPaper $paper) => $this->mapToResponse($paper),
+            fn (QuestionPaper $paper) => $this->mapToListItemResponse($paper, $classesByPaper, $sectionsByPaper, $questionCounts),
             $result['items'],
         );
 
@@ -352,6 +361,9 @@ readonly class QuestionPaperService
 
         $questions = $this->questionRepository->findByPaper($paper->getId());
 
+        $questionIds = array_map(static fn (Question $q) => $q->getId()->toRfc4122(), $questions);
+        $optionsByQuestion = $this->questionOptionRepository->findByQuestionIds($questionIds);
+
         foreach ($questions as $question) {
             if (empty($question->getQuestionText())) {
                 throw new \InvalidArgumentException('All questions must have text.');
@@ -361,16 +373,17 @@ readonly class QuestionPaperService
                 throw new \InvalidArgumentException('All questions must have positive marks.');
             }
 
-            if ($question->isMCQ()) {
-                $options = $question->getOptions();
+            $questionId = $question->getId()->toRfc4122();
+            $rawOptions = $optionsByQuestion[$questionId] ?? [];
 
-                if ($options->isEmpty()) {
+            if ($question->isMCQ()) {
+                if (empty($rawOptions)) {
                     throw new \InvalidArgumentException('MCQ questions must have at least one option.');
                 }
 
                 $hasValidOption = false;
-                foreach ($options as $option) {
-                    if (empty($option->getOptionText())) {
+                foreach ($rawOptions as $optionRow) {
+                    if (empty($optionRow['optionText'])) {
                         throw new \InvalidArgumentException('All MCQ options must have text.');
                     }
                     $hasValidOption = true;
@@ -382,9 +395,7 @@ readonly class QuestionPaperService
             }
 
             if ($question->isDescriptive()) {
-                $options = $question->getOptions();
-
-                if (!$options->isEmpty()) {
+                if (!empty($rawOptions)) {
                     throw new \InvalidArgumentException('Descriptive questions must not have options.');
                 }
             }
@@ -430,8 +441,11 @@ readonly class QuestionPaperService
 
         $questions = $this->questionRepository->findByPaper($paper->getId());
 
+        $questionIds = array_map(static fn (Question $q) => $q->getId()->toRfc4122(), $questions);
+        $optionsByQuestion = $this->questionOptionRepository->findByQuestionIds($questionIds);
+
         $questionDtos = array_map(
-            fn (Question $question) => $this->mapQuestionToResponse($question),
+            fn (Question $question) => $this->mapQuestionToResponse($question, $optionsByQuestion),
             $questions,
         );
 
@@ -911,6 +925,58 @@ readonly class QuestionPaperService
         }
     }
 
+    private function mapToListItemResponse(
+        QuestionPaper $paper,
+        array $classesByPaper,
+        array $sectionsByPaper,
+        array $questionCounts
+    ): QuestionPaperResponseDTO {
+        $institute = $paper->getInstitute();
+        $academicYear = $paper->getAcademicYear();
+        $subject = $paper->getSubject();
+        $paperId = $paper->getId()->toRfc4122();
+
+        $classIds = [];
+        $classNames = [];
+        foreach ($classesByPaper[$paperId] ?? [] as $classRow) {
+            $classIds[] = $classRow['id'];
+            $classNames[] = $classRow['name'];
+        }
+
+        $sectionIds = [];
+        $sectionNames = [];
+        foreach ($sectionsByPaper[$paperId] ?? [] as $sectionRow) {
+            $sectionIds[] = $sectionRow['id'];
+            $sectionNames[] = $sectionRow['name'];
+        }
+
+        return new QuestionPaperResponseDTO(
+            id: $paperId,
+            instituteId: $institute->getId()->toRfc4122(),
+            instituteName: $institute->getName(),
+            academicYearId: $academicYear->getId()->toRfc4122(),
+            academicYearName: $academicYear->getName(),
+            subjectId: $subject->getId()->toRfc4122(),
+            subjectName: $subject->getName(),
+            classIds: $classIds,
+            classNames: $classNames,
+            sectionIds: $sectionIds,
+            sectionNames: $sectionNames,
+            examinationId: $paper->getExamination()?->getId()->toRfc4122(),
+            examinationName: $paper->getExamination()?->getName(),
+            title: $paper->getTitle(),
+            date: $paper->getDate()->format('Y-m-d'),
+            duration: $paper->getDuration(),
+            maximumMarks: $paper->getMaximumMarks(),
+            instructions: $paper->getInstructions(),
+            status: $paper->getStatus()->value,
+            createdBy: $paper->getCreatedBy(),
+            questionsCount: $questionCounts[$paperId] ?? 0,
+            createdAt: $paper->getCreatedAt()->format(DateTimeInterface::ATOM),
+            updatedAt: $paper->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+        );
+    }
+
     private function mapToResponse(QuestionPaper $paper): QuestionPaperResponseDTO
     {
         $institute = $paper->getInstitute();
@@ -958,19 +1024,32 @@ readonly class QuestionPaperService
         );
     }
 
-    private function mapQuestionToResponse(Question $question): QuestionResponseDTO
+    private function mapQuestionToResponse(Question $question, array $optionsByQuestion = []): QuestionResponseDTO
     {
+        $questionId = $question->getId()->toRfc4122();
         $options = [];
-        foreach ($question->getOptions() as $option) {
-            $options[] = new \App\DTO\QuestionPaperModule\QuestionOptionResponseDTO(
-                id: $option->getId()->toRfc4122(),
-                text: $option->getOptionText(),
-                displayOrder: $option->getDisplayOrder(),
-            );
+
+        $rawOptions = $optionsByQuestion[$questionId] ?? null;
+        if ($rawOptions !== null) {
+            foreach ($rawOptions as $optionRow) {
+                $options[] = new \App\DTO\QuestionPaperModule\QuestionOptionResponseDTO(
+                    id: (string) $optionRow['id'],
+                    text: $optionRow['optionText'],
+                    displayOrder: $optionRow['displayOrder'],
+                );
+            }
+        } else {
+            foreach ($question->getOptions() as $option) {
+                $options[] = new \App\DTO\QuestionPaperModule\QuestionOptionResponseDTO(
+                    id: $option->getId()->toRfc4122(),
+                    text: $option->getOptionText(),
+                    displayOrder: $option->getDisplayOrder(),
+                );
+            }
         }
 
         return new QuestionResponseDTO(
-            id: $question->getId()->toRfc4122(),
+            id: $questionId,
             type: $question->getType()->value,
             questionText: $question->getQuestionText(),
             marks: $question->getMarks(),

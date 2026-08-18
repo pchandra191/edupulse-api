@@ -6,7 +6,7 @@ namespace App\Service\QuestionPaperModule;
 use App\DTO\QuestionPaperModule\GenerateAiQuestionResponseDTO;
 use App\DTO\QuestionPaperModule\QuestionOptionResponseDTO;
 use OpenAI\Client;
-use OpenAI\OpenAI;
+use OpenAI;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autoconfigure;
 
