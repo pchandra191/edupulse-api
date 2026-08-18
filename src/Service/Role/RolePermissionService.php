@@ -94,7 +94,7 @@ readonly class RolePermissionService
 
             $result[] = new AccessControlMatrixResponse(
                 role: $role->getCode(),
-                permissions: $permissionCodes,
+                permissions: array_map([$this, 'normalizePermissionCode'], $permissionCodes),
             );
         }
 
@@ -111,10 +111,16 @@ readonly class RolePermissionService
 
         $validPermissions = [];
         if (!empty($request->permissions)) {
-            $permissionEntities = $this->permissionRepository->findByCodes($request->permissions);
+            $normalizedCodes = array_map(
+                fn(string $code) => $this->normalizePermissionCodeForStorage($code),
+                $request->permissions,
+            );
+
+            $permissionEntities = $this->permissionRepository->findByCodes($normalizedCodes);
             $validPermissions = $permissionEntities;
             $foundCodes = array_map(fn(Permission $p) => $p->getCode(), $permissionEntities);
-            $missingCodes = array_diff($request->permissions, $foundCodes);
+
+            $missingCodes = array_diff($normalizedCodes, $foundCodes);
 
             if (!empty($missingCodes)) {
                 throw new BusinessException(sprintf('Unknown permissions: %s', implode(', ', $missingCodes)));
@@ -139,7 +145,7 @@ readonly class RolePermissionService
 
         $updatedPermissions = $this->rolePermissionRepository->findPermissionsByRoleCodes([$role->getCode()]);
 
-        return $updatedPermissions;
+        return array_map([$this, 'normalizePermissionCode'], $updatedPermissions);
     }
 
     public function getUserEffectivePermissions(Uuid $userId): UserPermissionsResponse
@@ -163,7 +169,17 @@ readonly class RolePermissionService
 
         return new UserPermissionsResponse(
             role: implode(', ', $roleCodes),
-            permissions: $permissions,
+            permissions: array_map([$this, 'normalizePermissionCode'], $permissions),
         );
+    }
+
+    private function normalizePermissionCode(string $code): string
+    {
+        return str_replace('-', '_', mb_strtolower($code));
+    }
+
+    private function normalizePermissionCodeForStorage(string $code): string
+    {
+        return str_replace('_', '-', mb_strtolower($code));
     }
 }

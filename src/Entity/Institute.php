@@ -110,6 +110,9 @@ class Institute extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'institute', targetEntity: Examination::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $examinations;
 
+    #[ORM\OneToMany(mappedBy: 'institute', targetEntity: QuestionPaper::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $questionPapers;
+
     public function __construct()
     {
         parent::__construct();
@@ -118,6 +121,7 @@ class Institute extends AbstractEntity
         $this->classes = new ArrayCollection();
         $this->subjects = new ArrayCollection();
         $this->examinations = new ArrayCollection();
+        $this->questionPapers = new ArrayCollection();
     }
 
     public function getName(): string
@@ -446,6 +450,32 @@ class Institute extends AbstractEntity
         if ($this->examinations->removeElement($examination)) {
             if ($examination->getInstitute() === $this) {
                 $examination->setInstitute(new Institute());
+            }
+        }
+
+        return $this;
+    }
+
+    public function getQuestionPapers(): Collection
+    {
+        return $this->questionPapers;
+    }
+
+    public function addQuestionPaper(QuestionPaper $questionPaper): self
+    {
+        if (!$this->questionPapers->contains($questionPaper)) {
+            $this->questionPapers[] = $questionPaper;
+            $questionPaper->setInstitute($this);
+        }
+
+        return $this;
+    }
+
+    public function removeQuestionPaper(QuestionPaper $questionPaper): self
+    {
+        if ($this->questionPapers->removeElement($questionPaper)) {
+            if ($questionPaper->getInstitute() === $this) {
+                $questionPaper->setInstitute(new Institute());
             }
         }
 

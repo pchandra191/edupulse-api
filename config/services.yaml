@@ -5,6 +5,7 @@ parameters:
     app.api_version: 'v1'
     app.mailer_from: '%env(MAILER_FROM)%'
     app.mailer_from_name: 'EduPulse AI'
+    app.openai_api_key: '%env(OPENAI_API_KEY)%'
 
 services:
     _defaults:
@@ -24,6 +25,12 @@ services:
     App\Service\Auth\AuthService:
         arguments:
             $refreshTokenTtl: '%app.refresh_token_ttl%'
+
+    App\Service\QuestionPaperModule\AiQuestionGenerationServiceInterface: '@App\Service\QuestionPaperModule\OpenAiQuestionGenerationService'
+
+    App\Service\QuestionPaperModule\OpenAiQuestionGenerationService:
+        arguments:
+            $openAiApiKey: '%app.openai_api_key%'
 
     App\Common\Api\Response\ApiResponseFactory:
         arguments:

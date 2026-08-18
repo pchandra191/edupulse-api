@@ -439,6 +439,12 @@ readonly class ExaminationService
             }
 
             throw new \InvalidArgumentException('Invalid status value.', previous: $e);
+        } catch (\InvalidArgumentException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            throw $e;
         } catch (\Throwable $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -698,7 +704,7 @@ readonly class ExaminationService
             subjectName: $subject->getName(),
             subjectCode: $subject->getCode(),
             sectionId: $section?->getId()?->toRfc4122(),
-            sectionName: $section?->getName(),
+            sectionName: $section?->getName() ?? 'ALL SECTION',
             sectionCode: $section?->getCode(),
             examDate: $examSubject->getExamDate()?->format('Y-m-d'),
             startTime: $examSubject->getStartTime()?->format('H:i'),
