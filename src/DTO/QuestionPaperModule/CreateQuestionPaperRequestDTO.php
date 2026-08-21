@@ -30,7 +30,7 @@ readonly class CreateQuestionPaperRequestDTO
         #[Assert\PositiveOrZero]
         public int $maximumMarks,
 
-        #[Assert\Choice(choices: ['DRAFT', 'FINALIZED', 'ARCHIVED'], message: 'Invalid status. Allowed values: DRAFT, FINALIZED, ARCHIVED.')]
+        #[Assert\Choice(choices: ['DRAFT', 'REVIEW', 'FINALIZED', 'ARCHIVED'], message: 'Invalid status. Allowed values: DRAFT, REVIEW, FINALIZED, ARCHIVED.')]
         public string $status = 'DRAFT',
 
         #[Assert\Length(max: 5000)]

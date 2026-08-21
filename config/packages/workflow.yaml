@@ -1,0 +1,60 @@
+framework:
+    workflows:
+        examination:
+            type: state_machine
+            marking_store:
+                service: app.workflow.marking_store.examination
+            supports:
+                - App\Entity\Examination
+            initial_marking: DRAFT
+            places:
+                - DRAFT
+                - SCHEDULED
+                - ONGOING
+                - COMPLETED
+                - CANCELLED
+                - ARCHIVED
+            transitions:
+                schedule:
+                    from: DRAFT
+                    to: SCHEDULED
+                start:
+                    from: SCHEDULED
+                    to: ONGOING
+                complete:
+                    from: ONGOING
+                    to: COMPLETED
+                archive:
+                    from: [DRAFT, SCHEDULED, ONGOING, COMPLETED]
+                    to: ARCHIVED
+                cancel:
+                    from: [DRAFT, SCHEDULED, ONGOING]
+                    to: CANCELLED
+                reopen:
+                    from: COMPLETED
+                    to: SCHEDULED
+        question_paper:
+            type: state_machine
+            marking_store:
+                service: app.workflow.marking_store.question_paper
+            supports:
+                - App\Entity\QuestionPaper
+            initial_marking: DRAFT
+            places:
+                - DRAFT
+                - REVIEW
+                - FINALIZED
+                - ARCHIVED
+            transitions:
+                submit_for_review:
+                    from: DRAFT
+                    to: REVIEW
+                request_changes:
+                    from: REVIEW
+                    to: DRAFT
+                finalize:
+                    from: REVIEW
+                    to: FINALIZED
+                archive:
+                    from: [DRAFT, REVIEW, FINALIZED]
+                    to: ARCHIVED

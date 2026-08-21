@@ -296,6 +296,11 @@ class QuestionPaper extends AbstractEntity
         return $this->status === QuestionPaperStatus::Draft->value;
     }
 
+    public function isReview(): bool
+    {
+        return $this->status === QuestionPaperStatus::Review->value;
+    }
+
     public function isFinalized(): bool
     {
         return $this->status === QuestionPaperStatus::Finalized->value;

@@ -6,6 +6,7 @@ namespace App\Enum;
 enum QuestionPaperStatus: string
 {
     case Draft = 'DRAFT';
+    case Review = 'REVIEW';
     case Finalized = 'FINALIZED';
     case Archived = 'ARCHIVED';
 }
