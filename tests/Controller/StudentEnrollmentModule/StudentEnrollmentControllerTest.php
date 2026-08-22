@@ -1039,4 +1039,90 @@ class StudentEnrollmentControllerTest extends WebTestCase
         $this->assertNotNull($refreshedEnrollmentSection);
         $this->assertSame(EnrollmentSectionStatus::Left->value, $refreshedEnrollmentSection->getStatus()->value);
     }
+
+    public function testArchivedStudentEnrollmentCannotBeUpdated(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $enrollment = new StudentEnrollment();
+        $enrollment->setStudent($entityManager->getRepository(User::class)->find($this->testStudentId));
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setInstituteId($this->testInstituteId);
+        $enrollment->setAdmissionNumber('ADM-ARCHIVE-UPD-' . uniqid());
+        $enrollment->setAdmissionDate(new \DateTimeImmutable('2024-01-01'));
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $client->request('DELETE', '/api/v1/student-enrollments/' . $enrollment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $payload = json_encode([
+            'admissionNumber' => 'ADM-ARCHIVE-UPD-2',
+        ]);
+
+        $client->request('PUT', '/api/v1/student-enrollments/' . $enrollment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testArchivedStudentEnrollmentCannotBeDeleted(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $enrollment = new StudentEnrollment();
+        $enrollment->setStudent($entityManager->getRepository(User::class)->find($this->testStudentId));
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setInstituteId($this->testInstituteId);
+        $enrollment->setAdmissionNumber('ADM-ARCHIVE-DEL-' . uniqid());
+        $enrollment->setAdmissionDate(new \DateTimeImmutable('2024-01-01'));
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $client->request('DELETE', '/api/v1/student-enrollments/' . $enrollment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('DELETE', '/api/v1/student-enrollments/' . $enrollment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testStudentUserRemainsEditableWhenEnrollmentIsArchived(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $enrollment = new StudentEnrollment();
+        $enrollment->setStudent($entityManager->getRepository(User::class)->find($this->testStudentId));
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setInstituteId($this->testInstituteId);
+        $enrollment->setAdmissionNumber('ADM-USER-TEST-' . uniqid());
+        $enrollment->setAdmissionDate(new \DateTimeImmutable('2024-01-01'));
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $client->request('DELETE', '/api/v1/student-enrollments/' . $enrollment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $student = $entityManager->getRepository(User::class)->find($this->testStudentId);
+        $student->setFirstName('Updated First Name');
+        $entityManager->flush();
+
+        $refreshedStudent = $entityManager->getRepository(User::class)->find($this->testStudentId);
+        $this->assertSame('Updated First Name', $refreshedStudent->getFirstName());
+    }
 }

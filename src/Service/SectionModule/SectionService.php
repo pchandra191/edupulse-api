@@ -14,6 +14,7 @@ use App\DTO\Response\SectionListResponse;
 use App\Entity\AcademicClass;
 use App\Entity\Institute;
 use App\Entity\Section;
+use App\Enum\ClassStatus;
 use App\Enum\SectionStatus;
 use App\Exception\AuthenticationException;
 use App\Repository\InstituteRepository;
@@ -86,6 +87,10 @@ readonly class SectionService
             throw new \App\Common\Exception\BusinessException('Section code already exists for this class.');
         }
 
+        if ($academicClass->getStatus() === ClassStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Cannot create section for an archived class.');
+        }
+
         try {
             $this->entityManager->beginTransaction();
 
@@ -122,6 +127,10 @@ readonly class SectionService
 
         if (!$section instanceof Section) {
             throw new AuthenticationException('Section not found.');
+        }
+
+        if ($section->getStatus() === SectionStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived sections cannot be modified.');
         }
 
         try {

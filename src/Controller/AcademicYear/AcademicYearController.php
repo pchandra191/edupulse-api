@@ -38,6 +38,7 @@ class AcademicYearController extends AbstractApiController
 
         $filter = new AcademicYearFilterRequest(
             search: $request->query->get('search'),
+            status: $request->query->get('status'),
             page: max(1, (int) $request->query->get('page', 1)),
             limit: max(1, min(100, (int) $request->query->get('limit', 10))),
             sortBy: $request->query->get('sortBy', 'createdAt'),

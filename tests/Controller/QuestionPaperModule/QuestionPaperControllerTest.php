@@ -309,6 +309,7 @@ class QuestionPaperControllerTest extends WebTestCase
             'question-papers.edit',
             'question-papers.delete',
             'question-papers.finalize',
+            'question-papers.submit_for_review',
             'question-papers.export',
         ];
 
@@ -1088,6 +1089,217 @@ class QuestionPaperControllerTest extends WebTestCase
         );
     }
 
+    public function testSubmitForReviewDraftPaperSucceeds(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'What is 2+2?',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => ['3', '4', '5', '6'],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/submit-for-review', [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('SUBMITTED_FOR_REVIEW', $data['data']['status']);
+    }
+
+    public function testCannotSubmitForReviewAlreadySubmittedPaper(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'What is 2+2?',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => ['3', '4', '5', '6'],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/submit-for-review', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/submit-for-review', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+    }
+
+    public function testCannotSubmitForReviewFinalizedPaper(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'What is 2+2?',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => ['3', '4', '5', '6'],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/finalize', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/submit-for-review', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+    }
+
+    public function testSubmitForReviewMissingPaperReturnsNotFound(): void
+    {
+        $client = $this->client;
+
+        $nonExistentId = Uuid::v7();
+
+        $client->request('POST', '/api/v1/question-papers/' . $nonExistentId . '/submit-for-review', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(404, $client->getResponse()->getStatusCode());
+    }
+
+    public function testSubmitForReviewCrossInstituteAccessRejected(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $otherInstitute = new Institute();
+        $otherInstituteId = Uuid::v7();
+        $reflection = new \ReflectionClass($otherInstitute);
+        $property = $reflection->getProperty('id');
+        $property->setAccessible(true);
+        $property->setValue($otherInstitute, $otherInstituteId);
+        $otherInstitute->setName('Other Institute');
+        $otherInstitute->setCode('OTHR' . uniqid());
+        $otherInstitute->setEmail('other-' . uniqid() . '@edupulse.ai');
+        $otherInstitute->setStatus(InstituteStatus::Active);
+
+        $otherYear = new AcademicYear();
+        $otherYear->setInstitute($otherInstitute);
+        $otherYear->setName('Other Year');
+        $otherYear->setCode('OY' . uniqid());
+        $otherYear->setStartDate(new \DateTimeImmutable('2025-01-01'));
+        $otherYear->setEndDate(new \DateTimeImmutable('2025-12-31'));
+        $otherYear->setStatus(AcademicYearStatus::Active);
+
+        $otherClass = new AcademicClass();
+        $otherClassId = Uuid::v7();
+        $classReflection = new \ReflectionClass($otherClass);
+        $classProperty = $classReflection->getProperty('id');
+        $classProperty->setAccessible(true);
+        $classProperty->setValue($otherClass, $otherClassId);
+        $otherClass->setInstitute($otherInstitute);
+        $otherClass->setAcademicYear($otherYear);
+        $otherClass->setName('Other Class');
+        $otherClass->setCode('OCLS' . uniqid());
+        $otherClass->setStatus(ClassStatus::Active);
+
+        $otherSubject = new Subject();
+        $otherSubjectId = Uuid::v7();
+        $subjectReflection = new \ReflectionClass($otherSubject);
+        $subjectProperty = $subjectReflection->getProperty('id');
+        $subjectProperty->setAccessible(true);
+        $subjectProperty->setValue($otherSubject, $otherSubjectId);
+        $otherSubject->setInstitute($otherInstitute);
+        $otherSubject->setName('Other Subject');
+        $otherSubject->setCode('OS' . uniqid());
+        $otherSubject->setStatus(SubjectStatus::Active);
+
+        $otherPaper = new QuestionPaper();
+        $otherPaperId = Uuid::v7();
+        $paperReflection = new \ReflectionClass($otherPaper);
+        $paperProperty = $paperReflection->getProperty('id');
+        $paperProperty->setAccessible(true);
+        $paperProperty->setValue($otherPaper, $otherPaperId);
+        $otherPaper->setInstitute($otherInstitute);
+        $otherPaper->setAcademicYear($otherYear);
+        $otherPaper->setSubject($otherSubject);
+        $otherPaper->setTitle('Other Paper');
+        $otherPaper->setDate(new \DateTimeImmutable('2025-05-01'));
+        $otherPaper->setDuration(60);
+        $otherPaper->setMaximumMarks(50);
+        $otherPaper->setStatus(QuestionPaperStatus::Draft);
+
+        $entityManager->persist($otherInstitute);
+        $entityManager->persist($otherYear);
+        $entityManager->persist($otherClass);
+        $entityManager->persist($otherSubject);
+        $entityManager->persist($otherPaper);
+        $entityManager->flush();
+
+        $client->request('POST', '/api/v1/question-papers/' . $otherPaperId . '/submit-for-review', [], [], $this->getAuthHeaders($this->instituteToken));
+        $this->assertSame(404, $client->getResponse()->getStatusCode());
+    }
+
+    public function testSubmittedPaperCanBeFinalized(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'What is 2+2?',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => ['3', '4', '5', '6'],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/submit-for-review', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/finalize', [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('FINALIZED', $data['data']['status']);
+    }
+
+    public function testCannotFinalizeArchivedPaper(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $client->request('DELETE', '/api/v1/question-papers/' . $paperId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/finalize', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+    }
+
+    public function testCannotSubmitForReviewPaperWithoutQuestions(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/submit-for-review', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
     private function createTestQuestionPaper(string $token, ?Uuid $instituteId = null): string
     {
         $client = $this->client;
@@ -1114,5 +1326,41 @@ class QuestionPaperControllerTest extends WebTestCase
         $data = json_decode($response->getContent(), true);
 
         return $data['data']['id'];
+    }
+
+    public function testArchivedQuestionPaperCannotBeUpdated(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $client->request('DELETE', '/api/v1/question-papers/' . $paperId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $payload = json_encode([
+            'title' => 'Updated Archived Paper',
+        ]);
+
+        $client->request('PUT', '/api/v1/question-papers/' . $paperId, [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testArchivedQuestionPaperCannotBeDeleted(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $client->request('DELETE', '/api/v1/question-papers/' . $paperId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('DELETE', '/api/v1/question-papers/' . $paperId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
     }
 }

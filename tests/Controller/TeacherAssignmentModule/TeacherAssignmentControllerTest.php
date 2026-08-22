@@ -716,4 +716,81 @@ class TeacherAssignmentControllerTest extends WebTestCase
         $this->assertArrayHasKey('errors', $data);
         $this->assertArrayHasKey('status', $data['errors']);
     }
+
+    public function testArchivedTeacherAssignmentCannotBeUpdated(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $assignment = new TeacherAssignment();
+        $assignment->setTeacher($entityManager->getRepository(User::class)->find($this->testTeacherId));
+        $assignment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $assignment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $assignment->setAssignmentType('SUBJECT_TEACHER');
+        $assignment->setStatus(\App\Enum\TeacherAssignmentStatus::Active);
+        $entityManager->persist($assignment);
+        $entityManager->flush();
+
+        $client->request('DELETE', '/api/v1/teacher-assignments/' . $assignment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $payload = json_encode([
+            'assignmentType' => 'CLASS_TEACHER',
+        ]);
+
+        $client->request('PUT', '/api/v1/teacher-assignments/' . $assignment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testArchivedTeacherAssignmentCannotBeDeleted(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $assignment = new TeacherAssignment();
+        $assignment->setTeacher($entityManager->getRepository(User::class)->find($this->testTeacherId));
+        $assignment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $assignment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $assignment->setAssignmentType('SUBJECT_TEACHER');
+        $assignment->setStatus(\App\Enum\TeacherAssignmentStatus::Active);
+        $entityManager->persist($assignment);
+        $entityManager->flush();
+
+        $client->request('DELETE', '/api/v1/teacher-assignments/' . $assignment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('DELETE', '/api/v1/teacher-assignments/' . $assignment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testTeacherUserRemainsEditableWhenAssignmentIsArchived(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $assignment = new TeacherAssignment();
+        $assignment->setTeacher($entityManager->getRepository(User::class)->find($this->testTeacherId));
+        $assignment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $assignment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $assignment->setAssignmentType('SUBJECT_TEACHER');
+        $assignment->setStatus(\App\Enum\TeacherAssignmentStatus::Active);
+        $entityManager->persist($assignment);
+        $entityManager->flush();
+
+        $client->request('DELETE', '/api/v1/teacher-assignments/' . $assignment->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $teacher = $entityManager->getRepository(User::class)->find($this->testTeacherId);
+        $teacher->setFirstName('Updated Teacher Name');
+        $entityManager->flush();
+
+        $refreshedTeacher = $entityManager->getRepository(User::class)->find($this->testTeacherId);
+        $this->assertSame('Updated Teacher Name', $refreshedTeacher->getFirstName());
+    }
 }

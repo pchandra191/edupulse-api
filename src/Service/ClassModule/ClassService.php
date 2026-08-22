@@ -12,7 +12,10 @@ use App\DTO\Response\ClassListResponse;
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
 use App\Entity\Institute;
+use App\Entity\Section;
+use App\Enum\AcademicYearStatus;
 use App\Enum\ClassStatus;
+use App\Enum\SectionStatus;
 use App\Exception\AuthenticationException;
 use App\Repository\AcademicClassRepository;
 use App\Repository\InstituteRepository;
@@ -90,6 +93,10 @@ readonly class ClassService
             throw new \App\Common\Exception\BusinessException('Class code already exists for this institute.');
         }
 
+        if ($academicYear->getStatus() === AcademicYearStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Cannot create class for an archived academic year.');
+        }
+
         try {
             $this->entityManager->beginTransaction();
 
@@ -128,6 +135,10 @@ readonly class ClassService
             throw new AuthenticationException('Class not found.');
         }
 
+        if ($class->getStatus() === ClassStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived classes cannot be modified.');
+        }
+
         try {
             $this->entityManager->beginTransaction();
             $this->updateFields($class, $request);
@@ -157,9 +168,29 @@ readonly class ClassService
             throw new AuthenticationException('Class not found.');
         }
 
-        $class->setStatus(ClassStatus::Archived);
+        try {
+            $this->entityManager->beginTransaction();
 
-        $this->entityManager->flush();
+            foreach ($class->getSections() as $section) {
+                $section->setStatus(SectionStatus::Archived);
+            }
+
+            $class->setStatus(ClassStatus::Archived);
+
+            $this->entityManager->flush();
+            $this->entityManager->commit();
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            $this->logger->error('Failed to archive class.', [
+                'class_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to archive class. Please try again.', previous: $e);
+        }
     }
 
     private function updateFields(AcademicClass $class, UpdateClassRequestDTO $request): void
