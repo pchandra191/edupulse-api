@@ -167,4 +167,20 @@ class ExamSubjectRepository extends ServiceEntityRepository
 
         return (int) $countQb->getQuery()->getSingleScalarResult();
     }
+
+    public function archiveByExaminationIds(array $examinationIds): void
+    {
+        if (empty($examinationIds)) {
+            return;
+        }
+
+        $this->createQueryBuilder('es')
+            ->update()
+            ->set('es.status', ':status')
+            ->where('es.examination IN (:examinationIds)')
+            ->setParameter('status', 'ARCHIVED')
+            ->setParameter('examinationIds', $examinationIds)
+            ->getQuery()
+            ->execute();
+    }
 }

@@ -67,6 +67,7 @@ class SectionRepository extends ServiceEntityRepository
         $this->applyClassFilter($qb, $classId);
         $this->applySearch($qb, $search);
         $this->applyStatusFilter($qb, $status);
+        $this->applyDefaultActiveFilter($qb, $status);
         $this->applySorting($qb, $sortBy, $sortOrder);
 
         $totalItems = $this->getTotalCount($qb);
@@ -117,6 +118,30 @@ class SectionRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    public function archiveByAcademicYear(Uuid $academicYearId): void
+    {
+        $classIds = $this->getEntityManager()->createQueryBuilder()
+            ->select('c.id')
+            ->from(AcademicClass::class, 'c')
+            ->where('c.academicYear = :academicYear')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->getScalarResult();
+
+        if (empty($classIds)) {
+            return;
+        }
+
+        $this->createQueryBuilder('s')
+            ->update()
+            ->set('s.status', ':status')
+            ->where('s.academicClass IN (:classIds)')
+            ->setParameter('status', 'ARCHIVED')
+            ->setParameter('classIds', array_column($classIds, 'id'))
+            ->getQuery()
+            ->execute();
+    }
+
     private function applyClassFilter(QueryBuilder $qb, ?Uuid $classId): void
     {
         if (null === $classId) {
@@ -151,6 +176,16 @@ class SectionRepository extends ServiceEntityRepository
 
         $qb->andWhere('s.status = :status')
            ->setParameter('status', $status);
+    }
+
+    private function applyDefaultActiveFilter(QueryBuilder $qb, ?string $status): void
+    {
+        if (null !== $status && '' !== $status) {
+            return;
+        }
+
+        $qb->andWhere('s.status != :archivedStatus')
+           ->setParameter('archivedStatus', 'ARCHIVED');
     }
 
     private function applySorting(QueryBuilder $qb, string $sortBy, string $sortOrder): void

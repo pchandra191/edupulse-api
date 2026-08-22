@@ -275,4 +275,16 @@ class QuestionPaperRepository extends ServiceEntityRepository
 
         return $counts;
     }
+
+    public function archiveByAcademicYear(Uuid $academicYearId): void
+    {
+        $this->createQueryBuilder('qp')
+            ->update()
+            ->set('qp.status', ':status')
+            ->where('qp.academicYear = :academicYear')
+            ->setParameter('status', 'ARCHIVED')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->execute();
+    }
 }

@@ -272,8 +272,8 @@ readonly class QuestionPaperService
             throw new AuthenticationException('Question paper not found.');
         }
 
-        if ($paper->isFinalized()) {
-            throw new \App\Common\Exception\BusinessException('Finalized question papers cannot be modified.');
+        if ($paper->isFinalized() || $paper->isSubmittedForReview() || $paper->isArchived()) {
+            throw new \App\Common\Exception\BusinessException('Finalized, submitted, or archived question papers cannot be modified.');
         }
 
         try {
@@ -323,6 +323,10 @@ readonly class QuestionPaperService
             throw new AuthenticationException('Question paper not found.');
         }
 
+        if ($paper->isArchived()) {
+            throw new \App\Common\Exception\BusinessException('Archived question papers cannot be deleted.');
+        }
+
         try {
             $paper->setStatus(QuestionPaperStatus::Archived);
 
@@ -337,7 +341,7 @@ readonly class QuestionPaperService
         }
     }
 
-    public function finalizeQuestionPaper(Uuid $id, ?Uuid $instituteId): QuestionPaperResponseDTO
+    public function submitForReviewQuestionPaper(Uuid $id, ?Uuid $instituteId): QuestionPaperResponseDTO
     {
         $paper = $this->questionPaperRepository->findById($id, $instituteId);
 
@@ -346,17 +350,67 @@ readonly class QuestionPaperService
         }
 
         if (!$paper->isDraft()) {
-            throw new \App\Common\Exception\BusinessException('Only draft question papers can be finalized.');
+            throw new \App\Common\Exception\BusinessException('Only draft question papers can be submitted for review.');
         }
 
+        $this->validateQuestionPaperContent($paper);
+
+        try {
+            $paper->setStatus(QuestionPaperStatus::SubmittedForReview);
+
+            $this->entityManager->flush();
+
+            return $this->mapToResponse($paper);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to submit question paper for review.', [
+                'question_paper_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to submit question paper for review. Please try again.', previous: $e);
+        }
+    }
+
+    public function finalizeQuestionPaper(Uuid $id, ?Uuid $instituteId): QuestionPaperResponseDTO
+    {
+        $paper = $this->questionPaperRepository->findById($id, $instituteId);
+
+        if (!$paper instanceof QuestionPaper) {
+            throw new AuthenticationException('Question paper not found.');
+        }
+
+        if (!$paper->isDraft() && !$paper->isSubmittedForReview()) {
+            throw new \App\Common\Exception\BusinessException('Only draft or submitted question papers can be finalized.');
+        }
+
+        $this->validateQuestionPaperContent($paper);
+
+        try {
+            $paper->setStatus(QuestionPaperStatus::Finalized);
+
+            $this->entityManager->flush();
+
+            return $this->mapToResponse($paper);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to finalize question paper.', [
+                'question_paper_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to finalize question paper. Please try again.', previous: $e);
+        }
+    }
+
+    private function validateQuestionPaperContent(QuestionPaper $paper): void
+    {
         if (empty($paper->getTitle())) {
-            throw new \InvalidArgumentException('Title is required to finalize.');
+            throw new \InvalidArgumentException('Title is required.');
         }
 
         $questionCount = $this->questionRepository->countByPaper($paper->getId());
 
         if ($questionCount === 0) {
-            throw new \InvalidArgumentException('At least one question is required to finalize.');
+            throw new \InvalidArgumentException('At least one question is required.');
         }
 
         $questions = $this->questionRepository->findByPaper($paper->getId());
@@ -399,21 +453,6 @@ readonly class QuestionPaperService
                     throw new \InvalidArgumentException('Descriptive questions must not have options.');
                 }
             }
-        }
-
-        try {
-            $paper->setStatus(QuestionPaperStatus::Finalized);
-
-            $this->entityManager->flush();
-
-            return $this->mapToResponse($paper);
-        } catch (\Throwable $e) {
-            $this->logger->error('Failed to finalize question paper.', [
-                'question_paper_id' => (string) $id,
-                'error' => $e->getMessage(),
-            ]);
-
-            throw new \App\Common\Exception\BusinessException('Failed to finalize question paper. Please try again.', previous: $e);
         }
     }
 

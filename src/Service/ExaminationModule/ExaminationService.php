@@ -189,6 +189,10 @@ readonly class ExaminationService
             throw new AuthenticationException('Examination not found.');
         }
 
+        if ($examination->getStatus() === ExaminationStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived examinations cannot be modified.');
+        }
+
         try {
             $this->entityManager->beginTransaction();
             $this->updateFields($examination, $request);
@@ -216,6 +220,10 @@ readonly class ExaminationService
 
         if (!$examination instanceof Examination) {
             throw new AuthenticationException('Examination not found.');
+        }
+
+        if ($examination->getStatus() === ExaminationStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived examinations cannot be deleted.');
         }
 
         try {
@@ -429,6 +437,10 @@ readonly class ExaminationService
             throw new AuthenticationException('Exam subject not found.');
         }
 
+        if ($examSubject->getStatus() === ExaminationStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived exam subjects cannot be modified.');
+        }
+
         if (!$examSubject->getExamination()->getId()->equals($examinationId)) {
             throw new AuthenticationException('Exam subject not found.');
         }
@@ -472,6 +484,10 @@ readonly class ExaminationService
 
         if (!$examSubject instanceof ExamSubject) {
             throw new AuthenticationException('Exam subject not found.');
+        }
+
+        if ($examSubject->getStatus() === ExaminationStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived exam subjects cannot be deleted.');
         }
 
         if (!$examSubject->getExamination()->getId()->equals($examinationId)) {

@@ -190,6 +190,10 @@ readonly class TeacherAssignmentService
             throw new AuthenticationException('Teacher assignment not found.');
         }
 
+        if ($assignment->getStatus() === TeacherAssignmentStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived teacher assignments cannot be modified.');
+        }
+
         try {
             $this->entityManager->beginTransaction();
             $this->updateFields($assignment, $request, $instituteId);
@@ -217,6 +221,10 @@ readonly class TeacherAssignmentService
 
         if (!$assignment instanceof TeacherAssignment) {
             throw new AuthenticationException('Teacher assignment not found.');
+        }
+
+        if ($assignment->getStatus() === TeacherAssignmentStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived teacher assignments cannot be deleted.');
         }
 
         $assignment->setStatus(TeacherAssignmentStatus::Archived);

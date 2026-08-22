@@ -270,6 +270,26 @@ class QuestionPaperController extends AbstractApiController
     }
 
     #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/question-papers/{id}/submit-for-review', name: 'question_paper_submit_for_review', methods: ['POST'])]
+    public function submitForReview(string $id): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $this->requirePermission('question-papers.submit_for_review');
+
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $paper = $this->questionPaperService->submitForReviewQuestionPaper($this->parseUuid($id), $instituteId);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            return $this->unprocessableEntity($e->getMessage());
+        }
+
+        return $this->success('Question paper submitted for review successfully.', $paper);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
     #[Route('/question-papers/{id}/preview', name: 'question_paper_preview', methods: ['GET'])]
     public function preview(string $id): \Symfony\Component\HttpFoundation\JsonResponse
     {

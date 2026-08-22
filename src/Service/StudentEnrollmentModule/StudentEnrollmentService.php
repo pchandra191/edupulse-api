@@ -212,6 +212,10 @@ readonly class StudentEnrollmentService
             throw new AuthenticationException('Student enrollment not found.');
         }
 
+        if ($enrollment->getStatus() === StudentEnrollmentStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived student enrollments cannot be modified.');
+        }
+
         if ($request->admissionNumber !== null && $request->admissionNumber !== $enrollment->getAdmissionNumber()) {
             if ($this->studentEnrollmentRepository->admissionNumberExistsForInstitute($request->admissionNumber, $enrollment->getAcademicClass()->getInstitute()->getId(), $enrollment->getAcademicYear()->getId(), $enrollment->getId())) {
                 throw new \App\Common\Exception\BusinessException('Admission number already exists for this institute in the selected academic year.');
@@ -269,6 +273,10 @@ readonly class StudentEnrollmentService
             throw new AuthenticationException('Student enrollment not found.');
         }
 
+        if ($enrollment->getStatus() === StudentEnrollmentStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived student enrollments cannot be deleted.');
+        }
+
         try {
             $enrollment->setStatus(StudentEnrollmentStatus::Archived);
             $enrollment->setIsCurrent(false);
@@ -311,6 +319,10 @@ readonly class StudentEnrollmentService
 
         if (!$enrollment instanceof StudentEnrollment) {
             throw new AuthenticationException('Student enrollment not found.');
+        }
+
+        if ($enrollment->getStatus() === StudentEnrollmentStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived student enrollments cannot be modified.');
         }
 
         $section = $this->entityManager->getRepository(Section::class)->find($request->sectionId);
@@ -367,6 +379,10 @@ readonly class StudentEnrollmentService
             throw new AuthenticationException('Student enrollment not found.');
         }
 
+        if ($enrollment->getStatus() === StudentEnrollmentStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived student enrollments cannot be modified.');
+        }
+
         $enrollmentSection = $this->enrollmentSectionRepository->findByEnrollmentAndSection($enrollmentId, $sectionId);
 
         if (!$enrollmentSection instanceof EnrollmentSection) {
@@ -395,6 +411,10 @@ readonly class StudentEnrollmentService
 
         if (!$enrollment instanceof StudentEnrollment) {
             throw new AuthenticationException('Student enrollment not found.');
+        }
+
+        if ($enrollment->getStatus() === StudentEnrollmentStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived student enrollments cannot be modified.');
         }
 
         $enrollmentSection = $this->enrollmentSectionRepository->findByEnrollmentAndSection($enrollmentId, $sectionId);
@@ -493,7 +513,7 @@ readonly class StudentEnrollmentService
 
         $sections = array_map(
             fn (array $row) => new SectionResponse(
-                id: $row['sectionId'],
+                id: (string) $row['sectionId'],
                 name: $row['sectionName'],
                 code: $row['sectionCode'],
                 status: $row['status'],
