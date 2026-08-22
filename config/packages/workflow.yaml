@@ -58,3 +58,40 @@ framework:
                 archive:
                     from: [DRAFT, REVIEW, FINALIZED]
                     to: ARCHIVED
+        exam_session:
+            type: state_machine
+            marking_store:
+                service: app.workflow.marking_store.exam_session
+            supports:
+                - App\Entity\ExamSession
+            initial_marking: DRAFT
+            places:
+                - DRAFT
+                - SCHEDULED
+                - PUBLISHED
+                - ACTIVE
+                - CLOSED
+                - CANCELLED
+                - ARCHIVED
+            transitions:
+                schedule:
+                    from: DRAFT
+                    to: SCHEDULED
+                publish:
+                    from: SCHEDULED
+                    to: PUBLISHED
+                start:
+                    from: PUBLISHED
+                    to: ACTIVE
+                close:
+                    from: ACTIVE
+                    to: CLOSED
+                archive:
+                    from: [DRAFT, SCHEDULED, PUBLISHED, ACTIVE, CLOSED]
+                    to: ARCHIVED
+                cancel:
+                    from: [DRAFT, SCHEDULED, PUBLISHED, ACTIVE]
+                    to: CANCELLED
+                reopen:
+                    from: PUBLISHED
+                    to: DRAFT
