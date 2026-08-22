@@ -8,13 +8,24 @@ use App\DTO\AcademicYear\AcademicYearFilterRequest;
 use App\DTO\AcademicYear\AcademicYearResponseDTO;
 use App\DTO\AcademicYear\AcademicYearUpdateRequestDTO;
 use App\DTO\Response\AcademicYearListResponse;
+use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
 use App\Entity\Institute;
-use App\Entity\User;
+use App\Entity\Section;
 use App\Enum\AcademicYearStatus;
+use App\Enum\ClassStatus;
+use App\Enum\SectionStatus;
 use App\Exception\AuthenticationException;
 use App\Repository\AcademicYearRepository;
 use App\Repository\InstituteRepository;
+use App\Repository\TeacherAssignmentRepository;
+use App\Repository\StudentEnrollmentRepository;
+use App\Repository\ExaminationRepository;
+use App\Repository\QuestionPaperRepository;
+use App\Repository\EnrollmentSectionRepository;
+use App\Repository\ExamSubjectRepository;
+use App\Repository\AcademicClassRepository;
+use App\Repository\SectionRepository;
 use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -27,6 +38,14 @@ readonly class AcademicYearService
         private Security $security,
         private AcademicYearRepository $academicYearRepository,
         private InstituteRepository $instituteRepository,
+        private TeacherAssignmentRepository $teacherAssignmentRepository,
+        private StudentEnrollmentRepository $studentEnrollmentRepository,
+        private ExaminationRepository $examinationRepository,
+        private QuestionPaperRepository $questionPaperRepository,
+        private EnrollmentSectionRepository $enrollmentSectionRepository,
+        private ExamSubjectRepository $examSubjectRepository,
+        private AcademicClassRepository $academicClassRepository,
+        private SectionRepository $sectionRepository,
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
     ) {
@@ -37,6 +56,7 @@ readonly class AcademicYearService
         $result = $this->academicYearRepository->findPaginated(
             $instituteId,
             $filter->search,
+            $filter->status,
             $filter->page,
             $filter->limit,
             $filter->sortBy,
@@ -139,6 +159,10 @@ readonly class AcademicYearService
             throw new AuthenticationException('Academic year not found.');
         }
 
+        if ($academicYear->getStatus() === AcademicYearStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived academic years cannot be modified.');
+        }
+
         try {
             $this->entityManager->beginTransaction();
             $this->updateFields($academicYear, $request);
@@ -168,10 +192,49 @@ readonly class AcademicYearService
             throw new AuthenticationException('Academic year not found.');
         }
 
-        $academicYear->setStatus(AcademicYearStatus::Archived);
-        $academicYear->setIsActive(false);
+        if ($academicYear->getStatus() === AcademicYearStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived academic years cannot be modified.');
+        }
 
-        $this->entityManager->flush();
+        try {
+            $this->entityManager->beginTransaction();
+
+            $this->teacherAssignmentRepository->archiveByAcademicYear($id);
+            $this->studentEnrollmentRepository->archiveByAcademicYear($id);
+
+            $enrollmentIds = $this->studentEnrollmentRepository->findIdsByAcademicYear($id);
+            if (!empty($enrollmentIds)) {
+                $this->enrollmentSectionRepository->archiveByEnrollmentIds($enrollmentIds);
+            }
+
+            $this->examinationRepository->archiveByAcademicYear($id);
+
+            $examinationIds = $this->examinationRepository->findIdsByAcademicYear($id);
+            if (!empty($examinationIds)) {
+                $this->examSubjectRepository->archiveByExaminationIds($examinationIds);
+            }
+
+            $this->questionPaperRepository->archiveByAcademicYear($id);
+            $this->academicClassRepository->archiveByAcademicYear($id);
+            $this->sectionRepository->archiveByAcademicYear($id);
+
+            $academicYear->setStatus(AcademicYearStatus::Archived);
+            $academicYear->setIsActive(false);
+
+            $this->entityManager->flush();
+            $this->entityManager->commit();
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            $this->logger->error('Failed to archive academic year.', [
+                'academic_year_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to archive academic year. Please try again.', previous: $e);
+        }
     }
 
     private function updateFields(AcademicYear $academicYear, AcademicYearUpdateRequestDTO $request): void

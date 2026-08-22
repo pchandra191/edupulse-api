@@ -610,6 +610,32 @@ class SectionControllerTest extends WebTestCase
         $this->assertStringContainsString('already exists', strtolower($data['message']));
     }
 
+    public function testCannotCreateSectionUnderArchivedClass(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $class = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+        $class->setStatus(\App\Enum\ClassStatus::Archived);
+        $entityManager->flush();
+
+        $payload = json_encode([
+            'academicClassId' => (string) $this->testClassId,
+            'name' => 'New Section',
+            'code' => 'NEWSEC' . uniqid(),
+            'status' => 'ACTIVE',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/sections', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
     public function testUnauthorizedRoleReceives403(): void
     {
         $client = $this->client;
@@ -638,5 +664,37 @@ class SectionControllerTest extends WebTestCase
             'DELETE FROM users WHERE id = :id',
             ['id' => $student->getId()->toRfc4122()]
         );
+    }
+
+    public function testCannotReactivateArchivedSection(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $section = new Section();
+        $section->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $section->setName('To Reactivate');
+        $section->setCode('REACT' . uniqid());
+        $section->setStatus(\App\Enum\SectionStatus::Active);
+        $entityManager->persist($section);
+        $entityManager->flush();
+
+        $client->request('DELETE', '/api/v1/sections/' . $section->getId(), [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $payload = json_encode([
+            'name' => 'Reactivated Section',
+            'code' => 'REACT2',
+            'status' => 'ACTIVE',
+        ]);
+
+        $client->request('PUT', '/api/v1/sections/' . $section->getId(), [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+
+        $refreshedSection = $entityManager->getRepository(Section::class)->find($section->getId());
+        $this->assertSame(\App\Enum\SectionStatus::Archived->value, $refreshedSection->getStatus()->value);
     }
 }

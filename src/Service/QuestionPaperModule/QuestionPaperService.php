@@ -273,8 +273,8 @@ readonly class QuestionPaperService
             throw new AuthenticationException('Question paper not found.');
         }
 
-        if ($paper->isFinalized()) {
-            throw new \App\Common\Exception\BusinessException('Finalized question papers cannot be modified.');
+        if ($paper->isFinalized() || $paper->isReview() || $paper->isArchived()) {
+            throw new \App\Common\Exception\BusinessException('Finalized, review, or archived question papers cannot be modified.');
         }
 
         try {
@@ -328,6 +328,10 @@ readonly class QuestionPaperService
 
         if (!$paper instanceof QuestionPaper) {
             throw new AuthenticationException('Question paper not found.');
+        }
+
+        if ($paper->isArchived()) {
+            throw new \App\Common\Exception\BusinessException('Archived question papers cannot be deleted.');
         }
 
         try {
@@ -436,14 +440,40 @@ readonly class QuestionPaperService
             throw new \App\Common\Exception\BusinessException('Only question papers under review can be finalized.');
         }
 
+        $this->validateQuestionPaperContent($paper);
+
+        try {
+            $workflow = $this->workflowRegistry->get($paper);
+
+            if (!$workflow->can($paper, 'finalize')) {
+                throw new \App\Common\Exception\BusinessException('Only question papers under review can be finalized.');
+            }
+
+            $workflow->apply($paper, 'finalize');
+
+            $this->entityManager->flush();
+
+            return $this->mapToResponse($paper);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to finalize question paper.', [
+                'question_paper_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to finalize question paper. Please try again.', previous: $e);
+        }
+    }
+
+    private function validateQuestionPaperContent(QuestionPaper $paper): void
+    {
         if (empty($paper->getTitle())) {
-            throw new \InvalidArgumentException('Title is required to finalize.');
+            throw new \InvalidArgumentException('Title is required.');
         }
 
         $questionCount = $this->questionRepository->countByPaper($paper->getId());
 
         if ($questionCount === 0) {
-            throw new \InvalidArgumentException('At least one question is required to finalize.');
+            throw new \InvalidArgumentException('At least one question is required.');
         }
 
         $questions = $this->questionRepository->findByPaper($paper->getId());
@@ -486,27 +516,6 @@ readonly class QuestionPaperService
                     throw new \InvalidArgumentException('Descriptive questions must not have options.');
                 }
             }
-        }
-
-        try {
-            $workflow = $this->workflowRegistry->get($paper);
-
-            if (!$workflow->can($paper, 'finalize')) {
-                throw new \App\Common\Exception\BusinessException('Only question papers under review can be finalized.');
-            }
-
-            $workflow->apply($paper, 'finalize');
-
-            $this->entityManager->flush();
-
-            return $this->mapToResponse($paper);
-        } catch (\Throwable $e) {
-            $this->logger->error('Failed to finalize question paper.', [
-                'question_paper_id' => (string) $id,
-                'error' => $e->getMessage(),
-            ]);
-
-            throw new \App\Common\Exception\BusinessException('Failed to finalize question paper. Please try again.', previous: $e);
         }
     }
 

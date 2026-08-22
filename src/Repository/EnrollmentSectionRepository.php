@@ -64,4 +64,20 @@ class EnrollmentSectionRepository extends ServiceEntityRepository
 
         $qb->getQuery()->execute();
     }
+
+    public function archiveByEnrollmentIds(array $enrollmentIds): void
+    {
+        if (empty($enrollmentIds)) {
+            return;
+        }
+
+        $this->createQueryBuilder('es')
+            ->update()
+            ->set('es.status', ':status')
+            ->where('es.studentEnrollment IN (:enrollmentIds)')
+            ->setParameter('status', 'ARCHIVED')
+            ->setParameter('enrollmentIds', $enrollmentIds)
+            ->getQuery()
+            ->execute();
+    }
 }

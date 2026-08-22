@@ -262,6 +262,34 @@ class StudentEnrollmentRepository extends ServiceEntityRepository
         return (int) $countQb->getQuery()->getSingleScalarResult();
     }
 
+    public function archiveByAcademicYear(Uuid $academicYearId): void
+    {
+        $this->createQueryBuilder('se')
+            ->update()
+            ->set('se.status', ':status')
+            ->where('se.academicYear = :academicYear')
+            ->setParameter('status', 'ARCHIVED')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function findIdsByAcademicYear(Uuid $academicYearId): array
+    {
+        return array_column(
+            $this->createQueryBuilder('se')
+                ->select('se.id')
+                ->where('se.academicYear = :academicYear')
+                ->setParameter('academicYear', $academicYearId)
+                ->getQuery()
+                ->getScalarResult(),
+            'id'
+        );
+    }
+
     /**
      * @return array<string, array<int, array<string, mixed>>>
      */

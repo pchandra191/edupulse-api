@@ -41,7 +41,7 @@ class AcademicYearRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    public function findPaginated(?Uuid $instituteId, ?string $search, int $page, int $limit, string $sortBy, string $sortOrder): array
+    public function findPaginated(?Uuid $instituteId, ?string $search, ?string $status, int $page, int $limit, string $sortBy, string $sortOrder): array
     {
         $qb = $this->createQueryBuilder('a')
             ->leftJoin('a.institute', 'i')
@@ -53,6 +53,8 @@ class AcademicYearRepository extends ServiceEntityRepository
         }
 
         $this->applySearch($qb, $search);
+        $this->applyStatusFilter($qb, $status);
+        $this->applyDefaultActiveFilter($qb, $status);
         $this->applySorting($qb, $sortBy, $sortOrder);
 
         $totalItems = $this->getTotalCount($qb);
@@ -92,14 +94,16 @@ class AcademicYearRepository extends ServiceEntityRepository
     {
         $qb = $this->createQueryBuilder('a')
             ->update()
-            ->set('a.status', ':status')
+            // ->set('a.status', ':status')
             ->set('a.isActive', ':isActive')
             ->where('a.institute = :institute')
             ->andWhere('a.id != :id')
-            ->setParameter('status', 'INACTIVE')
+            ->andWhere('a.status != :archivedStatus')
+            // ->setParameter('status', 'INACTIVE')
             ->setParameter('isActive', false)
             ->setParameter('institute', $academicYear->getInstitute())
-            ->setParameter('id', $academicYear->getId());
+            ->setParameter('id', $academicYear->getId())
+            ->setParameter('archivedStatus', 'ARCHIVED');
 
         $qb->getQuery()->execute();
     }
@@ -118,6 +122,26 @@ class AcademicYearRepository extends ServiceEntityRepository
                 $qb->expr()->like('LOWER(a.code)', ':search')
             )
         )->setParameter('search', '%' . $search . '%');
+    }
+
+    private function applyStatusFilter(QueryBuilder $qb, ?string $status): void
+    {
+        if (null === $status || '' === $status) {
+            return;
+        }
+
+        $qb->andWhere('a.status = :status')
+           ->setParameter('status', $status);
+    }
+
+    private function applyDefaultActiveFilter(QueryBuilder $qb, ?string $status): void
+    {
+        if (null !== $status && '' !== $status) {
+            return;
+        }
+
+        $qb->andWhere('a.status != :archivedStatus')
+           ->setParameter('archivedStatus', 'ARCHIVED');
     }
 
     private function applySorting(QueryBuilder $qb, string $sortBy, string $sortOrder): void

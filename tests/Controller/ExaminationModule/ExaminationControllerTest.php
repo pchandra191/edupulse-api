@@ -779,4 +779,78 @@ class ExaminationControllerTest extends WebTestCase
 
         return $data['data']['id'];
     }
+
+    public function testArchivedExaminationCannotBeUpdated(): void
+    {
+        $client = $this->client;
+
+        $examinationId = $this->createTestExamination($this->superAdminToken);
+
+        $client->request('DELETE', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $payload = json_encode([
+            'name' => 'Updated Archived Examination',
+        ]);
+
+        $client->request('PUT', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testArchivedExaminationCannotBeDeleted(): void
+    {
+        $client = $this->client;
+
+        $examinationId = $this->createTestExamination($this->superAdminToken);
+
+        $client->request('DELETE', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('DELETE', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testArchivedExamSubjectCannotBeUpdated(): void
+    {
+        $client = $this->client;
+
+        $examinationId = $this->createTestExamination($this->superAdminToken);
+        $examSubjectId = $this->createTestExamSubject($examinationId, $this->superAdminToken);
+
+        $client->request('DELETE', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $payload = json_encode([
+            'maxMarks' => 200,
+        ]);
+
+        $client->request('PUT', '/api/v1/examinations/' . $examinationId . '/subjects/' . $examSubjectId, [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testArchivedExamSubjectCannotBeDeleted(): void
+    {
+        $client = $this->client;
+
+        $examinationId = $this->createTestExamination($this->superAdminToken);
+        $examSubjectId = $this->createTestExamSubject($examinationId, $this->superAdminToken);
+
+        $client->request('DELETE', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('DELETE', '/api/v1/examinations/' . $examinationId . '/subjects/' . $examSubjectId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
 }

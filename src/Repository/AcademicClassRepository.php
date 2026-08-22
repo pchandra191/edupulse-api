@@ -66,6 +66,7 @@ class AcademicClassRepository extends ServiceEntityRepository
         $this->applySearch($qb, $search);
         $this->applyAcademicYearFilter($qb, $academicYearId);
         $this->applyStatusFilter($qb, $status);
+        $this->applyDefaultActiveFilter($qb, $status);
         $this->applySorting($qb, $sortBy, $sortOrder);
 
         $totalItems = $this->getTotalCount($qb);
@@ -116,6 +117,18 @@ class AcademicClassRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    public function archiveByAcademicYear(Uuid $academicYearId): void
+    {
+        $this->createQueryBuilder('c')
+            ->update()
+            ->set('c.status', ':status')
+            ->where('c.academicYear = :academicYear')
+            ->setParameter('status', 'ARCHIVED')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->execute();
+    }
+
     private function applySearch(QueryBuilder $qb, ?string $search): void
     {
         if (null === $search || '' === $search) {
@@ -150,6 +163,16 @@ class AcademicClassRepository extends ServiceEntityRepository
 
         $qb->andWhere('c.status = :status')
            ->setParameter('status', $status);
+    }
+
+    private function applyDefaultActiveFilter(QueryBuilder $qb, ?string $status): void
+    {
+        if (null !== $status && '' !== $status) {
+            return;
+        }
+
+        $qb->andWhere('c.status != :archivedStatus')
+           ->setParameter('archivedStatus', 'ARCHIVED');
     }
 
     private function applySorting(QueryBuilder $qb, string $sortBy, string $sortOrder): void

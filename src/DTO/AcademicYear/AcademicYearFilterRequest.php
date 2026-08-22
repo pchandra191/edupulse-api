@@ -11,6 +11,8 @@ readonly class AcademicYearFilterRequest
         #[Assert\Length(max: 255)]
         public ?string $search = null,
 
+        public ?string $status = null,
+
         public int $page = 1,
 
         public int $limit = 10,

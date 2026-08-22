@@ -238,4 +238,32 @@ class ExaminationRepository extends ServiceEntityRepository
 
         return $counts;
     }
+
+    public function archiveByAcademicYear(Uuid $academicYearId): void
+    {
+        $this->createQueryBuilder('e')
+            ->update()
+            ->set('e.status', ':status')
+            ->where('e.academicYear = :academicYear')
+            ->setParameter('status', 'ARCHIVED')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function findIdsByAcademicYear(Uuid $academicYearId): array
+    {
+        return array_column(
+            $this->createQueryBuilder('e')
+                ->select('e.id')
+                ->where('e.academicYear = :academicYear')
+                ->setParameter('academicYear', $academicYearId)
+                ->getQuery()
+                ->getScalarResult(),
+            'id'
+        );
+    }
 }

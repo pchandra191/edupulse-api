@@ -118,6 +118,10 @@ readonly class SubjectService
             throw new AuthenticationException('Subject not found.');
         }
 
+        if ($subject->getStatus() === SubjectStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived subjects cannot be modified.');
+        }
+
         try {
             $this->entityManager->beginTransaction();
             $this->updateFields($subject, $request);
@@ -145,6 +149,10 @@ readonly class SubjectService
 
         if (!$subject instanceof Subject) {
             throw new AuthenticationException('Subject not found.');
+        }
+
+        if ($subject->getStatus() === SubjectStatus::Archived) {
+            throw new \App\Common\Exception\BusinessException('Archived subjects cannot be deleted.');
         }
 
         $subject->setStatus(SubjectStatus::Archived);

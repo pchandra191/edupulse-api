@@ -231,4 +231,16 @@ class TeacherAssignmentRepository extends ServiceEntityRepository
 
         return (int) $countQb->getQuery()->getSingleScalarResult();
     }
+
+    public function archiveByAcademicYear(Uuid $academicYearId): void
+    {
+        $this->createQueryBuilder('ta')
+            ->update()
+            ->set('ta.status', ':status')
+            ->where('ta.academicYear = :academicYear')
+            ->setParameter('status', 'ARCHIVED')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->execute();
+    }
 }
