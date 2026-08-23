@@ -48,6 +48,7 @@ readonly class QuestionPaperService
         private AiQuestionGenerationServiceInterface $aiQuestionGenerationService,
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
+        private \Symfony\Component\Workflow\Registry $workflowRegistry,
     ) {
     }
 
@@ -206,7 +207,7 @@ readonly class QuestionPaperService
             $paper->setDuration($request->duration);
             $paper->setMaximumMarks($request->maximumMarks);
             $paper->setInstructions($request->instructions);
-            $paper->setStatus(QuestionPaperStatus::from($request->status));
+            $paper->setStatus(QuestionPaperStatus::Draft);
             $paper->setCreatedBy($request->createdBy);
 
             foreach ($classes as $class) {
@@ -272,8 +273,8 @@ readonly class QuestionPaperService
             throw new AuthenticationException('Question paper not found.');
         }
 
-        if ($paper->isFinalized() || $paper->isSubmittedForReview() || $paper->isArchived()) {
-            throw new \App\Common\Exception\BusinessException('Finalized, submitted, or archived question papers cannot be modified.');
+        if ($paper->isFinalized() || $paper->isReview() || $paper->isArchived()) {
+            throw new \App\Common\Exception\BusinessException('Finalized, review, or archived question papers cannot be modified.');
         }
 
         try {
@@ -283,6 +284,12 @@ readonly class QuestionPaperService
             $this->entityManager->commit();
 
             return $this->mapToResponse($paper);
+        } catch (\App\Common\Exception\BusinessException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            throw $e;
         } catch (\ValueError $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -328,7 +335,13 @@ readonly class QuestionPaperService
         }
 
         try {
-            $paper->setStatus(QuestionPaperStatus::Archived);
+            $workflow = $this->workflowRegistry->get($paper);
+
+            if (!$workflow->can($paper, 'archive')) {
+                throw new \App\Common\Exception\BusinessException('Question paper cannot be archived from its current state.');
+            }
+
+            $workflow->apply($paper, 'archive');
 
             $this->entityManager->flush();
         } catch (\Throwable $e) {
@@ -341,7 +354,7 @@ readonly class QuestionPaperService
         }
     }
 
-    public function submitForReviewQuestionPaper(Uuid $id, ?Uuid $instituteId): QuestionPaperResponseDTO
+    public function submitForReview(Uuid $id, ?Uuid $instituteId): QuestionPaperResponseDTO
     {
         $paper = $this->questionPaperRepository->findById($id, $instituteId);
 
@@ -353,10 +366,20 @@ readonly class QuestionPaperService
             throw new \App\Common\Exception\BusinessException('Only draft question papers can be submitted for review.');
         }
 
-        $this->validateQuestionPaperContent($paper);
+        $questionCount = $this->questionRepository->countByPaper($paper->getId());
+
+        if ($questionCount === 0) {
+            throw new \InvalidArgumentException('At least one question is required to submit for review.');
+        }
 
         try {
-            $paper->setStatus(QuestionPaperStatus::SubmittedForReview);
+            $workflow = $this->workflowRegistry->get($paper);
+
+            if (!$workflow->can($paper, 'submit_for_review')) {
+                throw new \App\Common\Exception\BusinessException('Question paper cannot be submitted for review from its current state.');
+            }
+
+            $workflow->apply($paper, 'submit_for_review');
 
             $this->entityManager->flush();
 
@@ -371,6 +394,40 @@ readonly class QuestionPaperService
         }
     }
 
+    public function requestChanges(Uuid $id, ?Uuid $instituteId): QuestionPaperResponseDTO
+    {
+        $paper = $this->questionPaperRepository->findById($id, $instituteId);
+
+        if (!$paper instanceof QuestionPaper) {
+            throw new AuthenticationException('Question paper not found.');
+        }
+
+        if (!$paper->isReview()) {
+            throw new \App\Common\Exception\BusinessException('Only question papers under review can be sent back for changes.');
+        }
+
+        try {
+            $workflow = $this->workflowRegistry->get($paper);
+
+            if (!$workflow->can($paper, 'request_changes')) {
+                throw new \App\Common\Exception\BusinessException('Question paper cannot be sent back for changes from its current state.');
+            }
+
+            $workflow->apply($paper, 'request_changes');
+
+            $this->entityManager->flush();
+
+            return $this->mapToResponse($paper);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to request changes on question paper.', [
+                'question_paper_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to request changes on question paper. Please try again.', previous: $e);
+        }
+    }
+
     public function finalizeQuestionPaper(Uuid $id, ?Uuid $instituteId): QuestionPaperResponseDTO
     {
         $paper = $this->questionPaperRepository->findById($id, $instituteId);
@@ -379,14 +436,20 @@ readonly class QuestionPaperService
             throw new AuthenticationException('Question paper not found.');
         }
 
-        if (!$paper->isDraft() && !$paper->isSubmittedForReview()) {
-            throw new \App\Common\Exception\BusinessException('Only draft or submitted question papers can be finalized.');
+        if (!$paper->isReview()) {
+            throw new \App\Common\Exception\BusinessException('Only question papers under review can be finalized.');
         }
 
         $this->validateQuestionPaperContent($paper);
 
         try {
-            $paper->setStatus(QuestionPaperStatus::Finalized);
+            $workflow = $this->workflowRegistry->get($paper);
+
+            if (!$workflow->can($paper, 'finalize')) {
+                throw new \App\Common\Exception\BusinessException('Only question papers under review can be finalized.');
+            }
+
+            $workflow->apply($paper, 'finalize');
 
             $this->entityManager->flush();
 
@@ -596,10 +659,13 @@ readonly class QuestionPaperService
             $this->entityManager->flush();
 
             if ($type === QuestionType::MCQ && !empty($request->options)) {
-                foreach ($request->options as $index => $optionText) {
+                foreach ($request->options as $index => $optionData) {
+                    [$optionText, $isCorrect] = $this->normalizeOption($optionData);
+
                     $option = new \App\Entity\QuestionOption();
                     $option->setOptionText($optionText);
                     $option->setDisplayOrder($index + 1);
+                    $option->setIsCorrect($isCorrect);
 
                     $question->addOption($option);
 
@@ -838,7 +904,20 @@ readonly class QuestionPaperService
         }
 
         if ($request->status !== null) {
-            $paper->setStatus(QuestionPaperStatus::from($request->status));
+            $target = QuestionPaperStatus::from($request->status);
+            $current = $paper->getStatus();
+
+            if ($current !== $target) {
+                $transition = $this->resolveQuestionPaperTransition($current, $target);
+
+                if ($transition === null || !$this->workflowRegistry->get($paper)->can($paper, $transition)) {
+                    throw new \App\Common\Exception\BusinessException(
+                        sprintf('Invalid question paper status transition from %s to %s.', $current->value, $target->value)
+                    );
+                }
+
+                $this->workflowRegistry->get($paper)->apply($paper, $transition);
+            }
         }
 
         if ($request->classIds !== null) {
@@ -953,15 +1032,47 @@ readonly class QuestionPaperService
 
             $this->questionOptionRepository->deleteByQuestion($question->getId());
 
-            foreach ($request->options as $index => $optionText) {
+            foreach ($request->options as $index => $optionData) {
+                [$optionText, $isCorrect] = $this->normalizeOption($optionData);
+
                 $option = new \App\Entity\QuestionOption();
                 $option->setQuestion($question);
                 $option->setOptionText($optionText);
                 $option->setDisplayOrder($index + 1);
+                $option->setIsCorrect($isCorrect);
 
                 $this->entityManager->persist($option);
             }
         }
+    }
+
+    private function resolveQuestionPaperTransition(QuestionPaperStatus $from, QuestionPaperStatus $to): ?string
+    {
+        // Finalization is intentionally only reachable through the dedicated
+        // /finalize endpoint, which enforces business validation (title,
+        // question and option rules). The generic status update therefore only
+        // supports the draft -> review -> draft loop and archiving.
+        return match (true) {
+            $from === $to => null,
+            $from === QuestionPaperStatus::Draft && $to === QuestionPaperStatus::Review => 'submit_for_review',
+            $from === QuestionPaperStatus::Review && $to === QuestionPaperStatus::Draft => 'request_changes',
+            $from === QuestionPaperStatus::Draft && $to === QuestionPaperStatus::Archived => 'archive',
+            $from === QuestionPaperStatus::Review && $to === QuestionPaperStatus::Archived => 'archive',
+            $from === QuestionPaperStatus::Finalized && $to === QuestionPaperStatus::Archived => 'archive',
+            default => null,
+        };
+    }
+
+    private function normalizeOption(mixed $option): array
+    {
+        if (is_array($option)) {
+            $text = isset($option['text']) ? (string) $option['text'] : '';
+            $isCorrect = isset($option['isCorrect']) ? (bool) $option['isCorrect'] : false;
+
+            return [$text, $isCorrect];
+        }
+
+        return [(string) $option, false];
     }
 
     private function mapToListItemResponse(
@@ -1075,6 +1186,7 @@ readonly class QuestionPaperService
                     id: (string) $optionRow['id'],
                     text: $optionRow['optionText'],
                     displayOrder: $optionRow['displayOrder'],
+                    isCorrect: (bool) ($optionRow['isCorrect'] ?? false),
                 );
             }
         } else {
@@ -1083,6 +1195,7 @@ readonly class QuestionPaperService
                     id: $option->getId()->toRfc4122(),
                     text: $option->getOptionText(),
                     displayOrder: $option->getDisplayOrder(),
+                    isCorrect: $option->isCorrect(),
                 );
             }
         }

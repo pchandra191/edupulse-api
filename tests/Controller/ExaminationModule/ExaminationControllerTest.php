@@ -337,7 +337,7 @@ class ExaminationControllerTest extends WebTestCase
 
         $payload = json_encode([
             'name' => 'Updated Examination',
-            'status' => 'ONGOING',
+            'status' => 'SCHEDULED',
         ]);
 
         $client->request('PUT', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -349,7 +349,50 @@ class ExaminationControllerTest extends WebTestCase
         $data = json_decode($response->getContent(), true);
         $this->assertTrue($data['success']);
         $this->assertSame('Updated Examination', $data['data']['name']);
-        $this->assertSame('ONGOING', $data['data']['status']);
+        $this->assertSame('SCHEDULED', $data['data']['status']);
+    }
+
+    public function testExaminationInvalidTransitionRejected(): void
+    {
+        $client = $this->client;
+
+        $examinationId = $this->createTestExamination($this->superAdminToken);
+
+        $payload = json_encode([
+            'status' => 'ONGOING',
+        ]);
+
+        $client->request('PUT', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertStringContainsString('transition', strtolower($data['message']));
+
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+        $examination = $entityManager->getRepository(\App\Entity\Examination::class)->find($examinationId);
+        $this->assertSame(\App\Enum\ExaminationStatus::Draft->value, $examination->getStatus()->value);
+    }
+
+    public function testExaminationCancelTransition(): void
+    {
+        $client = $this->client;
+
+        $examinationId = $this->createTestExamination($this->superAdminToken);
+
+        $payload = json_encode([
+            'status' => 'CANCELLED',
+        ]);
+
+        $client->request('PUT', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('CANCELLED', $data['data']['status']);
     }
 
     public function testSuperAdminCanDeleteExamination(): void

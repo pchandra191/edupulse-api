@@ -27,6 +27,9 @@ class QuestionOption extends AbstractEntity
     #[ORM\Column(type: Types::INTEGER)]
     private int $displayOrder;
 
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $isCorrect = false;
+
     public function getQuestion(): Question
     {
         return $this->question;
@@ -59,6 +62,18 @@ class QuestionOption extends AbstractEntity
     public function setDisplayOrder(int $displayOrder): self
     {
         $this->displayOrder = $displayOrder;
+
+        return $this;
+    }
+
+    public function isCorrect(): bool
+    {
+        return $this->isCorrect;
+    }
+
+    public function setIsCorrect(bool $isCorrect): self
+    {
+        $this->isCorrect = $isCorrect;
 
         return $this;
     }

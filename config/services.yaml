@@ -35,3 +35,30 @@ services:
     App\Common\Api\Response\ApiResponseFactory:
         arguments:
             $apiVersion: '%app.api_version%'
+
+    App\Workflow\EnumMarkingStore:
+        abstract: true
+
+    app.workflow.marking_store.examination:
+        parent: App\Workflow\EnumMarkingStore
+        arguments:
+            $property: 'status'
+            $enumClass: App\Enum\ExaminationStatus
+
+    app.workflow.marking_store.question_paper:
+        parent: App\Workflow\EnumMarkingStore
+        arguments:
+            $property: 'status'
+            $enumClass: App\Enum\QuestionPaperStatus
+
+    app.workflow.marking_store.exam_session:
+        parent: App\Workflow\EnumMarkingStore
+        arguments:
+            $property: 'status'
+            $enumClass: App\Enum\ExamSessionStatus
+
+    app.workflow.marking_store.exam_attempt:
+        parent: App\Workflow\EnumMarkingStore
+        arguments:
+            $property: 'status'
+            $enumClass: App\Enum\ExamAttemptStatus

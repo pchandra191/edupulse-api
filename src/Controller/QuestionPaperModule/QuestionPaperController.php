@@ -273,11 +273,11 @@ class QuestionPaperController extends AbstractApiController
     #[Route('/question-papers/{id}/submit-for-review', name: 'question_paper_submit_for_review', methods: ['POST'])]
     public function submitForReview(string $id): \Symfony\Component\HttpFoundation\JsonResponse
     {
-        $this->requirePermission('question-papers.submit_for_review');
+        $this->requirePermission('question-papers.edit');
 
         try {
             $instituteId = $this->getCurrentInstituteId();
-            $paper = $this->questionPaperService->submitForReviewQuestionPaper($this->parseUuid($id), $instituteId);
+            $paper = $this->questionPaperService->submitForReview($this->parseUuid($id), $instituteId);
         } catch (AuthenticationException $e) {
             return $this->notFound();
         } catch (\App\Common\Exception\BusinessException $e) {
@@ -286,7 +286,27 @@ class QuestionPaperController extends AbstractApiController
             return $this->unprocessableEntity($e->getMessage());
         }
 
-        return $this->success('Question paper submitted for review successfully.', $paper);
+        return $this->success('Question paper submitted for review.', $paper);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/question-papers/{id}/request-changes', name: 'question_paper_request_changes', methods: ['POST'])]
+    public function requestChanges(string $id): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $this->requirePermission('question-papers.edit');
+
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $paper = $this->questionPaperService->requestChanges($this->parseUuid($id), $instituteId);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            return $this->unprocessableEntity($e->getMessage());
+        }
+
+        return $this->success('Question paper sent back for changes.', $paper);
     }
 
     #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]

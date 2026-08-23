@@ -9,6 +9,7 @@ readonly class QuestionOptionResponseDTO
         public string $id,
         public string $text,
         public int $displayOrder,
+        public bool $isCorrect = false,
     ) {
     }
 }

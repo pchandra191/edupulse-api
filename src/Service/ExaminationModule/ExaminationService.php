@@ -45,6 +45,7 @@ readonly class ExaminationService
         private InstituteRepository $instituteRepository,
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
+        private \Symfony\Component\Workflow\Registry $workflowRegistry,
     ) {
     }
 
@@ -154,7 +155,7 @@ readonly class ExaminationService
             $examination->setDescription($request->description);
             $examination->setStartDate($startDate);
             $examination->setEndDate($endDate);
-            $examination->setStatus(ExaminationStatus::from($request->status));
+            $examination->setStatus(ExaminationStatus::Draft);
 
             $this->entityManager->persist($examination);
             $this->entityManager->flush();
@@ -200,6 +201,12 @@ readonly class ExaminationService
             $this->entityManager->commit();
 
             return $this->mapToResponse($examination);
+        } catch (\App\Common\Exception\BusinessException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            throw $e;
         } catch (\Throwable $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -227,7 +234,13 @@ readonly class ExaminationService
         }
 
         try {
-            $examination->setStatus(ExaminationStatus::Archived);
+            $workflow = $this->workflowRegistry->get($examination);
+
+            if (!$workflow->can($examination, 'archive')) {
+                throw new \App\Common\Exception\BusinessException('Examination cannot be archived from its current state.');
+            }
+
+            $workflow->apply($examination, 'archive');
 
             foreach ($examination->getExamSubjects() as $examSubject) {
                 $examSubject->setStatus(ExaminationStatus::Archived);
@@ -556,7 +569,20 @@ readonly class ExaminationService
         }
 
         if ($request->status !== null) {
-            $examination->setStatus(ExaminationStatus::from($request->status));
+            $target = ExaminationStatus::from($request->status);
+            $current = $examination->getStatus();
+
+            if ($current !== $target) {
+                $transition = $this->resolveExaminationTransition($current, $target);
+
+                if ($transition === null || !$this->workflowRegistry->get($examination)->can($examination, $transition)) {
+                    throw new \App\Common\Exception\BusinessException(
+                        sprintf('Invalid examination status transition from %s to %s.', $current->value, $target->value)
+                    );
+                }
+
+                $this->workflowRegistry->get($examination)->apply($examination, $transition);
+            }
         }
     }
 
@@ -687,6 +713,22 @@ readonly class ExaminationService
         if ($request->remarks !== null && $request->remarks !== $examSubject->getRemarks()) {
             $examSubject->setRemarks($request->remarks);
         }
+    }
+
+    private function resolveExaminationTransition(ExaminationStatus $from, ExaminationStatus $to): ?string
+    {
+        return match (true) {
+            $from === $to => null,
+            $from === ExaminationStatus::Draft && $to === ExaminationStatus::Scheduled => 'schedule',
+            $from === ExaminationStatus::Scheduled && $to === ExaminationStatus::Ongoing => 'start',
+            $from === ExaminationStatus::Ongoing && $to === ExaminationStatus::Completed => 'complete',
+            $from === ExaminationStatus::Completed && $to === ExaminationStatus::Archived => 'archive',
+            $from === ExaminationStatus::Draft && $to === ExaminationStatus::Cancelled => 'cancel',
+            $from === ExaminationStatus::Scheduled && $to === ExaminationStatus::Cancelled => 'cancel',
+            $from === ExaminationStatus::Ongoing && $to === ExaminationStatus::Cancelled => 'cancel',
+            $from === ExaminationStatus::Completed && $to === ExaminationStatus::Scheduled => 'reopen',
+            default => null,
+        };
     }
 
     private function mapToListItemResponse(Examination $examination, array $examSubjectCounts): ExaminationResponseDTO

@@ -23,7 +23,7 @@ readonly class UpdateQuestionPaperRequestDTO
         #[Assert\Length(max: 5000)]
         public ?string $instructions = null,
 
-        #[Assert\Choice(choices: ['DRAFT', 'FINALIZED', 'ARCHIVED'], message: 'Invalid status. Allowed values: DRAFT, FINALIZED, ARCHIVED.')]
+        #[Assert\Choice(choices: ['DRAFT', 'REVIEW', 'FINALIZED', 'ARCHIVED'], message: 'Invalid status. Allowed values: DRAFT, REVIEW, FINALIZED, ARCHIVED.')]
         public ?string $status = null,
 
         #[Assert\All([

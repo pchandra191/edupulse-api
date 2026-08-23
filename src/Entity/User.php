@@ -8,6 +8,8 @@ use App\Enum\TeacherDepartment;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Repository\UserRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
@@ -54,10 +56,14 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
     #[ORM\JoinColumn(name: 'institute_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?Institute $institute = null;
 
+    #[ORM\OneToMany(mappedBy: 'student', targetEntity: ExamAttempt::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $examAttempts;
+
     public function __construct()
     {
         parent::__construct();
         $this->roles = [];
+        $this->examAttempts = new ArrayCollection();
     }
 
     public function getEmail(): string
@@ -252,5 +258,13 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
         $this->institute = $institute;
 
         return $this;
+    }
+
+    /**
+     * @return Collection<int, ExamAttempt>
+     */
+    public function getExamAttempts(): Collection
+    {
+        return $this->examAttempts;
     }
 }

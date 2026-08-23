@@ -60,7 +60,7 @@ class QuestionOptionRepository extends ServiceEntityRepository
         }
 
         $qb = $this->createQueryBuilder('qo')
-            ->select('qo.id, IDENTITY(qo.question) AS questionId, qo.optionText, qo.displayOrder')
+            ->select('qo.id, IDENTITY(qo.question) AS questionId, qo.optionText, qo.displayOrder, qo.isCorrect')
             ->where('qo.question IN (:questionIds)')
             ->setParameter('questionIds', $questionIds)
             ->orderBy('qo.displayOrder', 'ASC');
