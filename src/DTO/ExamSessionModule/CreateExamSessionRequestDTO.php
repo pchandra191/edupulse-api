@@ -15,12 +15,26 @@ readonly class CreateExamSessionRequestDTO
         public string $title,
 
         #[Assert\NotBlank]
-        #[Assert\DateTime]
+        #[Assert\DateTime(format: 'd-m-Y H:i')]
         public string $availableFrom,
 
         #[Assert\NotBlank]
-        #[Assert\DateTime]
+        #[Assert\DateTime(format: 'd-m-Y H:i')]
         public string $availableTo,
+
+        #[Assert\NotBlank]
+        #[Assert\Uuid(message: 'Invalid UUID format.')]
+        public string $academicYearId,
+
+        #[Assert\NotBlank]
+        #[Assert\Uuid(message: 'Invalid UUID format.')]
+        public string $academicClassId,
+
+        #[Assert\NotBlank]
+        #[Assert\All([
+            new Assert\Uuid(message: 'Invalid section UUID.'),
+        ])]
+        public array $sectionIds,
 
         #[Assert\PositiveOrZero]
         public int $totalMarks = 0,

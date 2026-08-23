@@ -138,6 +138,9 @@ class ExamAttemptControllerTest extends WebTestCase
         $esProperty->setAccessible(true);
         $esProperty->setValue($examSession, $this->testExamSessionId);
         $examSession->setInstitute($institute);
+        $examSession->setAcademicYear($academicYear);
+        $examSession->setAcademicClass($academicClass);
+        $examSession->addSection($section);
         $examSession->setQuestionPaper($questionPaper);
         $examSession->setTitle('Test Exam Session ' . $this->unique);
         $examSession->setAvailableFrom(new \DateTimeImmutable('2025-01-01 09:00:00'));
@@ -172,6 +175,14 @@ class ExamAttemptControllerTest extends WebTestCase
         $studentEnrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
         $studentEnrollment->setInstituteId($this->testInstituteId);
 
+        $enrollmentSection = new \App\Entity\EnrollmentSection();
+        $esReflection = new \ReflectionClass($enrollmentSection);
+        $esProperty = $esReflection->getProperty('id');
+        $esProperty->setAccessible(true);
+        $esProperty->setValue($enrollmentSection, Uuid::v7());
+        $enrollmentSection->setStudentEnrollment($studentEnrollment);
+        $enrollmentSection->setSection($section);
+
         $entityManager->persist($superAdmin);
         $entityManager->persist($institute);
         $entityManager->persist($academicYear);
@@ -182,6 +193,7 @@ class ExamAttemptControllerTest extends WebTestCase
         $entityManager->persist($examSession);
         $entityManager->persist($student);
         $entityManager->persist($studentEnrollment);
+        $entityManager->persist($enrollmentSection);
         $entityManager->flush();
 
         $this->createdEmails = [

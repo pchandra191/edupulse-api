@@ -30,6 +30,11 @@ readonly class ExamSessionResponseDTO
         public string $status,
         public string $createdAt,
         public ?string $updatedAt,
+        public string $academicYearId,
+        public string $academicYearName,
+        public string $academicClassId,
+        public string $academicClassName,
+        public array $sections,
     ) {
     }
 }

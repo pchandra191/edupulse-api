@@ -113,6 +113,9 @@ class ExamSessionController extends AbstractApiController
             instituteId: $data['instituteId'] ?? null,
             availableFrom: (string) ($data['availableFrom'] ?? ''),
             availableTo: (string) ($data['availableTo'] ?? ''),
+            academicYearId: (string) ($data['academicYearId'] ?? ''),
+            academicClassId: (string) ($data['academicClassId'] ?? ''),
+            sectionIds: $data['sectionIds'] ?? [],
             durationOverride: $data['durationOverride'] ?? null,
             shuffleQuestions: (bool) ($data['shuffleQuestions'] ?? false),
             showResultsMode: (string) ($data['showResultsMode'] ?? 'IMMEDIATE'),
@@ -195,6 +198,9 @@ class ExamSessionController extends AbstractApiController
             accessMode: $data['accessMode'] ?? null,
             allowReview: $data['allowReview'] ?? null,
             totalMarks: $data['totalMarks'] ?? null,
+            academicYearId: $data['academicYearId'] ?? null,
+            academicClassId: $data['academicClassId'] ?? null,
+            sectionIds: $data['sectionIds'] ?? null,
             status: $data['status'] ?? null,
         );
 

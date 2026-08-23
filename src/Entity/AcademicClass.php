@@ -52,12 +52,16 @@ class AcademicClass extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'academicClass', targetEntity: Examination::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $examinations;
 
+    #[ORM\OneToMany(mappedBy: 'academicClass', targetEntity: ExamSession::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $examSessions;
+
     public function __construct()
     {
         parent::__construct();
         $this->classSubjects = new ArrayCollection();
         $this->sections = new ArrayCollection();
         $this->examinations = new ArrayCollection();
+        $this->examSessions = new ArrayCollection();
     }
 
     public function getInstitute(): Institute
@@ -188,6 +192,35 @@ class AcademicClass extends AbstractEntity
         if ($this->examinations->removeElement($examination)) {
             if ($examination->getAcademicClass() === $this) {
                 $examination->setAcademicClass(new AcademicClass());
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, ExamSession>
+     */
+    public function getExamSessions(): Collection
+    {
+        return $this->examSessions;
+    }
+
+    public function addExamSession(ExamSession $examSession): self
+    {
+        if (!$this->examSessions->contains($examSession)) {
+            $this->examSessions[] = $examSession;
+            $examSession->setAcademicClass($this);
+        }
+
+        return $this;
+    }
+
+    public function removeExamSession(ExamSession $examSession): self
+    {
+        if ($this->examSessions->removeElement($examSession)) {
+            if ($examSession->getAcademicClass() === $this) {
+                $examSession->setAcademicClass(new AcademicClass());
             }
         }
 

@@ -14,6 +14,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Entity(repositoryClass: ExamSessionRepository::class)]
 #[ORM\Table(name: 'exam_sessions')]
 #[ORM\Index(name: 'idx_exam_session_institute', fields: ['institute_id'])]
+#[ORM\Index(name: 'idx_exam_session_academic_year', fields: ['academic_year_id'])]
+#[ORM\Index(name: 'idx_exam_session_academic_class', fields: ['academic_class_id'])]
 #[ORM\Index(name: 'idx_exam_session_question_paper', fields: ['question_paper_id'])]
 #[ORM\Index(name: 'idx_exam_session_status', fields: ['status'])]
 #[ORM\UniqueConstraint(name: 'uniq_exam_session_institute_title', columns: ['institute_id', 'title'])]
@@ -23,6 +25,22 @@ class ExamSession extends AbstractEntity
     #[ORM\ManyToOne(targetEntity: Institute::class)]
     #[ORM\JoinColumn(name: 'institute_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
     private Institute $institute;
+
+    #[Assert\NotBlank]
+    #[ORM\ManyToOne(targetEntity: AcademicYear::class, inversedBy: 'examSessions')]
+    #[ORM\JoinColumn(name: 'academic_year_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
+    private AcademicYear $academicYear;
+
+    #[Assert\NotBlank]
+    #[ORM\ManyToOne(targetEntity: AcademicClass::class, inversedBy: 'examSessions')]
+    #[ORM\JoinColumn(name: 'academic_class_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
+    private AcademicClass $academicClass;
+
+    #[ORM\ManyToMany(targetEntity: Section::class)]
+    #[ORM\JoinTable(name: 'exam_session_sections')]
+    #[ORM\JoinColumn(name: 'exam_session_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'section_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private Collection $sections;
 
     #[Assert\NotBlank]
     #[ORM\ManyToOne(targetEntity: QuestionPaper::class)]
@@ -85,6 +103,7 @@ class ExamSession extends AbstractEntity
     public function __construct()
     {
         parent::__construct();
+        $this->sections = new ArrayCollection();
         $this->examAttempts = new ArrayCollection();
     }
 
@@ -264,6 +283,61 @@ class ExamSession extends AbstractEntity
     public function setTotalMarks(int $totalMarks): self
     {
         $this->totalMarks = $totalMarks;
+
+        return $this;
+    }
+
+    public function getAcademicYear(): AcademicYear
+    {
+        return $this->academicYear;
+    }
+
+    public function setAcademicYear(AcademicYear $academicYear): self
+    {
+        $this->academicYear = $academicYear;
+
+        return $this;
+    }
+
+    public function getAcademicClass(): AcademicClass
+    {
+        return $this->academicClass;
+    }
+
+    public function setAcademicClass(AcademicClass $academicClass): self
+    {
+        $this->academicClass = $academicClass;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Section>
+     */
+    public function getSections(): Collection
+    {
+        return $this->sections;
+    }
+
+    public function addSection(Section $section): self
+    {
+        if (!$this->sections->contains($section)) {
+            $this->sections->add($section);
+        }
+
+        return $this;
+    }
+
+    public function removeSection(Section $section): self
+    {
+        $this->sections->removeElement($section);
+
+        return $this;
+    }
+
+    public function clearSections(): self
+    {
+        $this->sections->clear();
 
         return $this;
     }

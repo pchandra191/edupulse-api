@@ -8,14 +8,21 @@ use App\DTO\ExamSessionModule\ExamSessionFilterRequest;
 use App\DTO\ExamSessionModule\ExamSessionResponseDTO;
 use App\DTO\ExamSessionModule\UpdateExamSessionRequestDTO;
 use App\DTO\Response\ExamSessionListResponse;
+use App\Entity\AcademicClass;
+use App\Entity\AcademicYear;
 use App\Entity\ExamSession;
 use App\Entity\Institute;
 use App\Entity\QuestionPaper;
+use App\Entity\Section;
 use App\Entity\User;
 use App\Enum\ExamSessionStatus;
+use App\Enum\Timezone;
 use App\Exception\AuthenticationException;
+use App\Repository\AcademicClassRepository;
+use App\Repository\AcademicYearRepository;
 use App\Repository\ExamSessionRepository;
 use App\Repository\InstituteRepository;
+use App\Repository\SectionRepository;
 use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -29,6 +36,9 @@ readonly class ExamSessionService
         private Security $security,
         private ExamSessionRepository $examSessionRepository,
         private InstituteRepository $instituteRepository,
+        private AcademicYearRepository $academicYearRepository,
+        private AcademicClassRepository $academicClassRepository,
+        private SectionRepository $sectionRepository,
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
         private WorkflowRegistry $workflowRegistry,
@@ -115,12 +125,15 @@ readonly class ExamSessionService
             }
         }
 
-        $availableFrom = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $request->availableFrom);
-        $availableTo = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $request->availableTo);
+        $availableFrom = \DateTimeImmutable::createFromFormat('d-m-Y H:i', $request->availableFrom, new \DateTimeZone($institute->getTimezone()?->value ?? 'UTC'));
+        $availableTo = \DateTimeImmutable::createFromFormat('d-m-Y H:i', $request->availableTo, new \DateTimeZone($institute->getTimezone()?->value ?? 'UTC'));
 
         if (!$availableFrom || !$availableTo) {
-            throw new \InvalidArgumentException('Invalid date format. Expected YYYY-MM-DD HH:II:SS.');
+            throw new \InvalidArgumentException('Invalid date format. Expected DD-MM-YYYY HH:II.');
         }
+
+        $availableFrom = $availableFrom->setTimezone(new \DateTimeZone('UTC'));
+        $availableTo = $availableTo->setTimezone(new \DateTimeZone('UTC'));
 
         if ($availableTo <= $availableFrom) {
             throw new \InvalidArgumentException('availableTo must be after availableFrom.');
@@ -134,11 +147,56 @@ readonly class ExamSessionService
 
         $totalMarks = $request->totalMarks > 0 ? $request->totalMarks : $questionPaper->getMaximumMarks();
 
+        $academicYear = $this->academicYearRepository->find($request->academicYearId);
+
+        if (!$academicYear instanceof AcademicYear) {
+            throw new \InvalidArgumentException('Academic year not found.');
+        }
+
+        if (!$academicYear->getInstitute()->getId()->equals($instituteId)) {
+            throw new \InvalidArgumentException('Academic year does not belong to the authenticated institute.');
+        }
+
+        $academicClass = $this->academicClassRepository->find($request->academicClassId);
+
+        if (!$academicClass instanceof AcademicClass) {
+            throw new \InvalidArgumentException('Academic class not found.');
+        }
+
+        if (!$academicClass->getAcademicYear()->getId()->equals($academicYear->getId())) {
+            throw new \InvalidArgumentException('Academic class does not belong to the selected academic year.');
+        }
+
+        if (!$academicClass->getInstitute()->getId()->equals($instituteId)) {
+            throw new \InvalidArgumentException('Academic class does not belong to the authenticated institute.');
+        }
+
+        if (empty($request->sectionIds)) {
+            throw new \InvalidArgumentException('At least one section must be selected.');
+        }
+
+        $validSectionIds = [];
+        foreach ($request->sectionIds as $sectionId) {
+            $section = $this->sectionRepository->find($sectionId);
+
+            if (!$section instanceof Section) {
+                throw new \InvalidArgumentException('Section not found: ' . $sectionId);
+            }
+
+            if (!$section->getAcademicClass()->getId()->equals($academicClass->getId())) {
+                throw new \InvalidArgumentException('Section does not belong to the selected academic class.');
+            }
+
+            $validSectionIds[] = $section->getId()->toRfc4122();
+        }
+
         try {
             $this->entityManager->beginTransaction();
 
             $examSession = new ExamSession();
             $examSession->setInstitute($institute);
+            $examSession->setAcademicYear($academicYear);
+            $examSession->setAcademicClass($academicClass);
             $examSession->setQuestionPaper($questionPaper);
             $examSession->setCreatedBy($user);
             $examSession->setTitle($request->title);
@@ -150,6 +208,13 @@ readonly class ExamSessionService
             $examSession->setAllowReview($request->allowReview);
             $examSession->setTotalMarks($totalMarks);
             $examSession->setStatus(ExamSessionStatus::from($request->status));
+
+            foreach ($validSectionIds as $sectionId) {
+                $section = $this->sectionRepository->find(Uuid::fromString($sectionId));
+                if ($section instanceof Section) {
+                    $examSession->addSection($section);
+                }
+            }
 
             if ($examination !== null) {
                 $examSession->setExamination($examination);
@@ -262,7 +327,7 @@ readonly class ExamSessionService
         }
 
         if (in_array($transition, ['schedule', 'publish'], true)) {
-            $now = new \DateTimeImmutable();
+            $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
 
             if ($examSession->getAvailableTo() <= $examSession->getAvailableFrom()) {
                 throw new \InvalidArgumentException('availableTo must be after availableFrom.');
@@ -309,27 +374,29 @@ readonly class ExamSessionService
         }
 
         if ($request->availableFrom !== null) {
-            $availableFrom = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $request->availableFrom);
+            $instituteTimezone = $examSession->getInstitute()->getTimezone()?->value ?? 'UTC';
+            $availableFrom = \DateTimeImmutable::createFromFormat('d-m-Y H:i', $request->availableFrom, new \DateTimeZone($instituteTimezone));
 
             if (!$availableFrom) {
-                throw new \InvalidArgumentException('Invalid availableFrom format. Expected YYYY-MM-DD HH:II:SS.');
+                throw new \InvalidArgumentException('Invalid availableFrom format. Expected DD-MM-YYYY HH:II.');
             }
 
-            $examSession->setAvailableFrom($availableFrom);
+            $examSession->setAvailableFrom($availableFrom->setTimezone(new \DateTimeZone('UTC')));
         }
 
         if ($request->availableTo !== null) {
-            $availableTo = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $request->availableTo);
+            $instituteTimezone = $examSession->getInstitute()->getTimezone()?->value ?? 'UTC';
+            $availableTo = \DateTimeImmutable::createFromFormat('d-m-Y H:i', $request->availableTo, new \DateTimeZone($instituteTimezone));
 
             if (!$availableTo) {
-                throw new \InvalidArgumentException('Invalid availableTo format. Expected YYYY-MM-DD HH:II:SS.');
+                throw new \InvalidArgumentException('Invalid availableTo format. Expected DD-MM-YYYY HH:II.');
             }
 
-            if ($availableTo <= $examSession->getAvailableFrom()) {
+            if ($availableTo->setTimezone(new \DateTimeZone('UTC')) <= $examSession->getAvailableFrom()) {
                 throw new \InvalidArgumentException('availableTo must be after availableFrom.');
             }
 
-            $examSession->setAvailableTo($availableTo);
+            $examSession->setAvailableTo($availableTo->setTimezone(new \DateTimeZone('UTC')));
         }
 
         if ($request->durationOverride !== null) {
@@ -354,6 +421,68 @@ readonly class ExamSessionService
 
         if ($request->totalMarks !== null) {
             $examSession->setTotalMarks($request->totalMarks);
+        }
+
+        if ($request->academicYearId !== null) {
+            $academicYear = $this->academicYearRepository->find($request->academicYearId);
+
+            if (!$academicYear instanceof AcademicYear) {
+                throw new \InvalidArgumentException('Academic year not found.');
+            }
+
+            if (!$academicYear->getInstitute()->getId()->equals($examSession->getInstitute()->getId())) {
+                throw new \InvalidArgumentException('Academic year does not belong to the authenticated institute.');
+            }
+
+            $examSession->setAcademicYear($academicYear);
+        }
+
+        if ($request->academicClassId !== null) {
+            $academicClass = $this->academicClassRepository->find($request->academicClassId);
+
+            if (!$academicClass instanceof AcademicClass) {
+                throw new \InvalidArgumentException('Academic class not found.');
+            }
+
+            if (!$academicClass->getAcademicYear()->getId()->equals($examSession->getAcademicYear()->getId())) {
+                throw new \InvalidArgumentException('Academic class does not belong to the selected academic year.');
+            }
+
+            if (!$academicClass->getInstitute()->getId()->equals($examSession->getInstitute()->getId())) {
+                throw new \InvalidArgumentException('Academic class does not belong to the authenticated institute.');
+            }
+
+            $examSession->setAcademicClass($academicClass);
+        }
+
+        if ($request->sectionIds !== null) {
+            if (empty($request->sectionIds)) {
+                throw new \InvalidArgumentException('At least one section must be selected.');
+            }
+
+            $validSectionIds = [];
+            foreach ($request->sectionIds as $sectionId) {
+                $section = $this->sectionRepository->find($sectionId);
+
+                if (!$section instanceof Section) {
+                    throw new \InvalidArgumentException('Section not found: ' . $sectionId);
+                }
+
+                if (!$section->getAcademicClass()->getId()->equals($examSession->getAcademicClass()->getId())) {
+                    throw new \InvalidArgumentException('Section does not belong to the selected academic class.');
+                }
+
+                $validSectionIds[] = $section->getId()->toRfc4122();
+            }
+
+            $examSession->clearSections();
+
+            foreach ($validSectionIds as $sectionId) {
+                $section = $this->sectionRepository->find(Uuid::fromString($sectionId));
+                if ($section instanceof Section) {
+                    $examSession->addSection($section);
+                }
+            }
         }
 
         if ($request->status !== null) {
@@ -396,6 +525,18 @@ readonly class ExamSessionService
         $institute = $examSession->getInstitute();
         $questionPaper = $examSession->getQuestionPaper();
         $createdBy = $examSession->getCreatedBy();
+        $academicYear = $examSession->getAcademicYear();
+        $academicClass = $examSession->getAcademicClass();
+
+        $sections = array_map(
+            fn (Section $section) => [
+                'id' => $section->getId()->toRfc4122(),
+                'name' => $section->getName(),
+            ],
+            $examSession->getSections()->toArray()
+        );
+
+        $displayTimezone = new \DateTimeZone($institute->getTimezone()?->value ?? 'UTC');
 
         return new ExamSessionResponseDTO(
             id: $examSession->getId()->toRfc4122(),
@@ -410,9 +551,9 @@ readonly class ExamSessionService
             createdById: $createdBy->getId()->toRfc4122(),
             createdByName: $createdBy->getFirstName() . ' ' . $createdBy->getLastName(),
             title: $examSession->getTitle(),
-            publishedAt: $examSession->getPublishedAt()?->format(DateTimeInterface::ATOM),
-            availableFrom: $examSession->getAvailableFrom()->format(DateTimeInterface::ATOM),
-            availableTo: $examSession->getAvailableTo()->format(DateTimeInterface::ATOM),
+            publishedAt: $examSession->getPublishedAt()?->setTimezone($displayTimezone)->format(DateTimeInterface::ATOM),
+            availableFrom: $examSession->getAvailableFrom()->setTimezone($displayTimezone)->format(DateTimeInterface::ATOM),
+            availableTo: $examSession->getAvailableTo()->setTimezone($displayTimezone)->format(DateTimeInterface::ATOM),
             durationOverride: $examSession->getDurationOverride(),
             shuffleQuestions: $examSession->isShuffleQuestions(),
             showResultsMode: $examSession->getShowResultsMode(),
@@ -422,6 +563,11 @@ readonly class ExamSessionService
             status: $examSession->getStatus()->value,
             createdAt: $examSession->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $examSession->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+            academicYearId: $academicYear->getId()->toRfc4122(),
+            academicYearName: $academicYear->getName(),
+            academicClassId: $academicClass->getId()->toRfc4122(),
+            academicClassName: $academicClass->getName(),
+            sections: $sections,
         );
     }
 }

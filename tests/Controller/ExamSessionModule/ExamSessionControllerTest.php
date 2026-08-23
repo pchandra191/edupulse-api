@@ -29,6 +29,7 @@ class ExamSessionControllerTest extends WebTestCase
 {
     private ?string $superAdminToken = null;
     private ?string $instituteToken = null;
+    private ?string $teacherToken = null;
     private ?Uuid $testInstituteId = null;
     private ?Uuid $testAcademicYearId = null;
     private ?Uuid $testClassId = null;
@@ -168,6 +169,14 @@ class ExamSessionControllerTest extends WebTestCase
         $instituteUser->verify();
         $instituteUser->setInstitute($institute);
 
+        $teacherUser = new User();
+        $teacherUser->setEmail('teacher-exam-session-test-' . $this->unique . '@edupulse.ai');
+        $teacherUser->setPassword(password_hash('TeacherUser123!', PASSWORD_BCRYPT));
+        $teacherUser->setRoles([UserRole::Teacher->value]);
+        $teacherUser->setStatus(UserStatus::Active);
+        $teacherUser->verify();
+        $teacherUser->setInstitute($institute);
+
         $entityManager->persist($superAdmin);
         $entityManager->persist($institute);
         $entityManager->persist($academicYear);
@@ -178,15 +187,18 @@ class ExamSessionControllerTest extends WebTestCase
         $entityManager->persist($examination);
         $entityManager->persist($examSubject);
         $entityManager->persist($instituteUser);
+        $entityManager->persist($teacherUser);
         $entityManager->flush();
 
         $this->createdEmails = [
             'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai',
             'institute-exam-session-test-' . $this->unique . '@edupulse.ai',
+            'teacher-exam-session-test-' . $this->unique . '@edupulse.ai',
         ];
 
         $this->superAdminToken = $this->login($this->client, 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai', 'SuperAdmin123!');
         $this->instituteToken = $this->login($this->client, 'institute-exam-session-test-' . $this->unique . '@edupulse.ai', 'InstituteUser123!');
+        $this->teacherToken = $this->login($this->client, 'teacher-exam-session-test-' . $this->unique . '@edupulse.ai', 'TeacherUser123!');
     }
 
     protected function tearDown(): void
@@ -262,8 +274,11 @@ class ExamSessionControllerTest extends WebTestCase
         $payload = array_merge([
             'questionPaperId' => (string) $this->testQuestionPaperId,
             'title' => 'Test Exam Session ' . $this->unique,
-            'availableFrom' => '2027-06-01 09:00:00',
-            'availableTo' => '2027-06-01 12:00:00',
+            'availableFrom' => '01-06-2027 09:00',
+            'availableTo' => '01-06-2027 12:00',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
             'durationOverride' => 180,
             'shuffleQuestions' => true,
             'showResultsMode' => 'IMMEDIATE',
@@ -288,8 +303,11 @@ class ExamSessionControllerTest extends WebTestCase
         $payload = json_encode([
             'questionPaperId' => (string) $this->testQuestionPaperId,
             'title' => 'Super Admin Exam Session ' . $this->unique,
-            'availableFrom' => '2027-06-01 09:00:00',
-            'availableTo' => '2027-06-01 12:00:00',
+            'availableFrom' => '01-06-2027 09:00',
+            'availableTo' => '01-06-2027 12:00',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
             'durationOverride' => 180,
             'shuffleQuestions' => true,
             'showResultsMode' => 'IMMEDIATE',
@@ -337,8 +355,11 @@ class ExamSessionControllerTest extends WebTestCase
         $payload = json_encode([
             'questionPaperId' => (string) $draftPaperId,
             'title' => 'Test Draft Session ' . $this->unique,
-            'availableFrom' => '2027-06-01 09:00:00',
-            'availableTo' => '2027-06-01 12:00:00',
+            'availableFrom' => '01-06-2027 09:00',
+            'availableTo' => '01-06-2027 12:00',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
             'totalMarks' => 100,
             'status' => 'DRAFT',
             'instituteId' => (string) $this->testInstituteId,
@@ -646,8 +667,11 @@ class ExamSessionControllerTest extends WebTestCase
         $payload = json_encode([
             'questionPaperId' => (string) $otherPaperId,
             'title' => 'Cross Institute Session ' . $this->unique,
-            'availableFrom' => '2027-06-01 09:00:00',
-            'availableTo' => '2027-06-01 12:00:00',
+            'availableFrom' => '01-06-2027 09:00',
+            'availableTo' => '01-06-2027 12:00',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
             'totalMarks' => 100,
             'status' => 'DRAFT',
             'instituteId' => (string) $this->testInstituteId,
@@ -703,8 +727,11 @@ class ExamSessionControllerTest extends WebTestCase
         $payload = json_encode([
             'questionPaperId' => (string) $this->testQuestionPaperId,
             'title' => 'Invalid Dates Session ' . $this->unique,
-            'availableFrom' => '2027-06-01 12:00:00',
-            'availableTo' => '2027-06-01 09:00:00',
+            'availableFrom' => '01-06-2027 12:00',
+            'availableTo' => '01-06-2027 09:00',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
             'totalMarks' => 100,
             'status' => 'DRAFT',
             'instituteId' => (string) $this->testInstituteId,
@@ -716,5 +743,441 @@ class ExamSessionControllerTest extends WebTestCase
 
         $data = json_decode($client->getResponse()->getContent(), true);
         $this->assertStringContainsString('availableTo must be after availableFrom', $data['message']);
+    }
+
+    public function testCreateExamSessionWithValidDatetimeFormat(): void
+    {
+        $client = $this->client;
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $this->testQuestionPaperId,
+            'title' => 'Valid Datetime Session ' . $this->unique,
+            'availableFrom' => '23-08-2026 18:43',
+            'availableTo' => '30-08-2026 18:43',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('2026-08-23T18:43:00+00:00', $data['data']['availableFrom']);
+        $this->assertSame('2026-08-30T18:43:00+00:00', $data['data']['availableTo']);
+    }
+
+    public function testCreateExamSessionWithInvalidDatetimeFormat(): void
+    {
+        $client = $this->client;
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $this->testQuestionPaperId,
+            'title' => 'Invalid Datetime Session ' . $this->unique,
+            'availableFrom' => 'invalid',
+            'availableTo' => '30-08-2026 18:43',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $this->assertSame(422, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('not a valid datetime', $data['errors']['availableFrom'][0]);
+    }
+
+    public function testCreateExamSessionWithInvalidCalendarDate(): void
+    {
+        $client = $this->client;
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $this->testQuestionPaperId,
+            'title' => 'Invalid Calendar Date Session ' . $this->unique,
+            'availableFrom' => '31-02-2026 18:43',
+            'availableTo' => '30-08-2026 18:43',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $this->assertSame(422, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('errors', $data);
+        $this->assertArrayHasKey('availableFrom', $data['errors']);
+        $this->assertStringContainsString('not a valid datetime', $data['errors']['availableFrom'][0]);
+    }
+
+    public function testCreateExamSessionWithWrongDatetimeSeparator(): void
+    {
+        $client = $this->client;
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $this->testQuestionPaperId,
+            'title' => 'Wrong Separator Session ' . $this->unique,
+            'availableFrom' => '23/08/2026 18:43',
+            'availableTo' => '30-08-2026 18:43',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $this->assertSame(422, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('errors', $data);
+        $this->assertArrayHasKey('availableFrom', $data['errors']);
+        $this->assertStringContainsString('not a valid datetime', $data['errors']['availableFrom'][0]);
+    }
+
+    public function testCreateExamSessionWithMissingTime(): void
+    {
+        $client = $this->client;
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $this->testQuestionPaperId,
+            'title' => 'Missing Time Session ' . $this->unique,
+            'availableFrom' => '23-08-2026',
+            'availableTo' => '30-08-2026 18:43',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $this->assertSame(422, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('errors', $data);
+        $this->assertArrayHasKey('availableFrom', $data['errors']);
+        $this->assertStringContainsString('not a valid datetime', $data['errors']['availableFrom'][0]);
+    }
+
+    public function testInstituteCanCreateExamSession(): void
+    {
+        $client = $this->client;
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $this->testQuestionPaperId,
+            'title' => 'Institute Exam Session ' . $this->unique,
+            'availableFrom' => '01-06-2027 09:00',
+            'availableTo' => '01-06-2027 12:00',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->instituteToken), $payload);
+
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+    }
+
+    public function testTeacherCanCreateExamSession(): void
+    {
+        $client = $this->client;
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $this->testQuestionPaperId,
+            'title' => 'Teacher Exam Session ' . $this->unique,
+            'availableFrom' => '01-06-2027 09:00',
+            'availableTo' => '01-06-2027 12:00',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->teacherToken), $payload);
+
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+    }
+
+    public function testInstituteCanListExamSessions(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->instituteToken));
+
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+    }
+
+    public function testTeacherCanListExamSessions(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->teacherToken));
+
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+    }
+
+    public function testRoleWithoutExamSessionPermissionReceives403(): void
+    {
+        $client = $this->client;
+
+        $student = new User();
+        $student->setEmail('student-exam-session-rbac-test-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($this->client->getContainer()->get('doctrine')->getManager()->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+        $entityManager->persist($student);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-exam-session-rbac-test-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $this->testQuestionPaperId,
+            'title' => 'Unauthorized Session ' . $this->unique,
+            'availableFrom' => '01-06-2027 09:00',
+            'availableTo' => '01-06-2027 12:00',
+            'academicYearId' => (string) $this->testAcademicYearId,
+            'academicClassId' => (string) $this->testClassId,
+            'sectionIds' => [(string) $this->testSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $this->testInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($studentToken), $payload);
+
+        $statusCode = $client->getResponse()->getStatusCode();
+        $this->assertContains($statusCode, [403, 404], 'Unauthorized role should receive 403 or 404.');
+    }
+
+    public function testCreateExamSessionWithKolkataTimezone(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $kolkataInstitute = new Institute();
+        $kolkataInstituteId = Uuid::v7();
+        $reflection = new \ReflectionClass($kolkataInstitute);
+        $property = $reflection->getProperty('id');
+        $property->setAccessible(true);
+        $property->setValue($kolkataInstitute, $kolkataInstituteId);
+        $kolkataInstitute->setName('Kolkata Test Institute');
+        $kolkataInstitute->setCode('KOL' . $this->unique);
+        $kolkataInstitute->setEmail('kolkata-test-' . $this->unique . '@edupulse.ai');
+        $kolkataInstitute->setStatus(InstituteStatus::Active);
+        $kolkataInstitute->setTimezone(\App\Enum\Timezone::INR);
+
+        $kolkataYear = new AcademicYear();
+        $kolkataYearId = Uuid::v7();
+        $ayReflection = new \ReflectionClass($kolkataYear);
+        $ayProperty = $ayReflection->getProperty('id');
+        $ayProperty->setAccessible(true);
+        $ayProperty->setValue($kolkataYear, $kolkataYearId);
+        $kolkataYear->setInstitute($kolkataInstitute);
+        $kolkataYear->setName('Kolkata AY ' . $this->unique);
+        $kolkataYear->setCode('KAY' . $this->unique);
+        $kolkataYear->setStartDate(new \DateTimeImmutable('2025-01-01'));
+        $kolkataYear->setEndDate(new \DateTimeImmutable('2025-12-31'));
+        $kolkataYear->setStatus(AcademicYearStatus::Active);
+        $kolkataYear->setIsActive(true);
+
+        $kolkataClass = new AcademicClass();
+        $kolkataClassId = Uuid::v7();
+        $classReflection = new \ReflectionClass($kolkataClass);
+        $classProperty = $classReflection->getProperty('id');
+        $classProperty->setAccessible(true);
+        $classProperty->setValue($kolkataClass, $kolkataClassId);
+        $kolkataClass->setInstitute($kolkataInstitute);
+        $kolkataClass->setAcademicYear($kolkataYear);
+        $kolkataClass->setName('Kolkata Class ' . $this->unique);
+        $kolkataClass->setCode('KCLS' . $this->unique);
+        $kolkataClass->setStatus(ClassStatus::Active);
+
+        $kolkataSection = new Section();
+        $kolkataSectionId = Uuid::v7();
+        $sectionReflection = new \ReflectionClass($kolkataSection);
+        $sectionProperty = $sectionReflection->getProperty('id');
+        $sectionProperty->setAccessible(true);
+        $sectionProperty->setValue($kolkataSection, $kolkataSectionId);
+        $kolkataSection->setAcademicClass($kolkataClass);
+        $kolkataSection->setName('Kolkata Section ' . $this->unique);
+        $kolkataSection->setCode('KSEC' . $this->unique);
+        $kolkataSection->setStatus(SectionStatus::Active);
+
+        $kolkataPaper = new QuestionPaper();
+        $kolkataPaperId = Uuid::v7();
+        $qpReflection = new \ReflectionClass($kolkataPaper);
+        $qpProperty = $qpReflection->getProperty('id');
+        $qpProperty->setAccessible(true);
+        $qpProperty->setValue($kolkataPaper, $kolkataPaperId);
+        $kolkataPaper->setInstitute($kolkataInstitute);
+        $kolkataPaper->setAcademicYear($kolkataYear);
+        $kolkataPaper->setSubject($entityManager->getRepository(Subject::class)->find($this->testSubjectId));
+        $kolkataPaper->setTitle('Kolkata Paper ' . $this->unique);
+        $kolkataPaper->setDate(new \DateTimeImmutable('2025-05-01'));
+        $kolkataPaper->setDuration(60);
+        $kolkataPaper->setMaximumMarks(100);
+        $kolkataPaper->setStatus(QuestionPaperStatus::Finalized);
+
+        $entityManager->persist($kolkataInstitute);
+        $entityManager->persist($kolkataYear);
+        $entityManager->persist($kolkataClass);
+        $entityManager->persist($kolkataSection);
+        $entityManager->persist($kolkataPaper);
+        $entityManager->flush();
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $kolkataPaperId,
+            'title' => 'Kolkata Timezone Session ' . $this->unique,
+            'availableFrom' => '23-08-2026 20:00',
+            'availableTo' => '30-08-2026 18:43',
+            'academicYearId' => (string) $kolkataYearId,
+            'academicClassId' => (string) $kolkataClassId,
+            'sectionIds' => [(string) $kolkataSectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $kolkataInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('2026-08-23T20:00:00+05:30', $data['data']['availableFrom']);
+        $this->assertSame('2026-08-30T18:43:00+05:30', $data['data']['availableTo']);
+    }
+
+    public function testCreateExamSessionWithNewYorkTimezone(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $nyInstitute = new Institute();
+        $nyInstituteId = Uuid::v7();
+        $reflection = new \ReflectionClass($nyInstitute);
+        $property = $reflection->getProperty('id');
+        $property->setAccessible(true);
+        $property->setValue($nyInstitute, $nyInstituteId);
+        $nyInstitute->setName('NY Test Institute');
+        $nyInstitute->setCode('NY' . $this->unique);
+        $nyInstitute->setEmail('ny-test-' . $this->unique . '@edupulse.ai');
+        $nyInstitute->setStatus(InstituteStatus::Active);
+        $nyInstitute->setTimezone(\App\Enum\Timezone::USD);
+
+        $nyYear = new AcademicYear();
+        $nyYearId = Uuid::v7();
+        $ayReflection = new \ReflectionClass($nyYear);
+        $ayProperty = $ayReflection->getProperty('id');
+        $ayProperty->setAccessible(true);
+        $ayProperty->setValue($nyYear, $nyYearId);
+        $nyYear->setInstitute($nyInstitute);
+        $nyYear->setName('NY AY ' . $this->unique);
+        $nyYear->setCode('NAY' . $this->unique);
+        $nyYear->setStartDate(new \DateTimeImmutable('2025-01-01'));
+        $nyYear->setEndDate(new \DateTimeImmutable('2025-12-31'));
+        $nyYear->setStatus(AcademicYearStatus::Active);
+        $nyYear->setIsActive(true);
+
+        $nyClass = new AcademicClass();
+        $nyClassId = Uuid::v7();
+        $classReflection = new \ReflectionClass($nyClass);
+        $classProperty = $classReflection->getProperty('id');
+        $classProperty->setAccessible(true);
+        $classProperty->setValue($nyClass, $nyClassId);
+        $nyClass->setInstitute($nyInstitute);
+        $nyClass->setAcademicYear($nyYear);
+        $nyClass->setName('NY Class ' . $this->unique);
+        $nyClass->setCode('NCLS' . $this->unique);
+        $nyClass->setStatus(ClassStatus::Active);
+
+        $nySection = new Section();
+        $nySectionId = Uuid::v7();
+        $sectionReflection = new \ReflectionClass($nySection);
+        $sectionProperty = $sectionReflection->getProperty('id');
+        $sectionProperty->setAccessible(true);
+        $sectionProperty->setValue($nySection, $nySectionId);
+        $nySection->setAcademicClass($nyClass);
+        $nySection->setName('NY Section ' . $this->unique);
+        $nySection->setCode('NSEC' . $this->unique);
+        $nySection->setStatus(SectionStatus::Active);
+
+        $nyPaper = new QuestionPaper();
+        $nyPaperId = Uuid::v7();
+        $qpReflection = new \ReflectionClass($nyPaper);
+        $qpProperty = $qpReflection->getProperty('id');
+        $qpProperty->setAccessible(true);
+        $qpProperty->setValue($nyPaper, $nyPaperId);
+        $nyPaper->setInstitute($nyInstitute);
+        $nyPaper->setAcademicYear($nyYear);
+        $nyPaper->setSubject($entityManager->getRepository(Subject::class)->find($this->testSubjectId));
+        $nyPaper->setTitle('NY Paper ' . $this->unique);
+        $nyPaper->setDate(new \DateTimeImmutable('2025-05-01'));
+        $nyPaper->setDuration(60);
+        $nyPaper->setMaximumMarks(100);
+        $nyPaper->setStatus(QuestionPaperStatus::Finalized);
+
+        $entityManager->persist($nyInstitute);
+        $entityManager->persist($nyYear);
+        $entityManager->persist($nyClass);
+        $entityManager->persist($nySection);
+        $entityManager->persist($nyPaper);
+        $entityManager->flush();
+
+        $payload = json_encode([
+            'questionPaperId' => (string) $nyPaperId,
+            'title' => 'NY Timezone Session ' . $this->unique,
+            'availableFrom' => '23-08-2026 20:00',
+            'availableTo' => '30-08-2026 18:43',
+            'academicYearId' => (string) $nyYearId,
+            'academicClassId' => (string) $nyClassId,
+            'sectionIds' => [(string) $nySectionId],
+            'totalMarks' => 100,
+            'status' => 'DRAFT',
+            'instituteId' => (string) $nyInstituteId,
+        ]);
+
+        $client->request('POST', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('2026-08-23T20:00:00-04:00', $data['data']['availableFrom']);
+        $this->assertSame('2026-08-30T18:43:00-04:00', $data['data']['availableTo']);
     }
 }

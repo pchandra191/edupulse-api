@@ -9,6 +9,7 @@ use App\DTO\ExamAttemptModule\ExamAttemptResponseDTO;
 use App\DTO\Response\ExamAttemptListResponse;
 use App\Entity\ExamAttempt;
 use App\Entity\ExamSession;
+use App\Entity\Section;
 use App\Entity\StudentEnrollment;
 use App\Entity\User;
 use App\Enum\ExamAttemptStatus;
@@ -16,6 +17,7 @@ use App\Enum\ExamSessionStatus;
 use App\Exception\AuthenticationException;
 use App\Repository\ExamAttemptRepository;
 use App\Repository\ExamSessionRepository;
+use App\Repository\EnrollmentSectionRepository;
 use App\Repository\StudentEnrollmentRepository;
 use DateTimeInterface;
 use Doctrine\DBAL\LockMode;
@@ -32,6 +34,7 @@ readonly class ExamAttemptService
         private ExamAttemptRepository $examAttemptRepository,
         private ExamSessionRepository $examSessionRepository,
         private StudentEnrollmentRepository $studentEnrollmentRepository,
+        private EnrollmentSectionRepository $enrollmentSectionRepository,
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
         private WorkflowRegistry $workflowRegistry,
@@ -245,19 +248,45 @@ readonly class ExamAttemptService
             return false;
         }
 
+        if ($examSession->getAcademicYear() === null || $examSession->getAcademicClass() === null) {
+            return false;
+        }
+
         $enrollment = $this->studentEnrollmentRepository->createQueryBuilder('se')
-            ->innerJoin('se.academicClass', 'c')
             ->where('se.student = :student')
-            ->andWhere('c.institute = :institute')
+            ->andWhere('se.academicYear = :academicYear')
+            ->andWhere('se.academicClass = :academicClass')
             ->andWhere('se.status = :status')
             ->setParameter('student', $student->getId())
-            ->setParameter('institute', $examSession->getInstitute()->getId())
+            ->setParameter('academicYear', $examSession->getAcademicYear()->getId())
+            ->setParameter('academicClass', $examSession->getAcademicClass()->getId())
             ->setParameter('status', 'ACTIVE')
             ->setMaxResults(1)
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $enrollment instanceof StudentEnrollment;
+        if (!$enrollment instanceof StudentEnrollment) {
+            return false;
+        }
+
+        $studentSections = $this->enrollmentSectionRepository->findByStudentEnrollment($enrollment);
+
+        $examSessionSectionIds = [];
+        foreach ($examSession->getSections() as $section) {
+            $examSessionSectionIds[] = $section->getId()->toRfc4122();
+        }
+
+        if (empty($examSessionSectionIds)) {
+            return false;
+        }
+
+        foreach ($studentSections as $studentSection) {
+            if (in_array($studentSection->getSection()->getId()->toRfc4122(), $examSessionSectionIds, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function mapToResponse(ExamAttempt $attempt): ExamAttemptResponseDTO

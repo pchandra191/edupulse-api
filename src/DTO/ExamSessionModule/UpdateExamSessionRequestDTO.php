@@ -11,10 +11,10 @@ readonly class UpdateExamSessionRequestDTO
         #[Assert\Length(max: 255)]
         public ?string $title = null,
 
-        #[Assert\DateTime]
+        #[Assert\DateTime(format: 'd-m-Y H:i')]
         public ?string $availableFrom = null,
 
-        #[Assert\DateTime]
+        #[Assert\DateTime(format: 'd-m-Y H:i')]
         public ?string $availableTo = null,
 
         #[Assert\PositiveOrZero]
@@ -32,6 +32,17 @@ readonly class UpdateExamSessionRequestDTO
 
         #[Assert\PositiveOrZero]
         public ?int $totalMarks = null,
+
+        #[Assert\Uuid(message: 'Invalid UUID format.')]
+        public ?string $academicYearId = null,
+
+        #[Assert\Uuid(message: 'Invalid UUID format.')]
+        public ?string $academicClassId = null,
+
+        #[Assert\All([
+            new Assert\Uuid(message: 'Invalid section UUID.'),
+        ])]
+        public ?array $sectionIds = null,
 
         #[Assert\Choice(choices: ['DRAFT', 'SCHEDULED', 'PUBLISHED', 'ACTIVE', 'CLOSED', 'CANCELLED', 'ARCHIVED'], message: 'Invalid status.')]
         public ?string $status = null,

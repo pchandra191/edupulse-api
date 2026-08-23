@@ -59,12 +59,16 @@ class AcademicYear extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'academicYear', targetEntity: QuestionPaper::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $questionPapers;
 
+    #[ORM\OneToMany(mappedBy: 'academicYear', targetEntity: ExamSession::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $examSessions;
+
     public function __construct()
     {
         parent::__construct();
         $this->classes = new ArrayCollection();
         $this->examinations = new ArrayCollection();
         $this->questionPapers = new ArrayCollection();
+        $this->examSessions = new ArrayCollection();
     }
 
     public function getInstitute(): Institute
@@ -235,6 +239,35 @@ class AcademicYear extends AbstractEntity
         if ($this->questionPapers->removeElement($questionPaper)) {
             if ($questionPaper->getAcademicYear() === $this) {
                 $questionPaper->setAcademicYear(new AcademicYear());
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, ExamSession>
+     */
+    public function getExamSessions(): Collection
+    {
+        return $this->examSessions;
+    }
+
+    public function addExamSession(ExamSession $examSession): self
+    {
+        if (!$this->examSessions->contains($examSession)) {
+            $this->examSessions[] = $examSession;
+            $examSession->setAcademicYear($this);
+        }
+
+        return $this;
+    }
+
+    public function removeExamSession(ExamSession $examSession): self
+    {
+        if ($this->examSessions->removeElement($examSession)) {
+            if ($examSession->getAcademicYear() === $this) {
+                $examSession->setAcademicYear(new AcademicYear());
             }
         }
 
