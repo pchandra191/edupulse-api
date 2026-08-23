@@ -5,6 +5,8 @@ namespace App\Entity;
 
 use App\Enum\ExamSessionStatus;
 use App\Repository\ExamSessionRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -77,9 +79,13 @@ class ExamSession extends AbstractEntity
     #[ORM\Column(type: Types::STRING, length: 20)]
     private string $status = ExamSessionStatus::Draft->value;
 
+    #[ORM\OneToMany(mappedBy: 'examSession', targetEntity: ExamAttempt::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $examAttempts;
+
     public function __construct()
     {
         parent::__construct();
+        $this->examAttempts = new ArrayCollection();
     }
 
     public function getInstitute(): Institute
@@ -307,5 +313,34 @@ class ExamSession extends AbstractEntity
     public function isArchived(): bool
     {
         return $this->status === ExamSessionStatus::Archived->value;
+    }
+
+    /**
+     * @return Collection<int, ExamAttempt>
+     */
+    public function getExamAttempts(): Collection
+    {
+        return $this->examAttempts;
+    }
+
+    public function addExamAttempt(ExamAttempt $examAttempt): self
+    {
+        if (!$this->examAttempts->contains($examAttempt)) {
+            $this->examAttempts->add($examAttempt);
+            $examAttempt->setExamSession($this);
+        }
+
+        return $this;
+    }
+
+    public function removeExamAttempt(ExamAttempt $examAttempt): self
+    {
+        if ($this->examAttempts->removeElement($examAttempt)) {
+            if ($examAttempt->getExamSession() === $this) {
+                $examAttempt->setExamSession(new ExamSession());
+            }
+        }
+
+        return $this;
     }
 }

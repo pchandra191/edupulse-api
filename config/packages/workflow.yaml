@@ -95,3 +95,29 @@ framework:
                 reopen:
                     from: PUBLISHED
                     to: DRAFT
+        exam_attempt:
+            type: state_machine
+            marking_store:
+                service: app.workflow.marking_store.exam_attempt
+            supports:
+                - App\Entity\ExamAttempt
+            initial_marking: NOT_STARTED
+            places:
+                - NOT_STARTED
+                - IN_PROGRESS
+                - SUBMITTED
+                - AUTO_SUBMITTED
+                - ABANDONED
+            transitions:
+                start:
+                    from: NOT_STARTED
+                    to: IN_PROGRESS
+                submit:
+                    from: IN_PROGRESS
+                    to: SUBMITTED
+                auto_submit:
+                    from: IN_PROGRESS
+                    to: AUTO_SUBMITTED
+                abandon:
+                    from: IN_PROGRESS
+                    to: ABANDONED

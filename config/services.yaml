@@ -56,3 +56,9 @@ services:
         arguments:
             $property: 'status'
             $enumClass: App\Enum\ExamSessionStatus
+
+    app.workflow.marking_store.exam_attempt:
+        parent: App\Workflow\EnumMarkingStore
+        arguments:
+            $property: 'status'
+            $enumClass: App\Enum\ExamAttemptStatus
