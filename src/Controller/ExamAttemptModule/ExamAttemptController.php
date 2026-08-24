@@ -8,8 +8,11 @@ use App\Common\Api\Response\ApiResponseFactory;
 use App\Common\Api\Response\PaginationResponse;
 use App\DTO\ExamAttemptModule\CreateExamAttemptRequestDTO;
 use App\DTO\ExamAttemptModule\ExamAttemptFilterRequest;
+use App\DTO\ExamAttemptModule\ExamAttemptListItemResponseDTO;
 use App\DTO\ExamAttemptModule\ExamAttemptResponseDTO;
+use App\DTO\ExamAttemptModule\EvaluatedExamAttemptResponseDTO;
 use App\DTO\Response\ExamAttemptListResponse;
+use App\DTO\Response\EvaluatedExamAttemptListResponse;
 use App\Entity\User;
 use App\Exception\AuthenticationException;
 use App\Service\ExamAttemptModule\ExamAttemptService;
@@ -85,6 +88,91 @@ class ExamAttemptController extends AbstractApiController
         return $this->success('Exam attempt started successfully.', $attempt);
     }
 
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN') or is_granted('ROLE_TEACHER')")]
+    #[Route('/exam-sessions/{id}/attempts', name: 'exam_attempt_session_list', methods: ['GET'])]
+    public function sessionAttempts(Request $request, string $id): JsonResponse
+    {
+        $this->requirePermission('exam_attempts.view');
+
+        try {
+            $result = $this->examAttemptService->getSessionAttempts(
+                $this->parseUuid($id),
+                $request->query->get('status'),
+                max(1, (int) $request->query->get('page', 1)),
+                max(1, min(100, (int) $request->query->get('limit', 10))),
+            );
+
+            return $this->paginated('Exam session attempts retrieved successfully.', $result->items, new PaginationResponse(
+                page: $result->pagination['page'],
+                limit: $result->pagination['limit'],
+                totalItems: $result->pagination['totalItems'],
+                totalPages: $result->pagination['totalPages'],
+            ), ['version' => 'v1']);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        }
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_STUDENT') or is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/exam-attempts/me', name: 'exam_attempt_my_list', methods: ['GET'])]
+    public function myList(Request $request): JsonResponse
+    {
+        $this->requirePermission('exam_attempts.view');
+
+        $instituteId = $this->getCurrentInstituteId();
+
+        $filter = new ExamAttemptFilterRequest(
+            search: $request->query->get('search'),
+            status: $request->query->get('status'),
+            page: max(1, (int) $request->query->get('page', 1)),
+            limit: max(1, min(100, (int) $request->query->get('limit', 10))),
+            sortBy: $request->query->get('sortBy', 'createdAt'),
+            sortOrder: $request->query->get('sortOrder', 'DESC'),
+        );
+
+        $result = $this->examAttemptService->getMyAttempts($instituteId, $filter);
+
+        return $this->paginated('Exam attempts retrieved successfully.', $result->items, new PaginationResponse(
+            page: $result->pagination['page'],
+            limit: $result->pagination['limit'],
+            totalItems: $result->pagination['totalItems'],
+            totalPages: $result->pagination['totalPages'],
+        ), ['version' => 'v1']);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_STUDENT') or is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/exam-attempts/evaluated', name: 'exam_attempt_evaluated_list', methods: ['GET'])]
+    public function evaluated(Request $request): JsonResponse
+    {
+        $this->requirePermission('exam_attempts.view');
+
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+
+            $result = $this->examAttemptService->getEvaluatedAttempts(
+                $instituteId,
+                $request->query->get('search'),
+                max(1, (int) $request->query->get('page', 1)),
+                max(1, min(100, (int) $request->query->get('limit', 10))),
+                $request->query->get('sortBy', 'submittedAt'),
+                $request->query->get('sortOrder', 'DESC'),
+            );
+
+            return $this->paginated('Evaluated exam attempts retrieved successfully.', $result->items, new PaginationResponse(
+                page: $result->pagination['page'],
+                limit: $result->pagination['limit'],
+                totalItems: $result->pagination['totalItems'],
+                totalPages: $result->pagination['totalPages'],
+            ), ['version' => 'v1']);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        }
+    }
+
     #[SecurityAttribute("is_granted('ROLE_STUDENT') or is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
     #[Route('/exam-attempts/{id}', name: 'exam_attempt_get', methods: ['GET'])]
     public function get(string $id): JsonResponse
@@ -119,30 +207,20 @@ class ExamAttemptController extends AbstractApiController
     }
 
     #[SecurityAttribute("is_granted('ROLE_STUDENT') or is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
-    #[Route('/exam-attempts/me', name: 'exam_attempt_my_list', methods: ['GET'])]
-    public function myList(Request $request): JsonResponse
+    #[Route('/exam-attempts/{id}/questions', name: 'exam_attempt_questions', methods: ['GET'])]
+    public function questions(string $id): JsonResponse
     {
         $this->requirePermission('exam_attempts.view');
 
-        $instituteId = $this->getCurrentInstituteId();
+        try {
+            $questions = $this->examAttemptService->getAttemptQuestions($this->parseUuid($id));
 
-        $filter = new ExamAttemptFilterRequest(
-            search: $request->query->get('search'),
-            status: $request->query->get('status'),
-            page: max(1, (int) $request->query->get('page', 1)),
-            limit: max(1, min(100, (int) $request->query->get('limit', 10))),
-            sortBy: $request->query->get('sortBy', 'createdAt'),
-            sortOrder: $request->query->get('sortOrder', 'DESC'),
-        );
-
-        $result = $this->examAttemptService->getMyAttempts($instituteId, $filter);
-
-        return $this->paginated('Exam attempts retrieved successfully.', $result->items, new PaginationResponse(
-            page: $result->pagination['page'],
-            limit: $result->pagination['limit'],
-            totalItems: $result->pagination['totalItems'],
-            totalPages: $result->pagination['totalPages'],
-        ), ['version' => 'v1']);
+            return $this->success('Questions retrieved successfully.', ['questions' => $questions]);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        }
     }
 
     private function getCurrentInstituteId(): ?Uuid

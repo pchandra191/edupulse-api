@@ -5,10 +5,15 @@ namespace App\Service\ExamAttemptModule;
 
 use App\DTO\ExamAttemptModule\CreateExamAttemptRequestDTO;
 use App\DTO\ExamAttemptModule\ExamAttemptFilterRequest;
+use App\DTO\ExamAttemptModule\ExamAttemptListItemResponseDTO;
 use App\DTO\ExamAttemptModule\ExamAttemptResponseDTO;
+use App\DTO\ExamAttemptModule\EvaluatedExamAttemptResponseDTO;
+use App\DTO\ExamAttemptModule\StudentReferenceDTO;
 use App\DTO\Response\ExamAttemptListResponse;
+use App\DTO\Response\EvaluatedExamAttemptListResponse;
 use App\Entity\ExamAttempt;
 use App\Entity\ExamSession;
+use App\Entity\Question;
 use App\Entity\Section;
 use App\Entity\StudentEnrollment;
 use App\Entity\User;
@@ -38,6 +43,7 @@ readonly class ExamAttemptService
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
         private WorkflowRegistry $workflowRegistry,
+        private \App\Repository\TeacherAssignmentRepository $teacherAssignmentRepository,
     ) {
     }
 
@@ -238,6 +244,114 @@ readonly class ExamAttemptService
         );
     }
 
+    public function getAttemptQuestions(Uuid $attemptId): array
+    {
+        $user = $this->security->getUser();
+
+        if (!$user instanceof User) {
+            throw new AuthenticationException('User not authenticated.');
+        }
+
+        $attempt = $this->examAttemptRepository->find($attemptId);
+
+        if (!$attempt instanceof ExamAttempt) {
+            throw new AuthenticationException('Exam attempt not found.');
+        }
+
+        if (!$attempt->getStudent()->getId()->equals($user->getId())) {
+            throw new AuthenticationException('You are not authorized to view questions for this attempt.');
+        }
+
+        $questions = $this->examAttemptRepository->findQuestionsByAttempt($attemptId);
+
+        return array_map(
+            fn ($question) => $this->mapQuestionToStudentResponse($question),
+            $questions
+        );
+    }
+
+    public function getEvaluatedAttempts(?Uuid $instituteId, ?string $search, int $page, int $limit, string $sortBy, string $sortOrder): EvaluatedExamAttemptListResponse
+    {
+        $result = $this->examAttemptRepository->findEvaluatedAttempts(
+            $instituteId,
+            $search,
+            $page,
+            $limit,
+            $sortBy,
+            $sortOrder,
+        );
+
+        $items = array_map(
+            fn (ExamAttempt $attempt) => $this->mapEvaluatedAttemptToResponse($attempt),
+            $result['items'],
+        );
+
+        return new EvaluatedExamAttemptListResponse(
+            items: $items,
+            pagination: $result['pagination'],
+        );
+    }
+
+    public function getSessionAttempts(Uuid $examSessionId, ?string $status, int $page, int $limit): \App\DTO\Response\ExamAttemptListResponse
+    {
+        $user = $this->security->getUser();
+
+        if (!$user instanceof User) {
+            throw new AuthenticationException('User not authenticated.');
+        }
+
+        if (in_array('ROLE_STUDENT', $user->getRoles(), true)) {
+            throw new \App\Common\Exception\BusinessException('Students are not authorized to access this endpoint.');
+        }
+
+        $examSession = $this->examSessionRepository->find($examSessionId);
+
+        if (!$examSession instanceof \App\Entity\ExamSession) {
+            throw new AuthenticationException('Exam session not found.');
+        }
+
+        $institute = $examSession->getInstitute();
+
+        if (in_array('ROLE_SUPER_ADMIN', $user->getRoles(), true)) {
+            // Super admin can access any session's attempts
+        } elseif (in_array('ROLE_INSTITUTE', $user->getRoles(), true)) {
+            if ($user->getInstitute() === null || !$institute->getId()->equals($user->getInstitute()->getId())) {
+                throw new \App\Common\Exception\BusinessException('You are not authorized to view attempts for this exam session.');
+            }
+        } elseif (in_array('ROLE_TEACHER', $user->getRoles(), true)) {
+            $teacherAssignment = $this->teacherAssignmentRepository->createQueryBuilder('ta')
+                ->where('ta.teacher = :teacher')
+                ->andWhere('ta.academicClass = :academicClass')
+                ->andWhere('ta.institute = :institute')
+                ->andWhere('ta.status = :status')
+                ->setParameter('teacher', $user->getId())
+                ->setParameter('academicClass', $examSession->getAcademicClass()->getId())
+                ->setParameter('institute', $institute->getId())
+                ->setParameter('status', 'ACTIVE')
+                ->setMaxResults(1)
+                ->getQuery()
+                ->getOneOrNullResult();
+
+            if (!$teacherAssignment instanceof \App\Entity\TeacherAssignment) {
+                throw new \App\Common\Exception\BusinessException('You are not authorized to view attempts for this exam session.');
+            }
+        } else {
+            throw new \App\Common\Exception\BusinessException('You are not authorized to access this endpoint.');
+        }
+
+        $result = $this->examAttemptRepository->findByExamSession($examSessionId, $status, $page, $limit);
+
+        $items = array_map(
+            fn (ExamAttempt $attempt) => $this->mapSessionAttemptToResponse($attempt),
+            $result['items'],
+        );
+
+        return new \App\DTO\Response\ExamAttemptListResponse(
+            items: $items,
+            pagination: $result['pagination'],
+        );
+    }
+
     private function isStudentEnrolled(User $student, ExamSession $examSession): bool
     {
         if (null === $student->getInstitute()) {
@@ -306,6 +420,66 @@ readonly class ExamAttemptService
             autoSubmittedAt: $attempt->getAutoSubmittedAt()?->format(DateTimeInterface::ATOM),
             createdAt: $attempt->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $attempt->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+        );
+    }
+
+    private function mapQuestionToStudentResponse(Question $question): \App\DTO\QuestionPaperModule\StudentQuestionResponseDTO
+    {
+        $options = [];
+        foreach ($question->getOptions() as $option) {
+            $options[] = new \App\DTO\QuestionPaperModule\StudentQuestionOptionResponseDTO(
+                id: $option->getId()->toRfc4122(),
+                text: $option->getOptionText(),
+                displayOrder: $option->getDisplayOrder(),
+            );
+        }
+
+        return new \App\DTO\QuestionPaperModule\StudentQuestionResponseDTO(
+            id: $question->getId()->toRfc4122(),
+            type: $question->getType()->value,
+            questionText: $question->getQuestionText(),
+            marks: $question->getMarks(),
+            displayOrder: $question->getDisplayOrder(),
+            image: $question->getImage(),
+            options: $options,
+        );
+    }
+
+    private function mapEvaluatedAttemptToResponse(ExamAttempt $attempt): EvaluatedExamAttemptResponseDTO
+    {
+        $student = $attempt->getStudent();
+
+        return new EvaluatedExamAttemptResponseDTO(
+            attemptId: $attempt->getId()->toRfc4122(),
+            student: new StudentReferenceDTO(
+                id: $student->getId()->toRfc4122(),
+                name: $student->getFullName(),
+            ),
+            status: $attempt->getStatus()->value,
+            startedAt: $attempt->getStartedAt()?->format(DateTimeInterface::ATOM),
+            submittedAt: $attempt->getSubmittedAt()?->format(DateTimeInterface::ATOM),
+            timeTakenSeconds: $attempt->getTimeTakenSeconds(),
+            score: $attempt->getScore(),
+            maxMarks: $attempt->getMaxMarks(),
+            percentage: $attempt->getPercentage(),
+        );
+    }
+
+    private function mapSessionAttemptToResponse(ExamAttempt $attempt): ExamAttemptListItemResponseDTO
+    {
+        $student = $attempt->getStudent();
+
+        return new ExamAttemptListItemResponseDTO(
+            attemptId: $attempt->getId()->toRfc4122(),
+            studentId: $student->getId()->toRfc4122(),
+            studentName: $student->getFullName(),
+            status: $attempt->getStatus()->value,
+            startedAt: $attempt->getStartedAt()?->format(DateTimeInterface::ATOM),
+            submittedAt: $attempt->getSubmittedAt()?->format(DateTimeInterface::ATOM),
+            timeTakenSeconds: $attempt->getTimeTakenSeconds(),
+            score: $attempt->getScore(),
+            maxMarks: $attempt->getMaxMarks(),
+            percentage: $attempt->getPercentage(),
         );
     }
 }

@@ -1,0 +1,11 @@
+<?php
+
+namespace App\DTO\Auth;
+
+readonly class EnrollmentResponseDTO
+{
+    public function __construct(
+        public string $id,
+    ) {
+    }
+}

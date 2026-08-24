@@ -8,6 +8,8 @@ use App\Entity\AcademicYear;
 use App\Entity\ExamAttempt;
 use App\Entity\ExamSession;
 use App\Entity\Institute;
+use App\Entity\Question;
+use App\Entity\QuestionOption;
 use App\Entity\QuestionPaper;
 use App\Entity\Section;
 use App\Entity\StudentEnrollment;
@@ -19,6 +21,7 @@ use App\Enum\ExamAttemptStatus;
 use App\Enum\ExamSessionStatus;
 use App\Enum\InstituteStatus;
 use App\Enum\QuestionPaperStatus;
+use App\Enum\QuestionType;
 use App\Enum\SectionStatus;
 use App\Enum\SubjectStatus;
 use App\Enum\UserRole;
@@ -36,8 +39,11 @@ class ExamAttemptControllerTest extends WebTestCase
     private ?Uuid $testSubjectId = null;
     private ?Uuid $testSectionId = null;
     private ?Uuid $testQuestionPaperId = null;
+    private ?Uuid $testQuestion1Id = null;
+    private ?Uuid $testQuestion2Id = null;
     private ?Uuid $testExamSessionId = null;
     private ?Uuid $testStudentId = null;
+    private ?Uuid $testAttemptId = null;
     private ?\Symfony\Bundle\FrameworkBundle\KernelBrowser $client = null;
     private array $createdEmails = [];
     private string $unique = '';
@@ -131,6 +137,76 @@ class ExamAttemptControllerTest extends WebTestCase
         $questionPaper->setMaximumMarks(100);
         $questionPaper->setStatus(QuestionPaperStatus::Finalized);
 
+        $question1 = new Question();
+        $question1Id = Uuid::v7();
+        $q1Reflection = new \ReflectionClass($question1);
+        $q1Property = $q1Reflection->getProperty('id');
+        $q1Property->setAccessible(true);
+        $q1Property->setValue($question1, $question1Id);
+        $question1->setQuestionPaper($questionPaper);
+        $question1->setType(QuestionType::MCQ);
+        $question1->setQuestionText('What is 2+2?');
+        $question1->setMarks(1);
+        $question1->setDisplayOrder(1);
+
+        $q1Option1 = new QuestionOption();
+        $q1o1Reflection = new \ReflectionClass($q1Option1);
+        $q1o1Property = $q1o1Reflection->getProperty('id');
+        $q1o1Property->setAccessible(true);
+        $q1o1Property->setValue($q1Option1, Uuid::v7());
+        $q1Option1->setQuestion($question1);
+        $q1Option1->setOptionText('3');
+        $q1Option1->setDisplayOrder(1);
+
+        $q1Option2 = new QuestionOption();
+        $q1o2Reflection = new \ReflectionClass($q1Option2);
+        $q1o2Property = $q1o2Reflection->getProperty('id');
+        $q1o2Property->setAccessible(true);
+        $q1o2Property->setValue($q1Option2, Uuid::v7());
+        $q1Option2->setQuestion($question1);
+        $q1Option2->setOptionText('4');
+        $q1Option2->setDisplayOrder(2);
+
+        $question2 = new Question();
+        $question2Id = Uuid::v7();
+        $q2Reflection = new \ReflectionClass($question2);
+        $q2Property = $q2Reflection->getProperty('id');
+        $q2Property->setAccessible(true);
+        $q2Property->setValue($question2, $question2Id);
+        $question2->setQuestionPaper($questionPaper);
+        $question2->setType(QuestionType::MCQ);
+        $question2->setQuestionText('What is the capital of France?');
+        $question2->setMarks(1);
+        $question2->setDisplayOrder(2);
+
+        $q2Option1 = new QuestionOption();
+        $q2o1Reflection = new \ReflectionClass($q2Option1);
+        $q2o1Property = $q2o1Reflection->getProperty('id');
+        $q2o1Property->setAccessible(true);
+        $q2o1Property->setValue($q2Option1, Uuid::v7());
+        $q2Option1->setQuestion($question2);
+        $q2Option1->setOptionText('London');
+        $q2Option1->setDisplayOrder(1);
+
+        $q2Option2 = new QuestionOption();
+        $q2o2Reflection = new \ReflectionClass($q2Option2);
+        $q2o2Property = $q2o2Reflection->getProperty('id');
+        $q2o2Property->setAccessible(true);
+        $q2o2Property->setValue($q2Option2, Uuid::v7());
+        $q2Option2->setQuestion($question2);
+        $q2Option2->setOptionText('Paris');
+        $q2Option2->setDisplayOrder(2);
+
+        $entityManager->persist($question1);
+        $entityManager->persist($q1Option1);
+        $entityManager->persist($q1Option2);
+        $entityManager->persist($question2);
+        $entityManager->persist($q2Option1);
+        $entityManager->persist($q2Option2);
+
+        $this->testQuestion1Id = $question1Id;
+        $this->testQuestion2Id = $question2Id;
+
         $examSession = new ExamSession();
         $this->testExamSessionId = Uuid::v7();
         $esReflection = new \ReflectionClass($examSession);
@@ -194,6 +270,20 @@ class ExamAttemptControllerTest extends WebTestCase
         $entityManager->persist($student);
         $entityManager->persist($studentEnrollment);
         $entityManager->persist($enrollmentSection);
+        $entityManager->flush();
+
+        $attempt = new ExamAttempt();
+        $this->testAttemptId = Uuid::v7();
+        $attemptReflection = new \ReflectionClass($attempt);
+        $attemptProperty = $attemptReflection->getProperty('id');
+        $attemptProperty->setAccessible(true);
+        $attemptProperty->setValue($attempt, $this->testAttemptId);
+        $attempt->setExamSession($examSession);
+        $attempt->setStudent($student);
+        $attempt->setStatus(ExamAttemptStatus::InProgress);
+        $attempt->setStartedAt(new \DateTimeImmutable());
+
+        $entityManager->persist($attempt);
         $entityManager->flush();
 
         $this->createdEmails = [
@@ -576,5 +666,198 @@ class ExamAttemptControllerTest extends WebTestCase
 
         $data = json_decode($client->getResponse()->getContent(), true);
         $this->assertStringContainsString('not eligible', strtolower($data['message']));
+    }
+
+    public function testStudentCanGetOwnAttemptQuestions(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/exam-attempts/' . $this->testAttemptId . '/questions', [], [], $this->getAuthHeaders($this->studentToken));
+
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('questions', $data['data']);
+        $this->assertCount(2, $data['data']['questions']);
+        $this->assertSame((string) $this->testQuestion1Id, $data['data']['questions'][0]['id']);
+        $this->assertSame((string) $this->testQuestion2Id, $data['data']['questions'][1]['id']);
+    }
+
+    public function testStudentCannotGetAnotherStudentsAttemptQuestions(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $otherStudent = new User();
+        $otherStudentId = Uuid::v7();
+        $studentReflection = new \ReflectionClass($otherStudent);
+        $studentProperty = $studentReflection->getProperty('id');
+        $studentProperty->setAccessible(true);
+        $studentProperty->setValue($otherStudent, $otherStudentId);
+        $otherStudent->setEmail('other-student-questions-test-' . $this->unique . '@edupulse.ai');
+        $otherStudent->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $otherStudent->setRoles([UserRole::Student->value]);
+        $otherStudent->setStatus(UserStatus::Active);
+        $otherStudent->verify();
+        $otherStudent->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $otherAttempt = new ExamAttempt();
+        $otherAttemptId = Uuid::v7();
+        $attemptReflection = new \ReflectionClass($otherAttempt);
+        $attemptProperty = $attemptReflection->getProperty('id');
+        $attemptProperty->setAccessible(true);
+        $attemptProperty->setValue($otherAttempt, $otherAttemptId);
+        $otherAttempt->setExamSession($entityManager->getRepository(ExamSession::class)->find($this->testExamSessionId));
+        $otherAttempt->setStudent($otherStudent);
+        $otherAttempt->setStatus(ExamAttemptStatus::InProgress);
+        $otherAttempt->setStartedAt(new \DateTimeImmutable());
+
+        $entityManager->persist($otherStudent);
+        $entityManager->persist($otherAttempt);
+        $entityManager->flush();
+
+        $otherToken = $this->login($client, 'other-student-questions-test-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        $client->request('GET', '/api/v1/exam-attempts/' . $this->testAttemptId . '/questions', [], [], $this->getAuthHeaders($otherToken));
+
+        $this->assertSame(404, $client->getResponse()->getStatusCode());
+
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+        $otherStudent = $entityManager->getRepository(User::class)->find($otherStudentId);
+        if ($otherStudent) {
+            $entityManager->remove($otherStudent);
+        }
+        $entityManager->flush();
+    }
+
+    public function testStudentQuestionsDoNotExposeIsCorrect(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/exam-attempts/' . $this->testAttemptId . '/questions', [], [], $this->getAuthHeaders($this->studentToken));
+
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $responseContent = $client->getResponse()->getContent();
+        $this->assertStringNotContainsString('isCorrect', $responseContent);
+        $this->assertStringNotContainsString('correctOption', $responseContent);
+    }
+
+    public function testInvalidAttemptIdReturnsNotFound(): void
+    {
+        $client = $this->client;
+
+        $fakeAttemptId = Uuid::v7()->toRfc4122();
+
+        $client->request('GET', '/api/v1/exam-attempts/' . $fakeAttemptId . '/questions', [], [], $this->getAuthHeaders($this->studentToken));
+
+        $this->assertSame(404, $client->getResponse()->getStatusCode());
+    }
+
+    public function testStudentCanGetEvaluatedAttempts(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $attempt = $entityManager->getRepository(ExamAttempt::class)->find($this->testAttemptId);
+        $attempt->setStatus(\App\Enum\ExamAttemptStatus::Evaluated);
+        $attempt->setScore(82);
+        $attempt->setMaxMarks(100);
+        $attempt->setPercentage(82);
+        $attempt->setTimeTakenSeconds(2538);
+        $entityManager->flush();
+
+        $client->request('GET', '/api/v1/exam-attempts/evaluated', [], [], $this->getAuthHeaders($this->studentToken));
+
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('items', $data['data']);
+        $this->assertArrayHasKey('pagination', $data['data']);
+        $this->assertCount(1, $data['data']['items']);
+        $this->assertSame((string) $this->testAttemptId, $data['data']['items'][0]['attemptId']);
+        $this->assertSame('EVALUATED', $data['data']['items'][0]['status']);
+        $this->assertSame(82, $data['data']['items'][0]['score']);
+        $this->assertSame(100, $data['data']['items'][0]['maxMarks']);
+        $this->assertSame(82, $data['data']['items'][0]['percentage']);
+        $this->assertSame(2538, $data['data']['items'][0]['timeTakenSeconds']);
+    }
+
+    public function testSuperAdminCanGetEvaluatedAttempts(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $attempt = $entityManager->getRepository(ExamAttempt::class)->find($this->testAttemptId);
+        $attempt->setStatus(\App\Enum\ExamAttemptStatus::Evaluated);
+        $attempt->setScore(75);
+        $attempt->setMaxMarks(100);
+        $attempt->setPercentage(75);
+        $attempt->setTimeTakenSeconds(1800);
+        $entityManager->flush();
+
+        $client->request('GET', '/api/v1/exam-attempts/evaluated', ['page' => 1, 'limit' => 100], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('items', $data['data']);
+        $this->assertArrayHasKey('pagination', $data['data']);
+
+        $found = false;
+        foreach ($data['data']['items'] as $item) {
+            if ($item['attemptId'] === (string) $this->testAttemptId) {
+                $found = true;
+                $this->assertSame('EVALUATED', $item['status']);
+                $this->assertSame(75, $item['score']);
+                $this->assertSame(100, $item['maxMarks']);
+                $this->assertSame(75, $item['percentage']);
+                $this->assertSame(1800, $item['timeTakenSeconds']);
+                break;
+            }
+        }
+        $this->assertTrue($found, 'Evaluated attempt not found in super admin response');
+    }
+
+    public function testSuperAdminCanGetSessionAttempts(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/exam-sessions/' . $this->testExamSessionId . '/attempts', [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('items', $data['data']);
+        $this->assertArrayHasKey('pagination', $data['data']);
+        $this->assertCount(1, $data['data']['items']);
+        $this->assertSame((string) $this->testAttemptId, $data['data']['items'][0]['attemptId']);
+    }
+
+    public function testStudentCannotGetSessionAttempts(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/exam-sessions/' . $this->testExamSessionId . '/attempts', [], [], $this->getAuthHeaders($this->studentToken));
+
+        $this->assertSame(400, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('not authorized', strtolower($data['message']));
+    }
+
+    public function testInvalidSessionIdReturnsNotFound(): void
+    {
+        $client = $this->client;
+
+        $fakeSessionId = Uuid::v7()->toRfc4122();
+
+        $client->request('GET', '/api/v1/exam-sessions/' . $fakeSessionId . '/attempts', [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $this->assertSame(404, $client->getResponse()->getStatusCode());
     }
 }

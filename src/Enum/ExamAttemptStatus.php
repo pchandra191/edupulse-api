@@ -10,4 +10,5 @@ enum ExamAttemptStatus: string
     case Submitted = 'SUBMITTED';
     case AutoSubmitted = 'AUTO_SUBMITTED';
     case Abandoned = 'ABANDONED';
+    case Evaluated = 'EVALUATED';
 }

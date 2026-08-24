@@ -5,6 +5,7 @@ namespace App\Controller\Auth;
 
 use App\DTO\Auth\ChangePasswordRequestDTO;
 use App\DTO\Auth\CurrentUserResponseDTO;
+use App\DTO\Auth\EnrollmentResponseDTO;
 use App\DTO\Auth\ForgotPasswordRequestDTO;
 use App\DTO\Auth\LoginRequest;
 use App\DTO\Auth\LoginResponseDTO;
@@ -210,6 +211,10 @@ class AuthController
                     'status' => $profile->institute->status,
                 ] : null,
                 'permissions' => $this->rolePermissionService->getUserEffectivePermissions(new Uuid($profile->id)),
+                'enrollments' => array_map(
+                    fn(EnrollmentResponseDTO $e) => ['id' => $e->id],
+                    $profile->enrollments,
+                ),
             ],
         ], Response::HTTP_OK);
     }

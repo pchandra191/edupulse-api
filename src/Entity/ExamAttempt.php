@@ -5,6 +5,8 @@ namespace App\Entity;
 
 use App\Enum\ExamAttemptStatus;
 use App\Repository\ExamAttemptRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -38,9 +40,23 @@ class ExamAttempt extends AbstractEntity
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $autoSubmittedAt = null;
 
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    private ?int $score = null;
+
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    private ?int $maxMarks = null;
+
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    private ?int $percentage = null;
+
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    private ?int $timeTakenSeconds = null;
+
     public function __construct()
     {
         parent::__construct();
+        $this->examAnswers = new ArrayCollection();
+        $this->submissionDocuments = new ArrayCollection();
     }
 
     public function getExamSession(): ExamSession
@@ -148,5 +164,117 @@ class ExamAttempt extends AbstractEntity
             ExamAttemptStatus::Abandoned->value => true,
             default => false,
         };
+    }
+
+    #[ORM\OneToMany(mappedBy: 'examAttempt', targetEntity: ExamAnswer::class, cascade: ['persist'], orphanRemoval: true)]
+    private Collection $examAnswers;
+
+    #[ORM\OneToMany(mappedBy: 'examAttempt', targetEntity: ExamSubmissionDocument::class, cascade: ['persist'], orphanRemoval: true)]
+    private Collection $submissionDocuments;
+
+    /**
+     * @return Collection<int, ExamAnswer>
+     */
+    public function getExamAnswers(): Collection
+    {
+        return $this->examAnswers;
+    }
+
+    public function addExamAnswer(ExamAnswer $examAnswer): self
+    {
+        if (!$this->examAnswers->contains($examAnswer)) {
+            $this->examAnswers->add($examAnswer);
+            $examAnswer->setExamAttempt($this);
+        }
+
+        return $this;
+    }
+
+    public function removeExamAnswer(ExamAnswer $examAnswer): self
+    {
+        if ($this->examAnswers->removeElement($examAnswer)) {
+            if ($examAnswer->getExamAttempt() === $this) {
+                $examAnswer->setExamAttempt(new ExamAttempt());
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, ExamSubmissionDocument>
+     */
+    public function getSubmissionDocuments(): Collection
+    {
+        return $this->submissionDocuments;
+    }
+
+    public function addSubmissionDocument(ExamSubmissionDocument $document): self
+    {
+        if (!$this->submissionDocuments->contains($document)) {
+            $this->submissionDocuments->add($document);
+            $document->setExamAttempt($this);
+        }
+
+        return $this;
+    }
+
+    public function removeSubmissionDocument(ExamSubmissionDocument $document): self
+    {
+        if ($this->submissionDocuments->removeElement($document)) {
+            if ($document->getExamAttempt() === $this) {
+                $document->setExamAttempt(new ExamAttempt());
+            }
+        }
+
+        return $this;
+    }
+
+    public function getScore(): ?int
+    {
+        return $this->score;
+    }
+
+    public function setScore(?int $score): self
+    {
+        $this->score = $score;
+
+        return $this;
+    }
+
+    public function getMaxMarks(): ?int
+    {
+        return $this->maxMarks;
+    }
+
+    public function setMaxMarks(?int $maxMarks): self
+    {
+        $this->maxMarks = $maxMarks;
+
+        return $this;
+    }
+
+    public function getPercentage(): ?int
+    {
+        return $this->percentage;
+    }
+
+    public function setPercentage(?int $percentage): self
+    {
+        $this->percentage = $percentage;
+
+        return $this;
+    }
+
+    public function getTimeTakenSeconds(): ?int
+    {
+        return $this->timeTakenSeconds;
+    }
+
+    public function setTimeTakenSeconds(?int $timeTakenSeconds): self
+    {
+        $this->timeTakenSeconds = $timeTakenSeconds;
+
+        return $this;
     }
 }

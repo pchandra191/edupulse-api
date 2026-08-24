@@ -6,6 +6,7 @@ namespace App\Repository;
 use App\Entity\ExamAttempt;
 use App\Entity\ExamSession;
 use App\Entity\User;
+use App\Enum\ExamAttemptStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -74,6 +75,121 @@ class ExamAttemptRepository extends ServiceEntityRepository
         }
 
         return $qb->getQuery()->getResult();
+    }
+
+    public function findQuestionsByAttempt(Uuid $attemptId): array
+    {
+        $qb = $this->createQueryBuilder('ea')
+            ->innerJoin('ea.examSession', 'es')
+            ->innerJoin('es.questionPaper', 'qp')
+            ->where('ea.id = :attemptId')
+            ->setParameter('attemptId', $attemptId)
+            ->select('qp.id');
+
+        $paperId = $qb->getQuery()->getSingleScalarResult();
+
+        if (!$paperId) {
+            return [];
+        }
+
+        $questionRepository = $this->getEntityManager()->getRepository(\App\Entity\Question::class);
+
+        return $questionRepository->createQueryBuilder('q')
+            ->leftJoin('q.options', 'qo')
+            ->addSelect('qo')
+            ->where('q.questionPaper = :paperId')
+            ->setParameter('paperId', $paperId)
+            ->orderBy('q.displayOrder', 'ASC')
+            ->addOrderBy('qo.displayOrder', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findEvaluatedAttempts(
+        ?Uuid $instituteId,
+        ?string $search,
+        int $page,
+        int $limit,
+        string $sortBy,
+        string $sortOrder
+    ): array {
+        $qb = $this->createQueryBuilder('ea')
+            ->innerJoin('ea.examSession', 'es')
+            ->addSelect('es')
+            ->innerJoin('es.institute', 'i')
+            ->addSelect('i')
+            ->innerJoin('ea.student', 'u')
+            ->addSelect('u')
+            ->where('ea.status = :status')
+            ->setParameter('status', ExamAttemptStatus::Evaluated->value);
+
+        if ($instituteId !== null) {
+            $qb->andWhere('es.institute = :institute')
+               ->setParameter('institute', $instituteId);
+        }
+
+        $this->applySearch($qb, $search);
+        $this->applyEvaluatedSorting($qb, $sortBy, $sortOrder);
+
+        $totalItems = $this->getTotalCount($qb);
+
+        $offset = ($page - 1) * $limit;
+        $qb->setFirstResult($offset)
+           ->setMaxResults($limit);
+
+        $items = $qb->getQuery()->getResult();
+
+        $totalPages = $limit > 0 ? (int) ceil($totalItems / $limit) : 0;
+
+        return [
+            'items' => $items,
+            'pagination' => [
+                'page' => $page,
+                'limit' => $limit,
+                'totalItems' => $totalItems,
+                'totalPages' => $totalPages,
+            ],
+        ];
+    }
+
+    public function findByExamSession(Uuid $examSessionId, ?string $status = null, int $page = 1, int $limit = 10): array
+    {
+        $qb = $this->createQueryBuilder('ea')
+            ->innerJoin('ea.examSession', 'es')
+            ->addSelect('es')
+            ->innerJoin('es.institute', 'i')
+            ->addSelect('i')
+            ->innerJoin('ea.student', 'u')
+            ->addSelect('u')
+            ->where('ea.examSession = :examSession')
+            ->setParameter('examSession', $examSessionId);
+
+        if ($status !== null && $status !== '') {
+            $qb->andWhere('ea.status = :status')
+               ->setParameter('status', $status);
+        }
+
+        $qb->orderBy('ea.createdAt', 'DESC');
+
+        $totalItems = $this->getTotalCount($qb);
+
+        $offset = ($page - 1) * $limit;
+        $qb->setFirstResult($offset)
+           ->setMaxResults($limit);
+
+        $items = $qb->getQuery()->getResult();
+
+        $totalPages = $limit > 0 ? (int) ceil($totalItems / $limit) : 0;
+
+        return [
+            'items' => $items,
+            'pagination' => [
+                'page' => $page,
+                'limit' => $limit,
+                'totalItems' => $totalItems,
+                'totalPages' => $totalPages,
+            ],
+        ];
     }
 
     public function findPaginatedByStudent(
@@ -159,6 +275,19 @@ class ExamAttemptRepository extends ServiceEntityRepository
 
         if (!in_array($sortBy, $allowedSortFields, true)) {
             $sortBy = 'createdAt';
+        }
+
+        $sortOrder = mb_strtoupper($sortOrder) === 'ASC' ? 'ASC' : 'DESC';
+
+        $qb->addOrderBy('ea.' . $sortBy, $sortOrder);
+    }
+
+    private function applyEvaluatedSorting(QueryBuilder $qb, string $sortBy, string $sortOrder): void
+    {
+        $allowedSortFields = ['startedAt', 'submittedAt', 'score', 'percentage', 'timeTakenSeconds'];
+
+        if (!in_array($sortBy, $allowedSortFields, true)) {
+            $sortBy = 'submittedAt';
         }
 
         $sortOrder = mb_strtoupper($sortOrder) === 'ASC' ? 'ASC' : 'DESC';

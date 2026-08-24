@@ -5,6 +5,7 @@ namespace App\Service\Auth;
 
 use App\DTO\Auth\ChangePasswordRequestDTO;
 use App\DTO\Auth\CurrentUserResponseDTO;
+use App\DTO\Auth\EnrollmentResponseDTO;
 use App\DTO\Auth\ForgotPasswordRequestDTO;
 use App\DTO\Auth\InstituteResponseDTO;
 use App\DTO\Auth\LoginRequest;
@@ -15,6 +16,7 @@ use App\DTO\Auth\RefreshResponseDTO;
 use App\DTO\Auth\ResetPasswordRequestDTO;
 use App\Entity\Institute;
 use App\Entity\PasswordResetToken;
+use App\Entity\StudentEnrollment;
 use App\Entity\User;
 use App\Enum\InstituteStatus;
 use App\Exception\AuthenticationException;
@@ -25,6 +27,7 @@ use App\Exception\InstituteNotActiveException;
 use App\Exception\UserDisabledException;
 use App\Exception\UserNotVerifiedException;
 use App\Repository\PasswordResetTokenRepository;
+use App\Repository\StudentEnrollmentRepository;
 use App\Repository\UserRepository;
 use App\Service\Notification\EmailServiceInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -45,6 +48,7 @@ readonly class AuthService
         private RefreshTokenManagerInterface $refreshTokenManager,
         private EntityManagerInterface $entityManager,
         private PasswordResetTokenRepository $passwordResetTokenRepository,
+        private StudentEnrollmentRepository $studentEnrollmentRepository,
         private EmailServiceInterface $emailService,
         private UrlGeneratorInterface $urlGenerator,
         private LoggerInterface $logger,
@@ -102,6 +106,11 @@ readonly class AuthService
             );
         }
 
+        $enrollments = array_map(
+            fn(StudentEnrollment $se) => new EnrollmentResponseDTO(id: (string) $se->getId()),
+            $this->studentEnrollmentRepository->findBy(['student' => $user], ['createdAt' => 'DESC'])
+        );
+
         return new CurrentUserResponseDTO(
             id: (string) $user->getId(),
             email: $user->getEmail(),
@@ -109,6 +118,7 @@ readonly class AuthService
             lastName: $user->getLastName(),
             roles: $user->getRoles(),
             institute: $institute,
+            enrollments: $enrollments,
         );
     }
 
