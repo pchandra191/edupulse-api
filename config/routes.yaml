@@ -67,6 +67,16 @@ exam_session_api:
     type: attribute
     prefix: /api/%app.api_version%
 
+exam_answer_api:
+    resource: '../src/Controller/ExamAnswerModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
+
+exam_submission_document_api:
+    resource: '../src/Controller/ExamSubmissionDocumentModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
+
 exam_attempt_api:
     resource: '../src/Controller/ExamAttemptModule/'
     type: attribute

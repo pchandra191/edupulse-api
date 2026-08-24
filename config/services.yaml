@@ -32,6 +32,10 @@ services:
         arguments:
             $openAiApiKey: '%app.openai_api_key%'
 
+    App\Service\ExamSubmissionDocumentModule\ExamSubmissionDocumentService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
     App\Common\Api\Response\ApiResponseFactory:
         arguments:
             $apiVersion: '%app.api_version%'
