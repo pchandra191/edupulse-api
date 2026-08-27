@@ -244,13 +244,13 @@ readonly class InstituteService
 
         if ($request->timezone !== ($institute->getTimezone()?->value ?? null)) {
             $institute->setTimezone(
-                null !== $request->timezone ? Timezone::from($request->timezone) : null
+                !empty($request->timezone) ? Timezone::from($request->timezone) : null
             );
         }
 
         if ($request->currency !== ($institute->getCurrency()?->value ?? null)) {
             $institute->setCurrency(
-                null !== $request->currency ? Currency::from($request->currency) : null
+                !empty($request->currency) ? Currency::from($request->currency) : null
             );
         }
     }
