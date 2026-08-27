@@ -35,29 +35,29 @@ abstract class AbstractApiController
         return new JsonResponse($this->responseFactory->success($message, $data, $meta), JsonResponse::HTTP_OK);
     }
 
-    protected function error(string $message, array $errors = [], array $meta = []): JsonResponse
+    protected function error(string $message, array $errors = [], array $meta = [], ?string $code = null): JsonResponse
     {
-        return new JsonResponse($this->responseFactory->error($message, $errors, $meta), JsonResponse::HTTP_BAD_REQUEST);
+        return new JsonResponse($this->responseFactory->error($message, $errors, $meta, $code), JsonResponse::HTTP_BAD_REQUEST);
     }
 
-    protected function notFound(string $message = 'Resource not found.', array $meta = []): JsonResponse
+    protected function notFound(string $message = 'Resource not found.', array $meta = [], ?string $code = null): JsonResponse
     {
-        return new JsonResponse($this->responseFactory->error($message, meta: $meta), JsonResponse::HTTP_NOT_FOUND);
+        return new JsonResponse($this->responseFactory->error($message, meta: $meta, code: $code), JsonResponse::HTTP_NOT_FOUND);
     }
 
-    protected function accessDenied(string $message = 'Access denied.', array $meta = []): JsonResponse
+    protected function accessDenied(string $message = 'Access denied.', array $meta = [], ?string $code = null): JsonResponse
     {
-        return new JsonResponse($this->responseFactory->error($message, meta: $meta), JsonResponse::HTTP_FORBIDDEN);
+        return new JsonResponse($this->responseFactory->error($message, meta: $meta, code: $code), JsonResponse::HTTP_FORBIDDEN);
     }
 
-    protected function unprocessableEntity(string $message = '', array $errors = [], array $meta = []): JsonResponse
+    protected function unprocessableEntity(string $message = '', array $errors = [], array $meta = [], ?string $code = null): JsonResponse
     {
-        return new JsonResponse($this->responseFactory->error($message, $errors, $meta), JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+        return new JsonResponse($this->responseFactory->error($message, $errors, $meta, $code), JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
     }
 
-    protected function unauthorized(string $message = 'Authentication required.', array $meta = []): JsonResponse
+    protected function unauthorized(string $message = 'Authentication required.', array $meta = [], ?string $code = null): JsonResponse
     {
-        return new JsonResponse($this->responseFactory->error($message, meta: $meta), JsonResponse::HTTP_UNAUTHORIZED);
+        return new JsonResponse($this->responseFactory->error($message, meta: $meta, code: $code), JsonResponse::HTTP_UNAUTHORIZED);
     }
 
     protected function paginated(string $message, mixed $data, PaginationResponse $pagination, array $meta = []): JsonResponse
@@ -65,8 +65,9 @@ abstract class AbstractApiController
         return new JsonResponse($this->responseFactory->paginated($message, $data, $pagination, $meta), JsonResponse::HTTP_OK);
     }
 
-    protected function serverError(string $message = 'Internal server error.', array $meta = []): JsonResponse
+    protected function serverError(string $message = 'Internal server error.', array $meta = [], ?string $code = null): JsonResponse
     {
-        return new JsonResponse($this->responseFactory->error($message, meta: $meta), JsonResponse::HTTP_INTERNAL_SERVER_ERROR);
+        return new JsonResponse($this->responseFactory->error($message, meta: $meta, code: $code), JsonResponse::HTTP_INTERNAL_SERVER_ERROR);
     }
+
 }

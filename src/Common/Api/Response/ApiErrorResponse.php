@@ -12,6 +12,7 @@ readonly class ApiErrorResponse implements JsonSerializable
         public bool $success = false,
         public array $errors = [],
         public array $meta = [],
+        public ?string $code = null,
     ) {
     }
 
@@ -21,6 +22,10 @@ readonly class ApiErrorResponse implements JsonSerializable
             'success' => $this->success,
             'message' => $this->message,
         ];
+
+        if ($this->code !== null) {
+            $result['code'] = $this->code;
+        }
 
         if (!empty($this->errors)) {
             $result['errors'] = $this->errors;

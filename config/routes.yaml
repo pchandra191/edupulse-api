@@ -12,6 +12,11 @@ user_api:
     type: attribute
     prefix: /api/%app.api_version%
 
+user_profile_api:
+    resource: '../src/Controller/UserProfile/'
+    type: attribute
+    prefix: /api/%app.api_version%
+
 role_api:
     resource: '../src/Controller/Role/'
     type: attribute

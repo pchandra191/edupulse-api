@@ -14,6 +14,7 @@ use App\Entity\Institute;
 use App\Enum\Currency;
 use App\Enum\Timezone;
 use App\Exception\AuthenticationException;
+use App\Service\Institute\InstituteLogoService;
 use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -25,6 +26,7 @@ readonly class InstituteService
         private InstituteRepository $instituteRepository,
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
+        private InstituteLogoService $instituteLogoService,
     ) {
     }
 
@@ -262,7 +264,7 @@ readonly class InstituteService
             email: $institute->getEmail(),
             phone: $institute->getPhone(),
             website: $institute->getWebsite(),
-            logo: $institute->getLogo(),
+            logo: $this->instituteLogoService->getLogoUrl($institute->getLogo()),
             addressLine1: $institute->getAddressLine1(),
             addressLine2: $institute->getAddressLine2(),
             city: $institute->getCity(),
@@ -288,7 +290,7 @@ readonly class InstituteService
             email: $institute->getEmail(),
             phone: $institute->getPhone(),
             website: $institute->getWebsite(),
-            logo: $institute->getLogo(),
+            logo: $this->instituteLogoService->getLogoUrl($institute->getLogo()),
             addressLine1: $institute->getAddressLine1(),
             addressLine2: $institute->getAddressLine2(),
             city: $institute->getCity(),

@@ -180,6 +180,6 @@ readonly class RolePermissionService
 
     private function normalizePermissionCodeForStorage(string $code): string
     {
-        return str_replace('_', '-', mb_strtolower($code));
+        return str_replace('-', '_', mb_strtolower($code));
     }
 }

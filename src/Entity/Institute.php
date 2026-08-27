@@ -191,7 +191,20 @@ class Institute extends AbstractEntity
 
     public function setLogo(?string $logo): self
     {
-        $this->logo = $logo !== null ? trim($logo) : null;
+        $logo = $logo !== null ? trim($logo) : null;
+
+        if ($logo !== null) {
+            $logo = preg_replace('/^https?:\/\/[^\/]+/', '', $logo);
+            $logo = ltrim($logo, '/');
+            $logo = preg_replace('#^uploads/institutes/#', '', $logo);
+            $logo = ltrim($logo, 'institutes/');
+
+            if ($logo === '' || !preg_match('/^[0-9a-f-]+\/[^\/]+$/', $logo)) {
+                return $this;
+            }
+        }
+
+        $this->logo = $logo;
 
         return $this;
     }

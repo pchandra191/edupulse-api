@@ -36,6 +36,18 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    App\Service\Institute\InstituteLogoService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\UserProfile\ProfilePhotoService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\UserProfile\UserDocumentService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
     App\Common\Api\Response\ApiResponseFactory:
         arguments:
             $apiVersion: '%app.api_version%'

@@ -134,6 +134,22 @@ class InstituteControllerTest extends WebTestCase
         ];
     }
 
+    private function createValidImage(string $path, string $format): void
+    {
+        $image = imagecreatetruecolor(1, 1);
+        $white = imagecolorallocate($image, 255, 255, 255);
+        imagesetpixel($image, 0, 0, $white);
+
+        match (strtolower($format)) {
+            'png' => imagepng($image, $path),
+            'jpg', 'jpeg' => imagejpeg($image, $path, 85),
+            'webp' => imagewebp($image, $path, 80),
+            default => throw new \InvalidArgumentException('Unsupported format: ' . $format),
+        };
+
+        imagedestroy($image);
+    }
+
     public function testSuperAdminCanListInstitutes(): void
     {
         $client = $this->client;
@@ -303,5 +319,273 @@ class InstituteControllerTest extends WebTestCase
             'DELETE FROM users WHERE id = :id',
             ['id' => $student->getId()->toRfc4122()]
         );
+    }
+
+    public function testInstituteWithoutLogoReturnsNull(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/institutes/' . $this->testInstituteId, [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertNull($data['data']['logo']);
+    }
+
+    public function testInstituteAdminCanUploadLogo(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.png';
+        $this->createValidImage($tempFile, 'png');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.png', 'image/png', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertNotNull($data['data']['logo']);
+        $this->assertStringContainsString('.jpg', $data['data']['logo']);
+
+        @unlink($tempFile);
+    }
+
+    public function testSuperAdminCanUploadLogo(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.jpg';
+        $this->createValidImage($tempFile, 'jpg');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.jpg', 'image/jpeg', null, true)], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertNotNull($data['data']['logo']);
+        $this->assertStringContainsString('.jpg', $data['data']['logo']);
+
+        @unlink($tempFile);
+    }
+
+    public function testUnauthorizedRoleCannotUploadLogo(): void
+    {
+        $client = $this->client;
+
+        $studentEmail = 'student-logo-test-' . uniqid() . '@edupulse.ai';
+
+        $student = new User();
+        $student->setEmail($studentEmail);
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+        $entityManager->persist($student);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, $studentEmail, 'Student123!');
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.png';
+        $this->createValidImage($tempFile, 'png');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.png', 'image/png', null, true)], $this->getAuthHeaders($studentToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(403, $response->getStatusCode());
+
+        @unlink($tempFile);
+
+        $entityManager->getConnection()->executeStatement(
+            'DELETE FROM users WHERE id = :id',
+            ['id' => $student->getId()->toRfc4122()]
+        );
+    }
+
+    public function testInvalidMimeTypeRejected(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.exe';
+        file_put_contents($tempFile, 'fake-executable-content');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.exe', 'application/octet-stream', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(422, $response->getStatusCode());
+
+        @unlink($tempFile);
+    }
+
+    public function testOversizedImageRejected(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.png';
+        file_put_contents($tempFile, str_repeat('x', 6 * 1024 * 1024));
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.png', 'image/png', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(422, $response->getStatusCode());
+
+        @unlink($tempFile);
+    }
+
+    public function testValidPngAccepted(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.png';
+        $this->createValidImage($tempFile, 'png');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.png', 'image/png', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertStringContainsString('.jpg', $data['data']['logo']);
+
+        @unlink($tempFile);
+    }
+
+    public function testValidJpegAccepted(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.jpg';
+        $this->createValidImage($tempFile, 'jpg');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.jpg', 'image/jpeg', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertStringContainsString('.jpg', $data['data']['logo']);
+
+        @unlink($tempFile);
+    }
+
+    public function testValidWebpAccepted(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.webp';
+        $this->createValidImage($tempFile, 'webp');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.webp', 'image/webp', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertStringContainsString('.jpg', $data['data']['logo']);
+
+        @unlink($tempFile);
+    }
+
+    public function testExistingLogoCanBeReplaced(): void
+    {
+        $client = $this->client;
+
+        $tempFile1 = tempnam(sys_get_temp_dir(), 'logo') . '.png';
+        $this->createValidImage($tempFile1, 'png');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile1, 'logo1.png', 'image/png', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+        $firstLogo = json_decode($response->getContent(), true)['data']['logo'];
+        $this->assertStringContainsString('.jpg', $firstLogo);
+
+        $tempFile2 = tempnam(sys_get_temp_dir(), 'logo') . '.jpg';
+        $this->createValidImage($tempFile2, 'jpg');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile2, 'logo2.jpg', 'image/jpeg', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+        $secondLogo = json_decode($response->getContent(), true)['data']['logo'];
+
+        $this->assertStringContainsString('.jpg', $secondLogo);
+
+        @unlink($tempFile1);
+        @unlink($tempFile2);
+    }
+
+    public function testLogoCanBeRemoved(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.png';
+        $this->createValidImage($tempFile, 'png');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.png', 'image/png', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $client->request('DELETE', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], [], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertNull($data['data']['logo']);
+
+        @unlink($tempFile);
+    }
+
+    public function testInstituteResponseIncludesLogoReference(): void
+    {
+        $client = $this->client;
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'logo') . '.png';
+        $this->createValidImage($tempFile, 'png');
+
+        $client->request('POST', '/api/v1/institutes/' . $this->testInstituteId . '/logo', [], ['logo' => new \Symfony\Component\HttpFoundation\File\UploadedFile($tempFile, 'logo.png', 'image/png', null, true)], $this->getAuthHeaders($this->instituteToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $client->request('GET', '/api/v1/institutes/' . $this->testInstituteId, [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertNotNull($data['data']['logo']);
+        $this->assertStringContainsString('/uploads/institutes/', $data['data']['logo']);
+
+        @unlink($tempFile);
+    }
+
+    public function testLogoRemainsOptional(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/institutes/' . $this->testInstituteId, [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertNull($data['data']['logo']);
     }
 }
