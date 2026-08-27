@@ -18,12 +18,13 @@ readonly class ApiResponseFactory
         );
     }
 
-    public function error(string $message, array $errors = [], array $meta = []): ApiErrorResponse
+    public function error(string $message, array $errors = [], array $meta = [], ?string $code = null): ApiErrorResponse
     {
         return new ApiErrorResponse(
             message: $message,
             errors: $errors,
             meta: $this->buildMeta($meta),
+            code: $code,
         );
     }
 

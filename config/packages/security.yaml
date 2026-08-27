@@ -35,6 +35,14 @@ security:
         - { path: ^/api/v1/users/[0-9a-fA-F-]+/permissions, roles: ROLE_SUPER_ADMIN }
         - { path: ^/api/v1/users/\d+/reset-password, roles: ROLE_SUPER_ADMIN }
         - { path: ^/api/v1/users/\d+/status, roles: ROLE_INSTITUTE }
+        - { path: ^/api/v1/users/[0-9a-fA-F-]+/(profile|profile-photo|addresses|education|documents), roles: [ROLE_SUPER_ADMIN, ROLE_INSTITUTE, ROLE_TEACHER, ROLE_STUDENT] }
+        - { path: ^/api/v1/users/[0-9a-fA-F-]+/(government-identifiers|bank-accounts), roles: [ROLE_SUPER_ADMIN, ROLE_INSTITUTE, ROLE_TEACHER, ROLE_STUDENT] }
+        - { path: ^/api/v1/users/[0-9a-fA-F-]+/(addresses|education|documents)/\d+, roles: [ROLE_SUPER_ADMIN, ROLE_INSTITUTE, ROLE_TEACHER, ROLE_STUDENT] }
+        - { path: ^/api/v1/users/[0-9a-fA-F-]+/(government-identifiers|bank-accounts)/\d+, roles: [ROLE_SUPER_ADMIN, ROLE_INSTITUTE, ROLE_TEACHER, ROLE_STUDENT] }
+        - { path: ^/api/v1/me/(profile|profile-photo|addresses|education|documents), roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/api/v1/me/(government-identifiers|bank-accounts), roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/api/v1/me/(addresses|education|documents)/\d+, roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/api/v1/me/(government-identifiers|bank-accounts)/\d+, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/api/v1/users, roles: [ROLE_SUPER_ADMIN, ROLE_INSTITUTE] }
         - { path: ^/api/v1, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/, roles: IS_AUTHENTICATED_FULLY }
