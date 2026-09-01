@@ -287,4 +287,14 @@ class QuestionPaperRepository extends ServiceEntityRepository
             ->getQuery()
             ->execute();
     }
+
+    public function countByAcademicYear(Uuid $academicYearId): int
+    {
+        return (int) $this->createQueryBuilder('qp')
+            ->select('COUNT(qp.id)')
+            ->where('qp.academicYear = :academicYear')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
 }

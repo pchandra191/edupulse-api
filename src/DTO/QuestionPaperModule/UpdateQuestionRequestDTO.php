@@ -3,10 +3,12 @@ declare(strict_types=1);
 
 namespace App\DTO\QuestionPaperModule;
 
+use App\Validator\Constraints\NoBase64Image;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 #[Assert\Callback(callback: [self::class, 'validateOptions'])]
+#[Assert\Callback(callback: [self::class, 'validateImage'])]
 readonly class UpdateQuestionRequestDTO
 {
     public function __construct(
@@ -21,16 +23,22 @@ readonly class UpdateQuestionRequestDTO
         public ?int $displayOrder = null,
 
         #[Assert\Length(max: 5000)]
+        #[NoBase64Image]
         public ?string $image = null,
+
+        #[Assert\Length(max: 2048)]
+        #[Assert\Url(protocols: ['http', 'https'], requireTld: false, message: 'imageUrl must be a valid http(s) URL.')]
+        #[NoBase64Image]
+        public ?string $imageUrl = null,
+
+        public ?string $imageFileReference = null,
+
+        public ?string $referenceAnswer = null,
 
         public ?array $options = null,
     ) {
     }
 
-    /**
-     * Each option is either a plain string or an object with "text" (required)
-     * and an optional boolean "isCorrect" flag used to mark MCQ answers.
-     */
     public static function validateOptions(self $dto, ExecutionContextInterface $context): void
     {
         if ($dto->options === null) {
@@ -68,6 +76,20 @@ readonly class UpdateQuestionRequestDTO
 
             $context->buildViolation('Option must be a string or an object with text and isCorrect.')
                 ->atPath("options[$index]")
+                ->addViolation();
+        }
+    }
+
+    public static function validateImage(self $dto, ExecutionContextInterface $context): void
+    {
+        $sources = array_filter([
+            $dto->image !== null,
+            $dto->imageUrl !== null,
+            $dto->imageFileReference !== null,
+        ]);
+        if (count($sources) > 1) {
+            $context->buildViolation('Provide only one image source (image, imageUrl, or imageFileReference).')
+                ->atPath('image')
                 ->addViolation();
         }
     }

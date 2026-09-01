@@ -45,6 +45,8 @@ readonly class CreateUserRequest
 
         #[Assert\Length(max: 36)]
         public ?string $instituteId = null,
+
+        public ?bool $isVerified = null,
     ) {
     }
 

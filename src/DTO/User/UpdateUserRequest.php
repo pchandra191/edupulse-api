@@ -30,6 +30,8 @@ readonly class UpdateUserRequest
         public ?array $roles = null,
 
         public ?UserStatus $status = null,
+
+        public ?bool $isVerified = null,
     ) {
     }
 

@@ -11,9 +11,9 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: ExamAnswerRepository::class)]
 #[ORM\Table(name: 'exam_answers')]
-#[ORM\Index(name: 'idx_exam_answer_attempt', fields: ['exam_attempt_id'])]
-#[ORM\Index(name: 'idx_exam_answer_question', fields: ['question_id'])]
-#[ORM\Index(name: 'idx_exam_answer_selected_option', fields: ['selected_option_id'])]
+#[ORM\Index(name: 'idx_exam_answer_attempt', fields: ['examAttempt'])]
+#[ORM\Index(name: 'idx_exam_answer_question', fields: ['question'])]
+#[ORM\Index(name: 'idx_exam_answer_selected_option', fields: ['selectedOption'])]
 #[ORM\UniqueConstraint(name: 'uniq_exam_answer_attempt_question', columns: ['exam_attempt_id', 'question_id'])]
 class ExamAnswer extends AbstractEntity
 {
@@ -31,6 +31,15 @@ class ExamAnswer extends AbstractEntity
     #[ORM\ManyToOne(targetEntity: QuestionOption::class)]
     #[ORM\JoinColumn(name: 'selected_option_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?QuestionOption $selectedOption = null;
+
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    private ?int $marksObtained = null;
+
+    #[ORM\Column(type: Types::BOOLEAN, nullable: false, options: ['default' => true])]
+    private bool $requiresManualEvaluation = true;
+
+    #[ORM\Column(type: Types::BOOLEAN, nullable: true)]
+    private ?bool $isCorrect = null;
 
     #[ORM\OneToMany(mappedBy: 'examAnswer', targetEntity: ExamAnswerOption::class, cascade: ['persist'], orphanRemoval: true)]
     private Collection $selectedOptions;
@@ -121,6 +130,42 @@ class ExamAnswer extends AbstractEntity
     public function clearSelectedOptions(): self
     {
         $this->selectedOptions->clear();
+
+        return $this;
+    }
+
+    public function getMarksObtained(): ?int
+    {
+        return $this->marksObtained;
+    }
+
+    public function setMarksObtained(?int $marksObtained): self
+    {
+        $this->marksObtained = $marksObtained;
+
+        return $this;
+    }
+
+    public function isRequiresManualEvaluation(): bool
+    {
+        return $this->requiresManualEvaluation;
+    }
+
+    public function setRequiresManualEvaluation(bool $requiresManualEvaluation): self
+    {
+        $this->requiresManualEvaluation = $requiresManualEvaluation;
+
+        return $this;
+    }
+
+    public function getIsCorrect(): ?bool
+    {
+        return $this->isCorrect;
+    }
+
+    public function setIsCorrect(?bool $isCorrect): self
+    {
+        $this->isCorrect = $isCorrect;
 
         return $this;
     }

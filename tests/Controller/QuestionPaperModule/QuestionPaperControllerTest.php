@@ -19,6 +19,7 @@ use App\Enum\SubjectStatus;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Uid\Uuid;
 
 class QuestionPaperControllerTest extends WebTestCase
@@ -858,7 +859,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -943,7 +949,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -986,7 +997,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -1024,7 +1040,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
         $this->assertSame(201, $client->getResponse()->getStatusCode());
@@ -1063,7 +1084,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
         $this->assertSame(201, $client->getResponse()->getStatusCode());
@@ -1084,7 +1110,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -1198,7 +1229,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -1225,7 +1261,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -1249,7 +1290,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -1359,7 +1405,12 @@ class QuestionPaperControllerTest extends WebTestCase
             'questionText' => 'What is 2+2?',
             'marks' => 1,
             'displayOrder' => 1,
-            'options' => ['3', '4', '5', '6'],
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
         ]);
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
@@ -1399,6 +1450,311 @@ class QuestionPaperControllerTest extends WebTestCase
 
         $client->request('POST', '/api/v1/question-papers/' . $paperId . '/submit-for-review', [], [], $this->getAuthHeaders($this->superAdminToken));
         $this->assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    private function createValidImage(string $path, string $format = 'png'): void
+    {
+        $image = imagecreatetruecolor(1, 1);
+        if ($format === 'png') {
+            imagepng($image, $path);
+        } elseif ($format === 'jpg') {
+            imagejpeg($image, $path);
+        } elseif ($format === 'webp') {
+            imagewebp($image, $path);
+        }
+        imagedestroy($image);
+    }
+
+    public function testCreateQuestionWithImageUrlIsPersisted(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+        $url = 'https://i.ytimg.com/vi/NuFjqPEXG_4/maxresdefault.jpg';
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'Which lens is shown?',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => $url,
+            'options' => [
+                ['text' => 'Concave', 'isCorrect' => true],
+                ['text' => 'Convex', 'isCorrect' => false],
+            ],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame($url, $data['data']['imageUrl']);
+        $this->assertSame('URL', $data['data']['imageSource']);
+    }
+
+    public function testCreateQuestionWithoutImage(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'No image',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertNull($data['data']['imageUrl']);
+        $this->assertNull($data['data']['imageSource']);
+    }
+
+    public function testCreateQuestionWithUploadedImage(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qimg_') . '.png';
+        $this->createValidImage($tempFile, 'png');
+        $uploadedFile = new UploadedFile($tempFile, 'question.png', 'image/png', null, true);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'Identify',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request(
+            'POST',
+            '/api/v1/question-papers/' . $paperId . '/questions',
+            [],
+            ['image' => $uploadedFile],
+            $this->getAuthHeaders($this->superAdminToken),
+            $payload
+        );
+
+        $this->assertSame(201, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('UPLOAD', $data['data']['imageSource']);
+        $this->assertStringContainsString('/uploads/question-images/', $data['data']['imageUrl']);
+
+        $questionId = $data['data']['id'];
+        $client->request('GET', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId . '/image', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+        $this->assertStringContainsString('image/', $client->getResponse()->headers->get('Content-Type'));
+    }
+
+    public function testUpdateQuestionImageUrl(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'X',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $questionId = json_decode($client->getResponse()->getContent(), true)['data']['id'];
+
+        $client->request('PUT', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId, [], [], $this->getAuthHeaders($this->superAdminToken), json_encode(['imageUrl' => 'https://example.com/x.png']));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('https://example.com/x.png', $data['data']['imageUrl']);
+        $this->assertSame('URL', $data['data']['imageSource']);
+    }
+
+    public function testReplaceUrlWithUploadedImage(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'X',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => 'https://example.com/a.png',
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $questionId = json_decode($client->getResponse()->getContent(), true)['data']['id'];
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qimg_') . '.jpg';
+        $this->createValidImage($tempFile, 'jpg');
+        $uploadedFile = new UploadedFile($tempFile, 'rep.jpg', 'image/jpeg', null, true);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId . '/image', [], ['image' => $uploadedFile], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('UPLOAD', $data['data']['imageSource']);
+        $this->assertNull($data['data']['image']);
+    }
+
+    public function testReplaceUploadedImageWithUrl(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qimg_') . '.png';
+        $this->createValidImage($tempFile, 'png');
+        $uploadedFile = new UploadedFile($tempFile, 'first.png', 'image/png', null, true);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'X',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], ['image' => $uploadedFile], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $questionId = json_decode($client->getResponse()->getContent(), true)['data']['id'];
+
+        $client->request('PUT', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId, [], [], $this->getAuthHeaders($this->superAdminToken), json_encode(['imageUrl' => 'https://example.com/b.png']));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('https://example.com/b.png', $data['data']['imageUrl']);
+        $this->assertSame('URL', $data['data']['imageSource']);
+    }
+
+    public function testRemoveImage(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'X',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => 'https://example.com/x.png',
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $questionId = json_decode($client->getResponse()->getContent(), true)['data']['id'];
+
+        $client->request('DELETE', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId . '/image', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertNull($data['data']['imageUrl']);
+        $this->assertNull($data['data']['imageSource']);
+    }
+
+    public function testInvalidImageUrlRejected(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'X',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => 'not-a-valid-url',
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    public function testInvalidImageMimeRejected(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qimg_');
+        file_put_contents($tempFile, '<?php echo "x"; ?>');
+        $uploadedFile = new UploadedFile($tempFile, 'evil.php', 'application/x-php', null, true);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'X',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], ['image' => $uploadedFile], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    public function testLegacyImageFieldStillPersists(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $url = 'https://i.ytimg.com/vi/NuFjqPEXG_4/maxresdefault.jpg';
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'Legacy field',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'image' => $url,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame($url, $data['data']['image']);
+        $this->assertSame($url, $data['data']['imageUrl']);
+        $this->assertSame('URL', $data['data']['imageSource']);
+    }
+
+    public function testExistingQuestionWithoutImageContinuesWorking(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'Describe.',
+            'marks' => 5,
+            'displayOrder' => 1,
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('image', $data['data']);
+        $this->assertNull($data['data']['image']);
+        $this->assertArrayHasKey('imageUrl', $data['data']);
+        $this->assertNull($data['data']['imageUrl']);
+        $this->assertArrayHasKey('imageSource', $data['data']);
+        $this->assertNull($data['data']['imageSource']);
+    }
+
+    public function testStudentResponseExposesImageUrlNotReferenceAnswer(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qimg_') . '.png';
+        $this->createValidImage($tempFile, 'png');
+        $uploadedFile = new UploadedFile($tempFile, 'q.png', 'image/png', null, true);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'Describe.',
+            'marks' => 5,
+            'displayOrder' => 1,
+            'referenceAnswer' => 'SECRET REFERENCE',
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], ['image' => $uploadedFile], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
     }
 
     private function createTestQuestionPaper(string $token, ?Uuid $instituteId = null): string
@@ -1463,5 +1819,590 @@ class QuestionPaperControllerTest extends WebTestCase
 
         $data = json_decode($client->getResponse()->getContent(), true);
         $this->assertStringContainsString('archived', strtolower($data['message']));
+    }
+
+    public function testCreateMcqWithExactlyOneCorrectOptionSucceeds(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'What is 2+2?',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(201, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('MCQ', $data['data']['type']);
+        $this->assertCount(4, $data['data']['options']);
+
+        $correctCount = 0;
+        foreach ($data['data']['options'] as $option) {
+            if ($option['isCorrect']) {
+                $correctCount++;
+            }
+        }
+        $this->assertSame(1, $correctCount);
+    }
+
+    public function testCreateMcqWithZeroCorrectOptionsFails(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'What is 2+2?',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [
+                ['text' => '3', 'isCorrect' => false],
+                ['text' => '4', 'isCorrect' => false],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(422, $response->getStatusCode());
+    }
+
+    public function testCreateMcqWithTwoCorrectOptionsFails(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'What is 2+2?',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [
+                ['text' => '3', 'isCorrect' => true],
+                ['text' => '4', 'isCorrect' => true],
+                ['text' => '5', 'isCorrect' => false],
+                ['text' => '6', 'isCorrect' => false],
+            ],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(422, $response->getStatusCode());
+    }
+
+    public function testDescriptiveQuestionDoesNotRequireCorrectOption(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'Explain photosynthesis.',
+            'marks' => 5,
+            'displayOrder' => 1,
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(201, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('DESCRIPTIVE', $data['data']['type']);
+    }
+
+    public function testCreateDescriptiveQuestionWithReferenceAnswer(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $referenceText = 'Photosynthesis is the process by which green plants convert light energy into chemical energy.';
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'Explain photosynthesis.',
+            'marks' => 5,
+            'displayOrder' => 1,
+            'referenceAnswer' => $referenceText,
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(201, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('DESCRIPTIVE', $data['data']['type']);
+        $this->assertSame($referenceText, $data['data']['referenceAnswer']);
+    }
+
+    public function testCreateDescriptiveQuestionWithoutReferenceAnswerIsAccepted(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'Explain something.',
+            'marks' => 5,
+            'displayOrder' => 1,
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+
+        $response = $client->getResponse();
+        $this->assertSame(201, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('DESCRIPTIVE', $data['data']['type']);
+        $this->assertNull($data['data']['referenceAnswer']);
+    }
+
+    public function testUpdateQuestionCanModifyReferenceAnswer(): void
+    {
+        $client = $this->client;
+
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $createPayload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'Explain something.',
+            'marks' => 5,
+            'displayOrder' => 1,
+            'referenceAnswer' => 'Initial reference answer.',
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $createPayload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+        $created = json_decode($client->getResponse()->getContent(), true);
+        $questionId = $created['data']['id'];
+
+        $updatePayload = json_encode([
+            'referenceAnswer' => 'Updated reference answer.',
+        ]);
+
+        $client->request('PUT', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId, [], [], $this->getAuthHeaders($this->superAdminToken), $updatePayload);
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('Updated reference answer.', $data['data']['referenceAnswer']);
+    }
+
+    public function testImageUrlHttpIsAccepted(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => 'http://example.com/question.jpg',
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('http://example.com/question.jpg', $data['data']['imageUrl']);
+        $this->assertSame('URL', $data['data']['imageSource']);
+    }
+
+    public function testImageUrlHttpsIsAccepted(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => 'https://cdn.example.com/path/question.png?x=1',
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('https://cdn.example.com/path/question.png?x=1', $data['data']['imageUrl']);
+        $this->assertSame('URL', $data['data']['imageSource']);
+    }
+
+    public function testImageUrlInvalidFormatIsRejected(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => 'not-a-valid-url',
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    public function testImageUrlExceedingMaxLengthIsRejected(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $longUrl = 'https://example.com/' . str_repeat('a', 2050) . '.jpg';
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => $longUrl,
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+    }
+
+    public function testDataImageBase64IsRejectedAsImageUrl(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $base64 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAA' . str_repeat('A', 200);
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'aaaa',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => $base64,
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $errors = $data['errors'] ?? [];
+        $flat = json_encode($errors);
+        $this->assertStringContainsString('imageUrl', $flat, 'Error should mention imageUrl field');
+        $this->assertStringContainsString('base64', strtolower($flat), 'Error should mention base64 data URI is rejected');
+    }
+
+    public function testDataImageBase64IsRejectedAsLegacyImageField(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $base64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA=';
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'image' => $base64,
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+    }
+
+    public function testDataImageBase64IsRejectedOnUpdate(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $createPayload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageUrl' => 'https://example.com/x.png',
+        ]);
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $createPayload);
+        $questionId = json_decode($client->getResponse()->getContent(), true)['data']['id'];
+
+        $base64 = 'data:image/jpeg;base64,' . str_repeat('A', 200);
+        $updatePayload = json_encode(['imageUrl' => $base64]);
+        $client->request('PUT', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId, [], [], $this->getAuthHeaders($this->superAdminToken), $updatePayload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+    }
+
+    public function testImageFileReferenceInBodyIsRejected(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'imageFileReference' => 'some/path/file.jpg',
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+    }
+
+    public function testUploadedJpegIsAcceptedAndPersisted(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qjpeg_') . '.jpg';
+        $this->createValidImage($tempFile, 'jpg');
+        $uploadedFile = new UploadedFile($tempFile, 'q.jpg', 'image/jpeg', null, true);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request(
+            'POST',
+            '/api/v1/question-papers/' . $paperId . '/questions',
+            [],
+            ['image' => $uploadedFile],
+            $this->getAuthHeaders($this->superAdminToken),
+            $payload
+        );
+        $this->assertSame(201, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('UPLOAD', $data['data']['imageSource']);
+        $this->assertStringContainsString('/uploads/question-images/', $data['data']['imageUrl']);
+        $this->assertNotEmpty($data['data']['imageUrl']);
+    }
+
+    public function testUploadedPngIsAcceptedAndPersisted(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qpng_') . '.png';
+        $this->createValidImage($tempFile, 'png');
+        $uploadedFile = new UploadedFile($tempFile, 'q.png', 'image/png', null, true);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request(
+            'POST',
+            '/api/v1/question-papers/' . $paperId . '/questions',
+            [],
+            ['image' => $uploadedFile],
+            $this->getAuthHeaders($this->superAdminToken),
+            $payload
+        );
+        $this->assertSame(201, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('UPLOAD', $data['data']['imageSource']);
+    }
+
+    public function testInvalidUploadedFileMimeIsRejected(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qevil_');
+        file_put_contents($tempFile, '<?php echo "pwned"; ?>');
+        $uploadedFile = new UploadedFile($tempFile, 'evil.php', 'application/x-php', null, true);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request(
+            'POST',
+            '/api/v1/question-papers/' . $paperId . '/questions',
+            [],
+            ['image' => $uploadedFile],
+            $this->getAuthHeaders($this->superAdminToken),
+            $payload
+        );
+        $this->assertSame(422, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+    }
+
+    public function testUploadedImageIsReturnedAsUsableUrlAndServesBinary(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qserve_') . '.png';
+        $this->createValidImage($tempFile, 'png');
+        $uploadedFile = new UploadedFile($tempFile, 'q.png', 'image/png', null, true);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'options' => [['text' => 'A', 'isCorrect' => true], ['text' => 'B', 'isCorrect' => false]],
+        ]);
+
+        $client->request(
+            'POST',
+            '/api/v1/question-papers/' . $paperId . '/questions',
+            [],
+            ['image' => $uploadedFile],
+            $this->getAuthHeaders($this->superAdminToken),
+            $payload
+        );
+        $questionId = json_decode($client->getResponse()->getContent(), true)['data']['id'];
+
+        $client->request('GET', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId, [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertStringContainsString('/uploads/question-images/', $data['data']['imageUrl']);
+
+        $client->request('GET', '/api/v1/question-papers/' . $paperId . '/questions/' . $questionId . '/image', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+        $this->assertStringContainsString('image/', (string) $client->getResponse()->headers->get('Content-Type'));
+    }
+
+    public function testExistingQuestionsWithoutImageContinueWorking(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'No image question.',
+            'marks' => 5,
+            'displayOrder' => 1,
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertNull($data['data']['image']);
+        $this->assertNull($data['data']['imageUrl']);
+        $this->assertNull($data['data']['imageSource']);
+    }
+
+    public function testStudentResponseContainsImageUrl(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'qstu_') . '.png';
+        $this->createValidImage($tempFile, 'png');
+        $uploadedFile = new UploadedFile($tempFile, 'q.png', 'image/png', null, true);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'Describe.',
+            'marks' => 5,
+            'displayOrder' => 1,
+            'referenceAnswer' => 'SECRET REF',
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], ['image' => $uploadedFile], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
+
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+        $paper = $entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($paperId);
+        $questions = $paper->getQuestions();
+        $question = $questions[0];
+
+        $examAttemptService = $client->getContainer()->get(\App\Service\ExamAttemptModule\ExamAttemptService::class);
+        $r = new \ReflectionClass($examAttemptService);
+        $m = $r->getMethod('mapQuestionToStudentResponse');
+        $m->setAccessible(true);
+        $studentQ = $m->invoke($examAttemptService, $question);
+
+        $this->assertStringContainsString('/uploads/question-images/', $studentQ->imageUrl, 'Student must receive a usable image URL');
+        $this->assertSame('UPLOAD', $studentQ->imageSource);
+
+        $dtoReflection = new \ReflectionClass($studentQ);
+        $this->assertNotContains('referenceAnswer', array_map(fn ($p) => $p->getName(), $dtoReflection->getProperties()), 'Student response must not contain referenceAnswer');
+        $this->assertNotContains('correctOptionId', array_map(fn ($p) => $p->getName(), $dtoReflection->getProperties()), 'Student response must not contain correctOptionId');
+    }
+
+    public function testStudentResponseDoesNotExposeOrganizerOnlyFields(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'MCQ',
+            'questionText' => 'Pick.',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'referenceAnswer' => 'TOP SECRET',
+            'options' => [
+                ['text' => 'A', 'isCorrect' => true],
+                ['text' => 'B', 'isCorrect' => false],
+            ],
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(201, $client->getResponse()->getStatusCode());
+
+        $reflection = new \ReflectionClass(\App\DTO\QuestionPaperModule\StudentQuestionResponseDTO::class);
+        $publicProps = array_map(fn ($p) => $p->getName(), $reflection->getProperties());
+        $this->assertNotContains('referenceAnswer', $publicProps, 'Student DTO must not expose referenceAnswer');
+        $this->assertNotContains('correctOptionId', $publicProps, 'Student DTO must not expose correctOptionId');
+
+        $optionReflection = new \ReflectionClass(\App\DTO\QuestionPaperModule\StudentQuestionOptionResponseDTO::class);
+        $optionProps = array_map(fn ($p) => $p->getName(), $optionReflection->getProperties());
+        $this->assertNotContains('isCorrect', $optionProps, 'Student option DTO must not expose isCorrect');
+    }
+
+    public function testMutualExclusivityImageAndImageUrl(): void
+    {
+        $client = $this->client;
+        $paperId = $this->createTestQuestionPaper($this->superAdminToken);
+
+        $payload = json_encode([
+            'type' => 'DESCRIPTIVE',
+            'questionText' => 'A',
+            'marks' => 1,
+            'displayOrder' => 1,
+            'image' => 'https://example.com/x.jpg',
+            'imageUrl' => 'https://example.com/y.jpg',
+        ]);
+
+        $client->request('POST', '/api/v1/question-papers/' . $paperId . '/questions', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
+        $this->assertSame(422, $client->getResponse()->getStatusCode(), $client->getResponse()->getContent());
     }
 }

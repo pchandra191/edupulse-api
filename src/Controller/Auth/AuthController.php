@@ -212,7 +212,14 @@ class AuthController
                 ] : null,
                 'permissions' => $this->rolePermissionService->getUserEffectivePermissions(new Uuid($profile->id)),
                 'enrollments' => array_map(
-                    fn(EnrollmentResponseDTO $e) => ['id' => $e->id],
+                    fn(EnrollmentResponseDTO $e) => [
+                        'id' => $e->id,
+                        'status' => $e->status,
+                        'academicClass' => $e->academicClass !== null ? [
+                            'id' => $e->academicClass->id,
+                            'name' => $e->academicClass->name,
+                        ] : null,
+                    ],
                     $profile->enrollments,
                 ),
             ],

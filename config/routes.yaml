@@ -86,3 +86,13 @@ exam_attempt_api:
     resource: '../src/Controller/ExamAttemptModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+exam_question_progress_api:
+    resource: '../src/Controller/ExamAttemptQuestionProgressModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
+
+exam_security_event_api:
+    resource: '../src/Controller/ExamAttemptSecurityEventModule/'
+    type: attribute
+    prefix: /api/%app.api_version%

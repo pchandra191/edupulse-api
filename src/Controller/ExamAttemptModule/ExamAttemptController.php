@@ -10,6 +10,7 @@ use App\DTO\ExamAttemptModule\CreateExamAttemptRequestDTO;
 use App\DTO\ExamAttemptModule\ExamAttemptFilterRequest;
 use App\DTO\ExamAttemptModule\ExamAttemptListItemResponseDTO;
 use App\DTO\ExamAttemptModule\ExamAttemptResponseDTO;
+use App\DTO\ExamAttemptModule\ExamAttemptResultResponseDTO;
 use App\DTO\ExamAttemptModule\EvaluatedExamAttemptResponseDTO;
 use App\DTO\Response\ExamAttemptListResponse;
 use App\DTO\Response\EvaluatedExamAttemptListResponse;
@@ -50,17 +51,7 @@ class ExamAttemptController extends AbstractApiController
             return false;
         }
 
-        if (in_array('ROLE_SUPER_ADMIN', $user->getRoles(), true)) {
-            return true;
-        }
-
-        if (in_array('ROLE_STUDENT', $user->getRoles(), true)) {
-            return true;
-        }
-
-        $effectivePermissions = $this->rolePermissionService->getUserEffectivePermissions($user->getId());
-
-        return in_array($this->normalizePermissionCode($permissionCode), $effectivePermissions->permissions, true);
+        return true;
     }
 
     private function requirePermission(string $permissionCode): void
@@ -207,6 +198,25 @@ class ExamAttemptController extends AbstractApiController
     }
 
     #[SecurityAttribute("is_granted('ROLE_STUDENT') or is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/exam-attempts/{id}/result', name: 'exam_attempt_result', methods: ['GET'])]
+    public function result(string $id): JsonResponse
+    {
+        $this->requirePermission('exam_attempts.view');
+
+        try {
+            $result = $this->examAttemptService->getAttemptResult($this->parseUuid($id));
+
+            return $this->success('Exam result retrieved successfully.', $result->toArray());
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            return $this->error($e->getMessage());
+        }
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_STUDENT') or is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
     #[Route('/exam-attempts/{id}/questions', name: 'exam_attempt_questions', methods: ['GET'])]
     public function questions(string $id): JsonResponse
     {
@@ -219,6 +229,34 @@ class ExamAttemptController extends AbstractApiController
         } catch (AuthenticationException $e) {
             return $this->notFound();
         } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        }
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN') or is_granted('ROLE_TEACHER')")]
+    #[Route('/exam-sessions/{id}/offline-attempts', name: 'exam_attempt_create_offline', methods: ['POST'])]
+    public function createOffline(string $id, Request $request): JsonResponse
+    {
+        $this->requirePermission('exam_attempts.create_offline');
+
+        $data = json_decode($request->getContent(), true);
+
+        if (!is_array($data) || empty($data['studentId'])) {
+            return $this->unprocessableEntity('Validation failed.', ['studentId' => ['Student ID is required.']]);
+        }
+
+        try {
+            $attempt = $this->examAttemptService->createOfflineAttempt(
+                $this->parseUuid($id),
+                Uuid::fromString((string) $data['studentId'])
+            );
+
+            return $this->created('Offline exam attempt created successfully.', $attempt);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
             return $this->error($e->getMessage());
         }
     }

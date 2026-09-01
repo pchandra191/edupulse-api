@@ -12,9 +12,9 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: UserBankAccountRepository::class)]
 #[ORM\Table(name: 'user_bank_accounts')]
-#[ORM\Index(name: 'idx_bank_account_user', fields: ['user_id'])]
-#[ORM\Index(name: 'idx_bank_account_primary', fields: ['is_primary'])]
-#[ORM\Index(name: 'idx_bank_account_verification', fields: ['verification_status'])]
+#[ORM\Index(name: 'idx_bank_account_user', fields: ['userId'])]
+#[ORM\Index(name: 'idx_bank_account_primary', fields: ['isPrimary'])]
+#[ORM\Index(name: 'idx_bank_account_verification', fields: ['verificationStatus'])]
 class UserBankAccount extends AbstractEntity
 {
     #[ORM\Column(type: 'uuid')]

@@ -13,10 +13,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: QuestionPaperRepository::class)]
 #[ORM\Table(name: 'question_papers')]
-#[ORM\Index(name: 'idx_question_paper_institute', fields: ['institute_id'])]
-#[ORM\Index(name: 'idx_question_paper_academic_year', fields: ['academic_year_id'])]
-#[ORM\Index(name: 'idx_question_paper_subject', fields: ['subject_id'])]
-#[ORM\Index(name: 'idx_question_paper_examination', fields: ['examination_id'])]
+#[ORM\Index(name: 'idx_question_paper_institute', fields: ['institute'])]
+#[ORM\Index(name: 'idx_question_paper_academic_year', fields: ['academicYear'])]
+#[ORM\Index(name: 'idx_question_paper_subject', fields: ['subject'])]
+#[ORM\Index(name: 'idx_question_paper_examination', fields: ['examination'])]
 #[ORM\Index(name: 'idx_question_paper_status', fields: ['status'])]
 #[ORM\UniqueConstraint(name: 'uniq_question_paper_institute_title', columns: ['institute_id', 'title'])]
 class QuestionPaper extends AbstractEntity

@@ -19,7 +19,6 @@ readonly class ExaminationResponseDTO
         public string $startDate,
         public string $endDate,
         public string $status,
-        public ?int $subjectsCount,
         public string $createdAt,
         public ?string $updatedAt,
     ) {

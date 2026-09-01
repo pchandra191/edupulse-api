@@ -751,7 +751,6 @@ readonly class ExaminationService
             startDate: $examination->getStartDate()->format('Y-m-d'),
             endDate: $examination->getEndDate()->format('Y-m-d'),
             status: $examination->getStatus()->value,
-            subjectsCount: $examSubjectCounts[$examination->getId()->toRfc4122()] ?? 0,
             createdAt: $examination->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $examination->getUpdatedAt()?->format(DateTimeInterface::ATOM),
         );
@@ -777,7 +776,6 @@ readonly class ExaminationService
             startDate: $examination->getStartDate()->format('Y-m-d'),
             endDate: $examination->getEndDate()->format('Y-m-d'),
             status: $examination->getStatus()->value,
-            subjectsCount: $examination->getExamSubjects()->count(),
             createdAt: $examination->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $examination->getUpdatedAt()?->format(DateTimeInterface::ATOM),
         );

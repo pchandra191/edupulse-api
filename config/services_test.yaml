@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+when@test:
+    services:
+        clock:
+            class: Symfony\Component\Clock\MockClock

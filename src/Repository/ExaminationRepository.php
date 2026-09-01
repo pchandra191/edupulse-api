@@ -251,6 +251,16 @@ class ExaminationRepository extends ServiceEntityRepository
             ->execute();
     }
 
+    public function countByAcademicYear(Uuid $academicYearId): int
+    {
+        return (int) $this->createQueryBuilder('e')
+            ->select('COUNT(e.id)')
+            ->where('e.academicYear = :academicYear')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
     /**
      * @return array<int, string>
      */

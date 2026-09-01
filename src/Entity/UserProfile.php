@@ -14,7 +14,7 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: UserProfileRepository::class)]
 #[ORM\Table(name: 'user_profiles')]
-#[ORM\Index(name: 'idx_user_profile_user', fields: ['user_id'])]
+#[ORM\Index(name: 'idx_user_profile_user', fields: ['userId'])]
 #[ORM\UniqueConstraint(name: 'uniq_user_profile_user', columns: ['user_id'])]
 class UserProfile extends AbstractEntity
 {

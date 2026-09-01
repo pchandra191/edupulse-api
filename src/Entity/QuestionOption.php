@@ -10,8 +10,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: QuestionOptionRepository::class)]
 #[ORM\Table(name: 'question_options')]
-#[ORM\Index(name: 'idx_question_option_question', fields: ['question_id'])]
-#[ORM\Index(name: 'idx_question_option_display_order', fields: ['question_id', 'display_order'])]
+#[ORM\Index(name: 'idx_question_option_question', fields: ['question'])]
+#[ORM\Index(name: 'idx_question_option_display_order', fields: ['question', 'displayOrder'])]
 class QuestionOption extends AbstractEntity
 {
     #[Assert\NotBlank]

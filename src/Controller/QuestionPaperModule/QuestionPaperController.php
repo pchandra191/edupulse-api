@@ -19,7 +19,9 @@ use App\Entity\User;
 use App\Exception\AuthenticationException;
 use App\Service\QuestionPaperModule\QuestionPaperPdfService;
 use App\Service\QuestionPaperModule\QuestionPaperService;
+use App\Service\QuestionPaperModule\QuestionImageService;
 use App\Service\Role\RolePermissionService;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
@@ -33,6 +35,7 @@ class QuestionPaperController extends AbstractApiController
     public function __construct(
         private QuestionPaperService $questionPaperService,
         private QuestionPaperPdfService $questionPaperPdfService,
+        private QuestionImageService $questionImageService,
         private RolePermissionService $rolePermissionService,
         private ValidatorInterface $validator,
         private Security $security,
@@ -371,17 +374,23 @@ class QuestionPaperController extends AbstractApiController
     {
         $this->requirePermission('question-papers.create');
 
-        $data = json_decode($request->getContent(), true);
+        $data = $this->decodeRequestPayload($request);
 
         if (!is_array($data)) {
             return $this->error('Invalid JSON payload.');
         }
+
+        $uploadedFile = $request->files->get('image');
 
         $createRequest = new CreateQuestionRequestDTO(
             type: (string) ($data['type'] ?? ''),
             questionText: (string) ($data['questionText'] ?? ''),
             marks: (int) ($data['marks'] ?? 0),
             displayOrder: (int) ($data['displayOrder'] ?? 0),
+            image: $data['image'] ?? null,
+            imageUrl: $data['imageUrl'] ?? null,
+            imageFileReference: null,
+            referenceAnswer: $data['referenceAnswer'] ?? null,
             options: $data['options'] ?? [],
         );
 
@@ -397,15 +406,30 @@ class QuestionPaperController extends AbstractApiController
             return $this->unprocessableEntity('Validation failed.', $formattedErrors);
         }
 
+        if ($uploadedFile !== null && ($data['image'] ?? null) !== null) {
+            return $this->unprocessableEntity('Provide only one image source (imageUrl or uploaded file).');
+        }
+
+        if (array_key_exists('imageFileReference', $data)) {
+            return $this->unprocessableEntity('imageFileReference is set by the file upload endpoint, not the request body.');
+        }
+
         try {
             $instituteId = $this->getCurrentInstituteId();
-            $question = $this->questionPaperService->createQuestion($this->parseUuid($paperId), $instituteId, $createRequest);
+            $question = $this->questionPaperService->createQuestion(
+                $this->parseUuid($paperId),
+                $instituteId,
+                $createRequest,
+                $uploadedFile instanceof \Symfony\Component\HttpFoundation\File\UploadedFile ? $uploadedFile : null,
+            );
         } catch (AuthenticationException $e) {
             return $this->notFound();
         } catch (\App\Common\Exception\BusinessException $e) {
             return $this->error($e->getMessage());
         } catch (\InvalidArgumentException $e) {
             return $this->unprocessableEntity($e->getMessage());
+        } catch (\Throwable $e) {
+            throw $e;
         }
 
         return $this->created('Question created successfully.', $question);
@@ -433,17 +457,23 @@ class QuestionPaperController extends AbstractApiController
     {
         $this->requirePermission('question-papers.edit');
 
-        $data = json_decode($request->getContent(), true);
+        $data = $this->decodeRequestPayload($request);
 
         if (!is_array($data)) {
             return $this->error('Invalid JSON payload.');
         }
+
+        $uploadedFile = $request->files->get('image');
 
         $updateRequest = new UpdateQuestionRequestDTO(
             type: $data['type'] ?? null,
             questionText: $data['questionText'] ?? null,
             marks: isset($data['marks']) ? (int) $data['marks'] : null,
             displayOrder: isset($data['displayOrder']) ? (int) $data['displayOrder'] : null,
+            image: $data['image'] ?? null,
+            imageUrl: $data['imageUrl'] ?? null,
+            imageFileReference: null,
+            referenceAnswer: $data['referenceAnswer'] ?? null,
             options: $data['options'] ?? null,
         );
 
@@ -459,9 +489,23 @@ class QuestionPaperController extends AbstractApiController
             return $this->unprocessableEntity('Validation failed.', $formattedErrors);
         }
 
+        if ($uploadedFile !== null && ($data['image'] ?? null) !== null) {
+            return $this->unprocessableEntity('Provide only one image source (imageUrl or uploaded file).');
+        }
+
+        if (array_key_exists('imageFileReference', $data)) {
+            return $this->unprocessableEntity('imageFileReference is set by the file upload endpoint, not the request body.');
+        }
+
         try {
             $instituteId = $this->getCurrentInstituteId();
-            $question = $this->questionPaperService->updateQuestion($this->parseUuid($paperId), $this->parseUuid($questionId), $instituteId, $updateRequest);
+            $question = $this->questionPaperService->updateQuestion(
+                $this->parseUuid($paperId),
+                $this->parseUuid($questionId),
+                $instituteId,
+                $updateRequest,
+                $uploadedFile instanceof \Symfony\Component\HttpFoundation\File\UploadedFile ? $uploadedFile : null,
+            );
         } catch (AuthenticationException $e) {
             return $this->notFound();
         } catch (\App\Common\Exception\BusinessException $e) {
@@ -559,6 +603,75 @@ class QuestionPaperController extends AbstractApiController
         return $this->success('Question generated successfully.', $generated);
     }
 
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/question-papers/{paperId}/questions/{questionId}/image', name: 'question_image_upload', methods: ['POST'])]
+    public function uploadQuestionImage(string $paperId, string $questionId, \Symfony\Component\HttpFoundation\Request $request): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $this->requirePermission('question-papers.edit');
+
+        $uploadedFile = $request->files->get('image');
+
+        if (!$uploadedFile instanceof \Symfony\Component\HttpFoundation\File\UploadedFile) {
+            return $this->unprocessableEntity('Image file is required.', ['image' => ['Image file is required.']]);
+        }
+
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $question = $this->questionPaperService->replaceQuestionImage(
+                $this->parseUuid($paperId),
+                $this->parseUuid($questionId),
+                $instituteId,
+                $uploadedFile
+            );
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            return $this->unprocessableEntity($e->getMessage());
+        }
+
+        return $this->success('Question image uploaded successfully.', $question);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN') or is_granted('ROLE_TEACHER') or is_granted('ROLE_STUDENT')")]
+    #[Route('/question-papers/{paperId}/questions/{questionId}/image', name: 'question_image_serve', methods: ['GET'])]
+    public function serveQuestionImage(string $paperId, string $questionId): BinaryFileResponse|Response
+    {
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $reference = $this->questionPaperService->getQuestionImageReference(
+                $this->parseUuid($paperId),
+                $this->parseUuid($questionId),
+                $instituteId
+            );
+        } catch (AuthenticationException $e) {
+            return new Response('Question not found.', Response::HTTP_NOT_FOUND);
+        }
+
+        return $this->questionImageService->buildFileResponse($reference);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/question-papers/{paperId}/questions/{questionId}/image', name: 'question_image_delete', methods: ['DELETE'])]
+    public function removeQuestionImage(string $paperId, string $questionId): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $this->requirePermission('question-papers.edit');
+
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $question = $this->questionPaperService->clearQuestionImage(
+                $this->parseUuid($paperId),
+                $this->parseUuid($questionId),
+                $instituteId
+            );
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        }
+
+        return $this->success('Question image removed successfully.', $question);
+    }
+
     private function getCurrentInstituteId(): ?Uuid
     {
         $user = $this->security->getUser();
@@ -587,5 +700,19 @@ class QuestionPaperController extends AbstractApiController
         } catch (\InvalidArgumentException $e) {
             throw new AuthenticationException('Question paper not found.', previous: $e);
         }
+    }
+
+    private function decodeRequestPayload(\Symfony\Component\HttpFoundation\Request $request): array
+    {
+        $contentType = (string) $request->headers->get('Content-Type', '');
+        if (str_contains($contentType, 'multipart/form-data')) {
+            $data = $request->request->all();
+
+            return is_array($data) ? $data : [];
+        }
+
+        $decoded = json_decode($request->getContent(), true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 }

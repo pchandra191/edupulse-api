@@ -17,6 +17,7 @@ readonly class AcademicYearResponseDTO
         public ?string $description,
         public string $createdAt,
         public ?string $updatedAt,
+        public ?AcademicYearCountsDTO $counts = null,
     ) {
     }
 }

@@ -7,13 +7,16 @@ use App\DTO\ExamAttemptModule\CreateExamAttemptRequestDTO;
 use App\DTO\ExamAttemptModule\ExamAttemptFilterRequest;
 use App\DTO\ExamAttemptModule\ExamAttemptListItemResponseDTO;
 use App\DTO\ExamAttemptModule\ExamAttemptResponseDTO;
+use App\DTO\ExamAttemptModule\ExamAttemptTimingDTO;
 use App\DTO\ExamAttemptModule\EvaluatedExamAttemptResponseDTO;
 use App\DTO\ExamAttemptModule\StudentReferenceDTO;
 use App\DTO\Response\ExamAttemptListResponse;
 use App\DTO\Response\EvaluatedExamAttemptListResponse;
 use App\Entity\ExamAttempt;
 use App\Entity\ExamSession;
+use App\Entity\Institute;
 use App\Entity\Question;
+use App\Entity\QuestionPaper;
 use App\Entity\Section;
 use App\Entity\StudentEnrollment;
 use App\Entity\User;
@@ -24,6 +27,8 @@ use App\Repository\ExamAttemptRepository;
 use App\Repository\ExamSessionRepository;
 use App\Repository\EnrollmentSectionRepository;
 use App\Repository\StudentEnrollmentRepository;
+use App\Service\ExamAttemptQuestionProgressModule\ExamAttemptQuestionProgressService;
+use App\Service\QuestionPaperModule\QuestionImageService;
 use DateTimeInterface;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
@@ -44,6 +49,9 @@ readonly class ExamAttemptService
         private LoggerInterface $logger,
         private WorkflowRegistry $workflowRegistry,
         private \App\Repository\TeacherAssignmentRepository $teacherAssignmentRepository,
+        private EvaluationService $evaluationService,
+        private ExamAttemptQuestionProgressService $progressService,
+        private QuestionImageService $questionImageService,
     ) {
     }
 
@@ -55,32 +63,48 @@ readonly class ExamAttemptService
             throw new AuthenticationException('Exam session not found.');
         }
 
-        $now = new \DateTimeImmutable();
-
-        if (!$examSession->isPublished() && !$examSession->isActive()) {
-            throw new \App\Common\Exception\BusinessException('This exam session is not currently available.');
-        }
-
-        if ($examSession->getAvailableTo() <= $examSession->getAvailableFrom()) {
-            throw new \App\Common\Exception\BusinessException('This exam session has invalid availability dates.');
-        }
-
-        if ($now < $examSession->getAvailableFrom()) {
-            throw new \App\Common\Exception\BusinessException('This exam session is not yet available.');
-        }
-
-        if ($now > $examSession->getAvailableTo()) {
-            throw new \App\Common\Exception\BusinessException('This exam session has expired.');
-        }
-
         $user = $this->security->getUser();
 
         if (!$user instanceof User) {
             throw new AuthenticationException('User not authenticated.');
         }
 
-        if (!$this->isStudentEnrolled($user, $examSession)) {
-            throw new \App\Common\Exception\BusinessException('You are not eligible for this exam session.');
+        $now = new \DateTimeImmutable();
+
+        $isStudent = in_array('ROLE_STUDENT', $user->getRoles(), true);
+
+        if ($isStudent) {
+            if (!$examSession->isActive()) {
+                throw new \App\Common\Exception\BusinessException('This exam session is not currently available.');
+            }
+
+            if ($now < $examSession->getAvailableFrom()) {
+                throw new \App\Common\Exception\BusinessException('This exam session is not yet available.');
+            }
+
+            if ($now >= $examSession->getAvailableTo()) {
+                throw new \App\Common\Exception\BusinessException('This exam session has expired.');
+            }
+
+            if (!$this->isStudentEnrolled($user, $examSession)) {
+                throw new \App\Common\Exception\BusinessException('You are not eligible for this exam session.');
+            }
+        } else {
+            if (!$examSession->isPublished() && !$examSession->isActive()) {
+                throw new \App\Common\Exception\BusinessException('This exam session is not currently available.');
+            }
+
+            if ($examSession->getAvailableTo() <= $examSession->getAvailableFrom()) {
+                throw new \App\Common\Exception\BusinessException('This exam session has invalid availability dates.');
+            }
+
+            if ($now < $examSession->getAvailableFrom()) {
+                throw new \App\Common\Exception\BusinessException('This exam session is not yet available.');
+            }
+
+            if ($now > $examSession->getAvailableTo()) {
+                throw new \App\Common\Exception\BusinessException('This exam session has expired.');
+            }
         }
 
         try {
@@ -107,6 +131,11 @@ readonly class ExamAttemptService
             $attempt->setExamSession($lockedExamSession);
             $attempt->setStudent($user);
             $attempt->setStartedAt($now);
+            $attempt->setMode(\App\Enum\ExamAttemptMode::Online);
+
+            [$allowedDurationSeconds, $expiresAt] = $this->computeAttemptTiming($lockedExamSession, $now);
+            $attempt->setAllowedDurationSeconds($allowedDurationSeconds);
+            $attempt->setExpiresAt($expiresAt);
 
             $this->entityManager->persist($attempt);
             $this->entityManager->flush();
@@ -161,9 +190,32 @@ readonly class ExamAttemptService
             throw new \App\Common\Exception\BusinessException('Only in-progress exam attempts can be submitted.');
         }
 
+        if ($attempt->isOffline()) {
+            $documents = $attempt->getSubmissionDocuments();
+
+            $hasAnswerSheet = false;
+            foreach ($documents as $document) {
+                if ($document->getDocumentType() === 'ANSWER_SHEET') {
+                    $hasAnswerSheet = true;
+                    break;
+                }
+            }
+
+            if (!$hasAnswerSheet) {
+                throw new \App\Common\Exception\BusinessException('An answer sheet must be uploaded before submitting this offline attempt.');
+            }
+        }
+
+        $now = new \DateTimeImmutable();
+        $isExpired = $attempt->getExpiresAt() !== null && $now >= $attempt->getExpiresAt();
+
         $workflow = $this->workflowRegistry->get($attempt);
 
-        if (!$workflow->can($attempt, 'submit')) {
+        if ($isExpired && $workflow->can($attempt, 'auto_submit')) {
+            $transition = 'auto_submit';
+        } elseif ($workflow->can($attempt, 'submit')) {
+            $transition = 'submit';
+        } else {
             throw new \App\Common\Exception\BusinessException(
                 sprintf('Cannot submit exam attempt from %s.', $attempt->getStatus()->value)
             );
@@ -172,10 +224,35 @@ readonly class ExamAttemptService
         try {
             $this->entityManager->beginTransaction();
 
-            $attempt->setSubmittedAt(new \DateTimeImmutable());
-            $workflow->apply($attempt, 'submit');
+            $this->progressService->closeActiveQuestion($id);
+
+            $attempt->setSubmittedAt($now);
+            if ($isExpired) {
+                $attempt->setAutoSubmittedAt($now);
+                if ($attempt->getAllowedDurationSeconds() !== null && $attempt->getStartedAt() !== null) {
+                    $expiredAt = $attempt->getExpiresAt();
+                    if ($expiredAt !== null) {
+                        $elapsed = $expiredAt->getTimestamp() - $attempt->getStartedAt()->getTimestamp();
+                        $attempt->setTimeTakenSeconds(max(0, min($elapsed, $attempt->getAllowedDurationSeconds())));
+                    }
+                }
+            }
+
+            $workflow->apply($attempt, $transition);
 
             $this->entityManager->flush();
+
+            if ($attempt->isOnline()) {
+                try {
+                    $this->evaluationService->evaluateAttempt($id);
+                } catch (\Throwable $evalError) {
+                    $this->logger->error('Failed to evaluate exam attempt.', [
+                        'exam_attempt_id' => (string) $id,
+                        'error' => $evalError->getMessage(),
+                    ]);
+                }
+            }
+
             $this->entityManager->commit();
 
             return $this->mapToResponse($attempt);
@@ -193,6 +270,129 @@ readonly class ExamAttemptService
         }
     }
 
+    public function createOfflineAttempt(Uuid $examSessionId, Uuid $studentId): ExamAttemptResponseDTO
+    {
+        $user = $this->security->getUser();
+
+        if (!$user instanceof User) {
+            throw new AuthenticationException('User not authenticated.');
+        }
+
+        $userRoles = $user->getRoles();
+
+        if (!in_array('ROLE_SUPER_ADMIN', $userRoles, true)
+            && !in_array('ROLE_INSTITUTE', $userRoles, true)
+            && !in_array('ROLE_TEACHER', $userRoles, true)) {
+            throw new \App\Common\Exception\BusinessException('You are not authorized to create offline attempts.');
+        }
+
+        $examSession = $this->examSessionRepository->find($examSessionId);
+
+        if (!$examSession instanceof ExamSession) {
+            throw new AuthenticationException('Exam session not found.');
+        }
+
+        $student = $this->entityManager->getRepository(User::class)->find($studentId);
+
+        if (!$student instanceof User) {
+            throw new \InvalidArgumentException('Student not found.');
+        }
+
+        $studentInstitute = $student->getInstitute();
+
+        if (!$studentInstitute instanceof Institute) {
+            throw new \InvalidArgumentException('Student does not belong to any institute.');
+        }
+
+        if (!$studentInstitute->getId()->equals($examSession->getInstitute()->getId())) {
+            throw new \InvalidArgumentException('Student does not belong to the exam session\'s institute.');
+        }
+
+        if (in_array('ROLE_INSTITUTE', $userRoles, true)) {
+            if (!$user->getInstitute() instanceof Institute || !$examSession->getInstitute()->getId()->equals($user->getInstitute()->getId())) {
+                throw new \App\Common\Exception\BusinessException('You can only create offline attempts for your own institute\'s exam sessions.');
+            }
+        }
+
+        if (in_array('ROLE_TEACHER', $userRoles, true)) {
+            if (!$user->getInstitute() instanceof Institute || !$examSession->getInstitute()->getId()->equals($user->getInstitute()->getId())) {
+                throw new \App\Common\Exception\BusinessException('You can only create offline attempts for your own institute\'s exam sessions.');
+            }
+
+            $teacherAssignment = $this->entityManager->getRepository(\App\Entity\TeacherAssignment::class)->createQueryBuilder('ta')
+                ->where('ta.teacher = :teacher')
+                ->andWhere('ta.academicClass = :academicClass')
+                ->andWhere('ta.status = :status')
+                ->setParameter('teacher', $user->getId())
+                ->setParameter('academicClass', $examSession->getAcademicClass()->getId())
+                ->setParameter('status', 'ACTIVE')
+                ->setMaxResults(1)
+                ->getQuery()
+                ->getOneOrNullResult();
+
+            if (!$teacherAssignment instanceof \App\Entity\TeacherAssignment) {
+                throw new \App\Common\Exception\BusinessException('You are not authorized to create offline attempts for this exam session.');
+            }
+        }
+
+        if (!$this->isStudentEnrolled($student, $examSession)) {
+            throw new \App\Common\Exception\BusinessException('Student is not eligible for this exam session.');
+        }
+
+        $existingActiveAttempt = $this->examAttemptRepository->findActiveByExamSessionAndStudent(
+            $examSessionId,
+            $student->getId()
+        );
+
+        if ($existingActiveAttempt instanceof ExamAttempt) {
+            throw new \App\Common\Exception\BusinessException('An active attempt already exists for this student and exam session.');
+        }
+
+        try {
+            $this->entityManager->beginTransaction();
+
+            $now = new \DateTimeImmutable();
+            $attempt = new ExamAttempt();
+            $attempt->setExamSession($examSession);
+            $attempt->setStudent($student);
+            $attempt->setMode(\App\Enum\ExamAttemptMode::Offline);
+            $attempt->setStartedAt($now);
+
+            [$allowedDurationSeconds, $expiresAt] = $this->computeAttemptTiming($examSession, $now);
+            $attempt->setAllowedDurationSeconds($allowedDurationSeconds);
+            $attempt->setExpiresAt($expiresAt);
+
+            $this->entityManager->persist($attempt);
+            $this->entityManager->flush();
+
+            $workflow = $this->workflowRegistry->get($attempt);
+            $workflow->apply($attempt, 'start');
+
+            $this->entityManager->flush();
+            $this->entityManager->commit();
+
+            return $this->mapToResponse($attempt);
+        } catch (\InvalidArgumentException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            throw $e;
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            $this->logger->error('Failed to create offline exam attempt.', [
+                'exam_session_id' => (string) $examSessionId,
+                'student_id' => (string) $studentId,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to create offline exam attempt. Please try again.', previous: $e);
+        }
+    }
+
     public function getAttempt(Uuid $id, ?Uuid $instituteId): ExamAttemptResponseDTO
     {
         $user = $this->security->getUser();
@@ -207,7 +407,17 @@ readonly class ExamAttemptService
             throw new AuthenticationException('Exam attempt not found.');
         }
 
-        if (!$attempt->getStudent()->getId()->equals($user->getId())) {
+        $roles = $user->getRoles();
+        $isStudent = in_array('ROLE_STUDENT', $roles, true);
+        $isOrganizer = in_array('ROLE_INSTITUTE', $roles, true)
+            || in_array('ROLE_TEACHER', $roles, true)
+            || in_array('ROLE_SUPER_ADMIN', $roles, true);
+
+        if ($isStudent && !$attempt->getStudent()->getId()->equals($user->getId())) {
+            throw new \App\Common\Exception\BusinessException('You are not authorized to view this exam attempt.');
+        }
+
+        if (!$isStudent && !$isOrganizer) {
             throw new \App\Common\Exception\BusinessException('You are not authorized to view this exam attempt.');
         }
 
@@ -270,6 +480,17 @@ readonly class ExamAttemptService
         );
     }
 
+    public function getAttemptResult(Uuid $attemptId): \App\DTO\ExamAttemptModule\ExamAttemptResultResponseDTO
+    {
+        $user = $this->security->getUser();
+
+        if (!$user instanceof User) {
+            throw new AuthenticationException('User not authenticated.');
+        }
+
+        return $this->evaluationService->getResult($attemptId, $user->getId());
+    }
+
     public function getEvaluatedAttempts(?Uuid $instituteId, ?string $search, int $page, int $limit, string $sortBy, string $sortOrder): EvaluatedExamAttemptListResponse
     {
         $result = $this->examAttemptRepository->findEvaluatedAttempts(
@@ -322,11 +543,9 @@ readonly class ExamAttemptService
             $teacherAssignment = $this->teacherAssignmentRepository->createQueryBuilder('ta')
                 ->where('ta.teacher = :teacher')
                 ->andWhere('ta.academicClass = :academicClass')
-                ->andWhere('ta.institute = :institute')
                 ->andWhere('ta.status = :status')
                 ->setParameter('teacher', $user->getId())
                 ->setParameter('academicClass', $examSession->getAcademicClass()->getId())
-                ->setParameter('institute', $institute->getId())
                 ->setParameter('status', 'ACTIVE')
                 ->setMaxResults(1)
                 ->getQuery()
@@ -383,15 +602,19 @@ readonly class ExamAttemptService
             return false;
         }
 
-        $studentSections = $this->enrollmentSectionRepository->findByStudentEnrollment($enrollment);
-
         $examSessionSectionIds = [];
         foreach ($examSession->getSections() as $section) {
             $examSessionSectionIds[] = $section->getId()->toRfc4122();
         }
 
         if (empty($examSessionSectionIds)) {
-            return false;
+            return true;
+        }
+
+        $studentSections = $this->enrollmentSectionRepository->findByStudentEnrollment($enrollment);
+
+        if (empty($studentSections)) {
+            return true;
         }
 
         foreach ($studentSections as $studentSection) {
@@ -414,13 +637,58 @@ readonly class ExamAttemptService
             examSessionTitle: $examSession->getTitle(),
             studentId: $student->getId()->toRfc4122(),
             studentName: $student->getFullName(),
+            mode: $attempt->getMode()->value,
             status: $attempt->getStatus()->value,
             startedAt: $attempt->getStartedAt()?->format(DateTimeInterface::ATOM),
             submittedAt: $attempt->getSubmittedAt()?->format(DateTimeInterface::ATOM),
             autoSubmittedAt: $attempt->getAutoSubmittedAt()?->format(DateTimeInterface::ATOM),
             createdAt: $attempt->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $attempt->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+            timing: $this->buildTiming($attempt),
         );
+    }
+
+    private function buildTiming(ExamAttempt $attempt): ?ExamAttemptTimingDTO
+    {
+        if ($attempt->getStartedAt() === null && $attempt->getAllowedDurationSeconds() === null && $attempt->getExpiresAt() === null) {
+            return null;
+        }
+
+        return new ExamAttemptTimingDTO(
+            startedAt: $attempt->getStartedAt()?->format(DateTimeInterface::ATOM),
+            allowedDurationSeconds: $attempt->getAllowedDurationSeconds(),
+            expiresAt: $attempt->getExpiresAt()?->format(DateTimeInterface::ATOM),
+            remainingSeconds: $attempt->getRemainingSeconds(),
+        );
+    }
+
+    /**
+     * @return array{0: int, 1: \DateTimeImmutable}
+     */
+    private function computeAttemptTiming(ExamSession $examSession, \DateTimeImmutable $startedAt): array
+    {
+        $questionPaper = $examSession->getQuestionPaper();
+        $durationMinutes = $examSession->getDurationOverride();
+
+        if ($durationMinutes === null || $durationMinutes <= 0) {
+            $durationMinutes = $questionPaper->getDuration();
+        }
+
+        if ($durationMinutes === null || $durationMinutes <= 0) {
+            throw new \App\Common\Exception\BusinessException('Exam duration is not configured.');
+        }
+
+        $allowedDurationSeconds = $durationMinutes * 60;
+        $requestedExpiry = $startedAt->modify('+' . $allowedDurationSeconds . ' seconds');
+        $availableTo = $examSession->getAvailableTo();
+
+        if ($availableTo !== null && $availableTo < $requestedExpiry) {
+            $expiresAt = $availableTo;
+        } else {
+            $expiresAt = $requestedExpiry;
+        }
+
+        return [$allowedDurationSeconds, $expiresAt];
     }
 
     private function mapQuestionToStudentResponse(Question $question): \App\DTO\QuestionPaperModule\StudentQuestionResponseDTO
@@ -434,6 +702,10 @@ readonly class ExamAttemptService
             );
         }
 
+        $imageUrl = $question->getImageFileReference() !== null
+            ? $this->questionImageService->getPublicUrl($question->getImageFileReference())
+            : $question->getImage();
+
         return new \App\DTO\QuestionPaperModule\StudentQuestionResponseDTO(
             id: $question->getId()->toRfc4122(),
             type: $question->getType()->value,
@@ -441,6 +713,8 @@ readonly class ExamAttemptService
             marks: $question->getMarks(),
             displayOrder: $question->getDisplayOrder(),
             image: $question->getImage(),
+            imageUrl: $imageUrl,
+            imageSource: $question->getImageSource(),
             options: $options,
         );
     }
@@ -473,6 +747,7 @@ readonly class ExamAttemptService
             attemptId: $attempt->getId()->toRfc4122(),
             studentId: $student->getId()->toRfc4122(),
             studentName: $student->getFullName(),
+            mode: $attempt->getMode()->value,
             status: $attempt->getStatus()->value,
             startedAt: $attempt->getStartedAt()?->format(DateTimeInterface::ATOM),
             submittedAt: $attempt->getSubmittedAt()?->format(DateTimeInterface::ATOM),

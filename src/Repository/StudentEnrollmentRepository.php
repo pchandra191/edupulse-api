@@ -274,6 +274,16 @@ class StudentEnrollmentRepository extends ServiceEntityRepository
             ->execute();
     }
 
+    public function countByAcademicYear(Uuid $academicYearId): int
+    {
+        return (int) $this->createQueryBuilder('se')
+            ->select('COUNT(DISTINCT se.student)')
+            ->where('se.academicYear = :academicYear')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
     /**
      * @return array<int, string>
      */

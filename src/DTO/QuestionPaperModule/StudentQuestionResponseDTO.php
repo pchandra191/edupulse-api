@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace App\DTO\QuestionPaperModule;
 
-use App\DTO\QuestionPaperModule;
-
 readonly class StudentQuestionResponseDTO
 {
     /**
@@ -17,6 +15,8 @@ readonly class StudentQuestionResponseDTO
         public int $marks,
         public int $displayOrder,
         public ?string $image,
+        public ?string $imageUrl,
+        public ?string $imageSource,
         public array $options,
     ) {
     }

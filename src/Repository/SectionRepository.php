@@ -118,6 +118,17 @@ class SectionRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    public function countByAcademicYear(Uuid $academicYearId): int
+    {
+        return (int) $this->createQueryBuilder('s')
+            ->select('COUNT(s.id)')
+            ->innerJoin('s.academicClass', 'c')
+            ->where('c.academicYear = :academicYear')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
     public function archiveByAcademicYear(Uuid $academicYearId): void
     {
         $classIds = $this->getEntityManager()->createQueryBuilder()

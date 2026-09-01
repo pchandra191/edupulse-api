@@ -42,6 +42,18 @@ class EnrollmentSectionRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+    public function findByStudentEnrollment(StudentEnrollment $enrollment): array
+    {
+        return $this->createQueryBuilder('es')
+            ->where('es.studentEnrollment = :enrollment')
+            ->andWhere('es.status = :status')
+            ->setParameter('enrollment', $enrollment)
+            ->setParameter('status', 'ACTIVE')
+            ->orderBy('es.createdAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function findByEnrollmentAndSection(Uuid $enrollmentId, Uuid $sectionId): ?EnrollmentSection
     {
         return $this->createQueryBuilder('es')

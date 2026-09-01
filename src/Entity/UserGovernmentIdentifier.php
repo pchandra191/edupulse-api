@@ -13,9 +13,9 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: UserGovernmentIdentifierRepository::class)]
 #[ORM\Table(name: 'user_government_identifiers')]
-#[ORM\Index(name: 'idx_gov_id_user', fields: ['user_id'])]
+#[ORM\Index(name: 'idx_gov_id_user', fields: ['userId'])]
 #[ORM\Index(name: 'idx_gov_id_type', fields: ['type'])]
-#[ORM\Index(name: 'idx_gov_id_verification', fields: ['verification_status'])]
+#[ORM\Index(name: 'idx_gov_id_verification', fields: ['verificationStatus'])]
 #[ORM\UniqueConstraint(name: 'uniq_gov_id_user_type', columns: ['user_id', 'type'])]
 class UserGovernmentIdentifier extends AbstractEntity
 {
