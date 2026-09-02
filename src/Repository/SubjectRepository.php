@@ -110,6 +110,18 @@ class SubjectRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    public function countByAcademicYear(Uuid $academicYearId): int
+    {
+        return (int) $this->createQueryBuilder('s')
+            ->select('COUNT(DISTINCT s.id)')
+            ->innerJoin('s.classSubjects', 'cs')
+            ->innerJoin('cs.academicClass', 'c')
+            ->where('c.academicYear = :academicYear')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
     private function applySearch(QueryBuilder $qb, ?string $search): void
     {
         if (null === $search || '' === $search) {

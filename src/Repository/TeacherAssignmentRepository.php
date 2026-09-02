@@ -243,4 +243,14 @@ class TeacherAssignmentRepository extends ServiceEntityRepository
             ->getQuery()
             ->execute();
     }
+
+    public function countDistinctTeachersByAcademicYear(Uuid $academicYearId): int
+    {
+        return (int) $this->createQueryBuilder('ta')
+            ->select('COUNT(DISTINCT ta.teacher)')
+            ->where('ta.academicYear = :academicYear')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
 }

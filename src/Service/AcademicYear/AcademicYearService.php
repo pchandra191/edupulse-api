@@ -7,6 +7,7 @@ use App\DTO\AcademicYear\AcademicYearCreateRequestDTO;
 use App\DTO\AcademicYear\AcademicYearFilterRequest;
 use App\DTO\AcademicYear\AcademicYearResponseDTO;
 use App\DTO\AcademicYear\AcademicYearUpdateRequestDTO;
+use App\DTO\AcademicYear\AcademicYearCountsDTO;
 use App\DTO\Response\AcademicYearListResponse;
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
@@ -16,16 +17,17 @@ use App\Enum\AcademicYearStatus;
 use App\Enum\ClassStatus;
 use App\Enum\SectionStatus;
 use App\Exception\AuthenticationException;
+use App\Repository\AcademicClassRepository;
 use App\Repository\AcademicYearRepository;
 use App\Repository\InstituteRepository;
+use App\Repository\SectionRepository;
+use App\Repository\SubjectRepository;
 use App\Repository\TeacherAssignmentRepository;
 use App\Repository\StudentEnrollmentRepository;
 use App\Repository\ExaminationRepository;
 use App\Repository\QuestionPaperRepository;
 use App\Repository\EnrollmentSectionRepository;
 use App\Repository\ExamSubjectRepository;
-use App\Repository\AcademicClassRepository;
-use App\Repository\SectionRepository;
 use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -44,8 +46,9 @@ readonly class AcademicYearService
         private QuestionPaperRepository $questionPaperRepository,
         private EnrollmentSectionRepository $enrollmentSectionRepository,
         private ExamSubjectRepository $examSubjectRepository,
-        private AcademicClassRepository $academicClassRepository,
+         private AcademicClassRepository $academicClassRepository,
         private SectionRepository $sectionRepository,
+        private SubjectRepository $subjectRepository,
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
     ) {
@@ -82,7 +85,7 @@ readonly class AcademicYearService
             throw new AuthenticationException('Academic year not found.');
         }
 
-        return $this->mapToResponse($academicYear);
+        return $this->mapToResponse($academicYear, $this->buildCounts($academicYear));
     }
 
     public function createAcademicYear(Uuid $instituteId, AcademicYearCreateRequestDTO $request): AcademicYearResponseDTO
@@ -287,8 +290,10 @@ readonly class AcademicYearService
         }
     }
 
-    private function mapToResponse(AcademicYear $academicYear): AcademicYearResponseDTO
-    {
+    private function mapToResponse(
+        AcademicYear $academicYear,
+        ?AcademicYearCountsDTO $counts = null
+    ): AcademicYearResponseDTO {
         return new AcademicYearResponseDTO(
             id: (string) $academicYear->getId(),
             instituteId: (string) $academicYear->getInstitute()->getId(),
@@ -301,6 +306,21 @@ readonly class AcademicYearService
             description: $academicYear->getDescription(),
             createdAt: $academicYear->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $academicYear->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+            counts: $counts,
+        );
+    }
+
+    private function buildCounts(AcademicYear $academicYear): AcademicYearCountsDTO
+    {
+        $yearId = $academicYear->getId();
+
+        return new AcademicYearCountsDTO(
+            classesCount: $this->academicClassRepository->countByAcademicYear($yearId),
+            sectionsCount: $this->sectionRepository->countByAcademicYear($yearId),
+            studentsCount: $this->studentEnrollmentRepository->countByAcademicYear($yearId),
+            teachersCount: $this->teacherAssignmentRepository->countDistinctTeachersByAcademicYear($yearId),
+            examinationsCount: $this->examinationRepository->countByAcademicYear($yearId),
+            questionPapersCount: $this->questionPaperRepository->countByAcademicYear($yearId),
         );
     }
 }

@@ -8,6 +8,7 @@ use App\DTO\Auth\CurrentUserResponseDTO;
 use App\DTO\Auth\EnrollmentResponseDTO;
 use App\DTO\Auth\ForgotPasswordRequestDTO;
 use App\DTO\Auth\InstituteResponseDTO;
+use App\DTO\Auth\AcademicClassReferenceDTO;
 use App\DTO\Auth\LoginRequest;
 use App\DTO\Auth\LoginResponseDTO;
 use App\DTO\Auth\LogoutRequestDTO;
@@ -107,7 +108,16 @@ readonly class AuthService
         }
 
         $enrollments = array_map(
-            fn(StudentEnrollment $se) => new EnrollmentResponseDTO(id: (string) $se->getId()),
+            fn(StudentEnrollment $se) => new EnrollmentResponseDTO(
+                id: (string) $se->getId(),
+                status: $se->getStatus()->value,
+                academicClass: $se->getAcademicClass() instanceof \App\Entity\AcademicClass
+                    ? new AcademicClassReferenceDTO(
+                        id: (string) $se->getAcademicClass()->getId(),
+                        name: $se->getAcademicClass()->getName(),
+                    )
+                    : null,
+            ),
             $this->studentEnrollmentRepository->findBy(['student' => $user], ['createdAt' => 'DESC'])
         );
 

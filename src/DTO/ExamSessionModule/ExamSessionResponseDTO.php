@@ -9,8 +9,6 @@ readonly class ExamSessionResponseDTO
         public string $id,
         public string $instituteId,
         public string $instituteName,
-        public string $questionPaperId,
-        public string $questionPaperTitle,
         public ?string $examinationId,
         public ?string $examinationName,
         public ?string $examSubjectId,
@@ -30,11 +28,10 @@ readonly class ExamSessionResponseDTO
         public string $status,
         public string $createdAt,
         public ?string $updatedAt,
-        public string $academicYearId,
-        public string $academicYearName,
-        public string $academicClassId,
-        public string $academicClassName,
+        public array $academicYear,
+        public array $academicClass,
         public array $sections,
+        public array $questionDetails,
     ) {
     }
 }

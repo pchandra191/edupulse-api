@@ -303,4 +303,34 @@ class ExamAttemptRepository extends ServiceEntityRepository
 
         return (int) $countQb->getQuery()->getSingleScalarResult();
     }
+
+    /**
+     * @return array<string, ExamAttempt>
+     */
+    public function findLatestByExamSessionAndStudentIds(Uuid $examSessionId, array $studentIds): array
+    {
+        if (empty($studentIds)) {
+            return [];
+        }
+
+        $results = $this->createQueryBuilder('ea')
+            ->where('ea.examSession = :examSession')
+            ->andWhere('ea.student IN (:studentIds)')
+            ->setParameter('examSession', $examSessionId)
+            ->setParameter('studentIds', $studentIds)
+            ->orderBy('ea.createdAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+
+        $byStudent = [];
+        foreach ($results as $attempt) {
+            $studentId = $attempt->getStudent()->getId()->toRfc4122();
+
+            if (!isset($byStudent[$studentId])) {
+                $byStudent[$studentId] = $attempt;
+            }
+        }
+
+        return $byStudent;
+    }
 }

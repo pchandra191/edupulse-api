@@ -13,9 +13,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: ExaminationRepository::class)]
 #[ORM\Table(name: 'examinations')]
-#[ORM\Index(name: 'idx_examination_institute', fields: ['institute_id'])]
-#[ORM\Index(name: 'idx_examination_academic_year', fields: ['academic_year_id'])]
-#[ORM\Index(name: 'idx_examination_academic_class', fields: ['academic_class_id'])]
+#[ORM\Index(name: 'idx_examination_institute', fields: ['institute'])]
+#[ORM\Index(name: 'idx_examination_academic_year', fields: ['academicYear'])]
+#[ORM\Index(name: 'idx_examination_academic_class', fields: ['academicClass'])]
 #[ORM\Index(name: 'idx_examination_status', fields: ['status'])]
 #[ORM\UniqueConstraint(name: 'uniq_examination_institute_code', columns: ['institute_id', 'code'])]
 class Examination extends AbstractEntity

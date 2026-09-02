@@ -5,6 +5,7 @@ namespace App\Tests\Controller\AcademicYear;
 
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
+use App\Entity\ClassSubject;
 use App\Entity\EnrollmentSection;
 use App\Entity\ExamSubject;
 use App\Entity\Examination;
@@ -764,5 +765,128 @@ class AcademicYearControllerTest extends WebTestCase
 
         $client->request('DELETE', '/api/v1/academic-years/' . $this->testAcademicYearId, [], [], $this->getAuthHeaders($this->superAdminToken));
         $this->assertSame(400, $client->getResponse()->getStatusCode());
+    }
+
+    public function testGetAcademicYearReturnsCountsOfAssociatedEntities(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+        $yearId = $this->testAcademicYearId;
+        $institute = $entityManager->getRepository(Institute::class)->find($this->testInstituteId);
+
+        $teacher = new User();
+        $teacher->setEmail('teacher-counts-' . $this->unique . '@edupulse.ai');
+        $teacher->setPassword(password_hash('Teacher123!', PASSWORD_BCRYPT));
+        $teacher->setRoles([UserRole::Teacher->value]);
+        $teacher->setStatus(UserStatus::Active);
+        $teacher->verify();
+        $teacher->setInstitute($institute);
+
+        $student = new User();
+        $student->setEmail('student-counts-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+
+        $subject = new Subject();
+        $subject->setInstitute($institute);
+        $subject->setName('Test Subject for Counts');
+        $subject->setCode('SUBJCOUNTS' . $this->unique);
+        $subject->setStatus(SubjectStatus::Active);
+
+        $class1 = $this->createClassForYear($yearId, $this->testInstituteId, 1);
+        $class2 = $this->createClassForYear($yearId, $this->testInstituteId, 2);
+
+        $classSubject1 = new ClassSubject();
+        $classSubject1->setAcademicClass($class1);
+        $classSubject1->setSubject($subject);
+
+        $classSubject2 = new ClassSubject();
+        $classSubject2->setAcademicClass($class2);
+        $classSubject2->setSubject($subject);
+
+        $teacherAssignment = new TeacherAssignment();
+        $teacherAssignment->setTeacher($teacher);
+        $teacherAssignment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($yearId));
+        $teacherAssignment->setAcademicClass($class1);
+        $teacherAssignment->setAssignmentType('SUBJECT_TEACHER');
+        $teacherAssignment->setStatus(TeacherAssignmentStatus::Active);
+
+        $studentEnrollment = new StudentEnrollment();
+        $studentEnrollment->setStudent($student);
+        $studentEnrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($yearId));
+        $studentEnrollment->setAcademicClass($class2);
+        $studentEnrollment->setInstituteId($this->testInstituteId);
+        $studentEnrollment->setAdmissionNumber('ADM-COUNTS' . $this->unique);
+        $studentEnrollment->setAdmissionDate(new \DateTimeImmutable('2024-01-01'));
+        $studentEnrollment->setIsCurrent(true);
+        $studentEnrollment->setStatus(StudentEnrollmentStatus::Active);
+
+        $examination = new Examination();
+        $examination->setInstitute($institute);
+        $examination->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($yearId));
+        $examination->setAcademicClass($class1);
+        $examination->setName('Test Examination for Counts');
+        $examination->setCode('EXAMCOUNTS' . $this->unique);
+        $examination->setStartDate(new \DateTimeImmutable('2025-06-01'));
+        $examination->setEndDate(new \DateTimeImmutable('2025-06-15'));
+        $examination->setStatus(ExaminationStatus::Draft);
+
+        $questionPaper = new QuestionPaper();
+        $questionPaper->setInstitute($institute);
+        $questionPaper->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($yearId));
+        $questionPaper->setSubject($subject);
+        $questionPaper->setTitle('Test Question Paper for Counts');
+        $questionPaper->setDate(new \DateTimeImmutable('2025-05-01'));
+        $questionPaper->setDuration(60);
+        $questionPaper->setMaximumMarks(50);
+        $questionPaper->setStatus(QuestionPaperStatus::Draft);
+
+        $entityManager->persist($teacher);
+        $entityManager->persist($student);
+        $entityManager->persist($subject);
+        $entityManager->persist($classSubject1);
+        $entityManager->persist($classSubject2);
+        $entityManager->persist($teacherAssignment);
+        $entityManager->persist($studentEnrollment);
+        $entityManager->persist($examination);
+        $entityManager->persist($questionPaper);
+        $entityManager->flush();
+
+        $client->request('GET', '/api/v1/academic-years/' . $yearId, [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('counts', $data['data']);
+
+        $counts = $data['data']['counts'];
+        $this->assertNotNull($counts);
+        $this->assertSame(2, $counts['classesCount']);
+        $this->assertSame(3, $counts['sectionsCount']);
+        $this->assertSame(1, $counts['studentsCount']);
+        $this->assertSame(1, $counts['teachersCount']);
+        $this->assertSame(1, $counts['examinationsCount']);
+        $this->assertSame(1, $counts['questionPapersCount']);
+    }
+
+    public function testGetAcademicYearListDoesNotIncludeCounts(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/academic-years', [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+
+        foreach ($data['data']['items'] as $item) {
+            $this->assertNull($item['counts']);
+        }
     }
 }

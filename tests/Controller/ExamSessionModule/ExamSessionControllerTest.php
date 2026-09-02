@@ -482,7 +482,7 @@ class ExamSessionControllerTest extends WebTestCase
         $this->assertSame(400, $client->getResponse()->getStatusCode());
 
         $data = json_decode($client->getResponse()->getContent(), true);
-        $this->assertStringContainsString('Only draft exam sessions can be modified', $data['message']);
+        $this->assertStringContainsString('Only draft or scheduled exam sessions can be modified', $data['message']);
     }
 
     public function testDraftSessionCanBeUpdated(): void
@@ -522,7 +522,7 @@ class ExamSessionControllerTest extends WebTestCase
         $this->assertSame(400, $client->getResponse()->getStatusCode());
 
         $data = json_decode($client->getResponse()->getContent(), true);
-        $this->assertStringContainsString('Only draft exam sessions can be modified', $data['message']);
+        $this->assertStringContainsString('Only draft or scheduled exam sessions can be modified', $data['message']);
     }
 
     public function testPublishedSessionCannotBeUpdated(): void
@@ -545,7 +545,7 @@ class ExamSessionControllerTest extends WebTestCase
         $this->assertSame(400, $client->getResponse()->getStatusCode());
 
         $data = json_decode($client->getResponse()->getContent(), true);
-        $this->assertStringContainsString('Only draft exam sessions can be modified', $data['message']);
+        $this->assertStringContainsString('Only draft or scheduled exam sessions can be modified', $data['message']);
     }
 
     public function testActiveSessionCannotBeUpdated(): void
@@ -571,7 +571,7 @@ class ExamSessionControllerTest extends WebTestCase
         $this->assertSame(400, $client->getResponse()->getStatusCode());
 
         $data = json_decode($client->getResponse()->getContent(), true);
-        $this->assertStringContainsString('Only draft exam sessions can be modified', $data['message']);
+        $this->assertStringContainsString('Only draft or scheduled exam sessions can be modified', $data['message']);
     }
 
     public function testClosedSessionCannotBeUpdated(): void
@@ -600,7 +600,7 @@ class ExamSessionControllerTest extends WebTestCase
         $this->assertSame(400, $client->getResponse()->getStatusCode());
 
         $data = json_decode($client->getResponse()->getContent(), true);
-        $this->assertStringContainsString('Only draft exam sessions can be modified', $data['message']);
+        $this->assertStringContainsString('Only draft or scheduled exam sessions can be modified', $data['message']);
     }
 
     public function testArchivedSessionCannotBeUpdated(): void
@@ -626,7 +626,7 @@ class ExamSessionControllerTest extends WebTestCase
         $this->assertSame(400, $client->getResponse()->getStatusCode());
 
         $data = json_decode($client->getResponse()->getContent(), true);
-        $this->assertStringContainsString('Only draft exam sessions can be modified', $data['message']);
+        $this->assertStringContainsString('Only draft or scheduled exam sessions can be modified', $data['message']);
     }
 
     public function testCrossInstituteAccessPrevention(): void
@@ -1179,5 +1179,598 @@ class ExamSessionControllerTest extends WebTestCase
         $this->assertTrue($data['success']);
         $this->assertSame('2026-08-23T20:00:00-04:00', $data['data']['availableFrom']);
         $this->assertSame('2026-08-30T18:43:00-04:00', $data['data']['availableTo']);
+    }
+
+    public function testStudentCanListEligibleExamSessions(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        // Create a student with enrollment
+        $student = new User();
+        $studentId = Uuid::v7();
+        $studentReflection = new \ReflectionClass($student);
+        $studentProperty = $studentReflection->getProperty('id');
+        $studentProperty->setAccessible(true);
+        $studentProperty->setValue($student, $studentId);
+        $student->setEmail('student-session-list-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM-STUDENT-' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $enrollmentSection = new \App\Entity\EnrollmentSection();
+        $enrollmentSection->setStudentEnrollment($enrollment);
+        $enrollmentSection->setSection($entityManager->getRepository(Section::class)->find($this->testSectionId));
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->persist($enrollmentSection);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-session-list-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        $client->request('GET', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($studentToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('items', $data['data']);
+        $this->assertArrayHasKey('pagination', $data['data']);
+    }
+
+    public function testStudentCannotAccessUneligibleSession(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        // Create a student without enrollment
+        $student = new User();
+        $studentId = Uuid::v7();
+        $studentReflection = new \ReflectionClass($student);
+        $studentProperty = $studentReflection->getProperty('id');
+        $studentProperty->setAccessible(true);
+        $studentProperty->setValue($student, $studentId);
+        $student->setEmail('student-no-enroll-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $entityManager->persist($student);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-no-enroll-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        // Get an exam session ID
+        $examSession = $entityManager->getRepository(ExamSession::class)->findOneBy([]);
+        if ($examSession) {
+            $client->request('GET', '/api/v1/exam-sessions/' . $examSession->getId()->toRfc4122(), [], [], $this->getAuthHeaders($studentToken));
+
+            $response = $client->getResponse();
+            $this->assertSame(404, $response->getStatusCode());
+        }
+    }
+
+    public function testStudentWithNoSectionCanSeeClassLevelExam(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        // Create a student with enrollment but NO section
+        $student = new User();
+        $studentId = Uuid::v7();
+        $studentReflection = new \ReflectionClass($student);
+        $studentProperty = $studentReflection->getProperty('id');
+        $studentProperty->setAccessible(true);
+        $studentProperty->setValue($student, $studentId);
+        $student->setEmail('student-no-section-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        // Create enrollment WITHOUT section
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM-NO-SECTION-' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-no-section-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        // Create an exam session with NO section restriction
+        $examSession = new \App\Entity\ExamSession();
+        $examSessionId = Uuid::v7();
+        $esReflection = new \ReflectionClass($examSession);
+        $esProperty = $esReflection->getProperty('id');
+        $esProperty->setAccessible(true);
+        $esProperty->setValue($examSession, $examSessionId);
+        $examSession->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+        $examSession->setQuestionPaper($entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($this->testQuestionPaperId));
+        $examSession->setTitle('Class Level Exam ' . $this->unique);
+        $examSession->setAvailableFrom(new \DateTimeImmutable('-1 hour'));
+        $examSession->setAvailableTo(new \DateTimeImmutable('+1 hour'));
+        $examSession->setTotalMarks(100);
+        $examSession->setStatus(\App\Enum\ExamSessionStatus::Active);
+        $examSession->setCreatedBy($entityManager->getRepository(User::class)->findOneBy(['email' => 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai']));
+        $examSession->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $examSession->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        // NO sections added - this is a class-level exam
+
+        $entityManager->persist($examSession);
+        $entityManager->flush();
+
+        $client->request('GET', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($studentToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+
+        $found = false;
+        foreach ($data['data']['items'] as $item) {
+            if ($item['id'] === (string) $examSessionId) {
+                $found = true;
+                break;
+            }
+        }
+        $this->assertTrue($found, 'Student with no section should see class-level exam');
+    }
+
+    public function testStudentWithNoSectionCanSeeSectionSpecificExam(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        // Create a student with enrollment but NO section
+        $student = new User();
+        $studentId = Uuid::v7();
+        $studentReflection = new \ReflectionClass($student);
+        $studentProperty = $studentReflection->getProperty('id');
+        $studentProperty->setAccessible(true);
+        $studentProperty->setValue($student, $studentId);
+        $student->setEmail('student-no-section-2-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM-NO-SECTION-2-' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-no-section-2-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        // Create an exam session WITH section restriction
+        $examSession = new \App\Entity\ExamSession();
+        $examSessionId = Uuid::v7();
+        $esReflection = new \ReflectionClass($examSession);
+        $esProperty = $esReflection->getProperty('id');
+        $esProperty->setAccessible(true);
+        $esProperty->setValue($examSession, $examSessionId);
+        $examSession->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+        $examSession->setQuestionPaper($entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($this->testQuestionPaperId));
+        $examSession->setTitle('Section Specific Exam ' . $this->unique);
+        $examSession->setAvailableFrom(new \DateTimeImmutable('-1 hour'));
+        $examSession->setAvailableTo(new \DateTimeImmutable('+1 hour'));
+        $examSession->setTotalMarks(100);
+        $examSession->setStatus(\App\Enum\ExamSessionStatus::Active);
+        $examSession->setCreatedBy($entityManager->getRepository(User::class)->findOneBy(['email' => 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai']));
+        $examSession->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $examSession->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+
+        // Add section restriction
+        $section = $entityManager->getRepository(Section::class)->find($this->testSectionId);
+        if ($section) {
+            $examSession->addSection($section);
+        }
+
+        $entityManager->persist($examSession);
+        $entityManager->flush();
+
+        $client->request('GET', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($studentToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+
+        $found = false;
+        foreach ($data['data']['items'] as $item) {
+            if ($item['id'] === (string) $examSessionId) {
+                $found = true;
+                break;
+            }
+        }
+        $this->assertTrue($found, 'Student with no section CAN see section-specific exam (class is the only requirement)');
+    }
+
+    public function testStudentOnlySeesExamsForTheirClass(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        // Get managed references
+        $institute = $entityManager->getRepository(Institute::class)->find($this->testInstituteId);
+        $academicYear = $entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId);
+        $testClass = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+        $questionPaper = $entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($this->testQuestionPaperId);
+        $superAdmin = $entityManager->getRepository(User::class)->findOneBy(['email' => 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai']);
+
+        // Create a second class (Nursery)
+        $nurseryClass = new AcademicClass();
+        $nurseryClassId = Uuid::v7();
+        $classReflection = new \ReflectionClass($nurseryClass);
+        $classProperty = $classReflection->getProperty('id');
+        $classProperty->setAccessible(true);
+        $classProperty->setValue($nurseryClass, $nurseryClassId);
+        $nurseryClass->setInstitute($institute);
+        $nurseryClass->setAcademicYear($academicYear);
+        $nurseryClass->setName('Nursery');
+        $nurseryClass->setCode('NUR' . $this->unique);
+        $nurseryClass->setStatus(ClassStatus::Active);
+
+        $entityManager->persist($nurseryClass);
+        $entityManager->flush();
+
+        // Re-fetch the nursery class to ensure it's managed by Doctrine
+        $nurseryClass = $entityManager->getRepository(AcademicClass::class)->find($nurseryClassId);
+
+        // Create student enrolled in test class (not nursery)
+        $student = new User();
+        $studentId = Uuid::v7();
+        $studentReflection = new \ReflectionClass($student);
+        $studentProperty = $studentReflection->getProperty('id');
+        $studentProperty->setAccessible(true);
+        $studentProperty->setValue($student, $studentId);
+        $student->setEmail('student-class-filter-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM-CLASS-' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-class-filter-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        // Create exam for test class (should be visible)
+        $classExam = new \App\Entity\ExamSession();
+        $classExamId = Uuid::v7();
+        $esReflection = new \ReflectionClass($classExam);
+        $esProperty = $esReflection->getProperty('id');
+        $esProperty->setAccessible(true);
+        $esProperty->setValue($classExam, $classExamId);
+        $classExam->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+        $classExam->setQuestionPaper($entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($this->testQuestionPaperId));
+        $classExam->setTitle('Class Exam ' . $this->unique);
+        $classExam->setAvailableFrom(new \DateTimeImmutable('-1 hour'));
+        $classExam->setAvailableTo(new \DateTimeImmutable('+1 hour'));
+        $classExam->setTotalMarks(100);
+        $classExam->setStatus(\App\Enum\ExamSessionStatus::Active);
+        $classExam->setCreatedBy($entityManager->getRepository(User::class)->findOneBy(['email' => 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai']));
+        $classExam->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $classExam->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+
+        // Create exam for nursery class (should NOT be visible)
+        $nurseryExam = new \App\Entity\ExamSession();
+        $nurseryExamId = Uuid::v7();
+        $esProperty->setValue($nurseryExam, $nurseryExamId);
+        $nurseryExam->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+        $nurseryExam->setQuestionPaper($entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($this->testQuestionPaperId));
+        $nurseryExam->setTitle('Nursery Exam ' . $this->unique);
+        $nurseryExam->setAvailableFrom(new \DateTimeImmutable('-1 hour'));
+        $nurseryExam->setAvailableTo(new \DateTimeImmutable('+1 hour'));
+        $nurseryExam->setTotalMarks(100);
+        $nurseryExam->setStatus(\App\Enum\ExamSessionStatus::Active);
+        $nurseryExam->setCreatedBy($entityManager->getRepository(User::class)->findOneBy(['email' => 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai']));
+        $nurseryExam->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $nurseryExam->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($nurseryClassId));
+
+        $entityManager->persist($classExam);
+        $entityManager->persist($nurseryExam);
+        $entityManager->flush();
+
+        $client->request('GET', '/api/v1/exam-sessions', [], [], $this->getAuthHeaders($studentToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+
+        $foundClassExam = false;
+        $foundNurseryExam = false;
+        foreach ($data['data']['items'] as $item) {
+            if ($item['id'] === (string) $classExamId) {
+                $foundClassExam = true;
+            }
+            if ($item['id'] === (string) $nurseryExamId) {
+                $foundNurseryExam = true;
+            }
+        }
+        $this->assertTrue($foundClassExam, 'Student should see exam for their class');
+        $this->assertFalse($foundNurseryExam, 'Student should NOT see exam for another class');
+    }
+
+    public function testStudentCannotAccessOtherClassExamById(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        // Create a second class (Nursery)
+        $nurseryClass = new AcademicClass();
+        $nurseryClassId = Uuid::v7();
+        $classReflection = new \ReflectionClass($nurseryClass);
+        $classProperty = $classReflection->getProperty('id');
+        $classProperty->setAccessible(true);
+        $classProperty->setValue($nurseryClass, $nurseryClassId);
+        $nurseryClass->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+        $nurseryClass->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $nurseryClass->setName('Nursery');
+        $nurseryClass->setCode('NUR' . $this->unique);
+        $nurseryClass->setStatus(ClassStatus::Active);
+
+        $entityManager->persist($nurseryClass);
+        $entityManager->flush();
+
+        // Re-fetch the nursery class to ensure it's managed by Doctrine
+        $nurseryClass = $entityManager->getRepository(AcademicClass::class)->find($nurseryClassId);
+
+        // Create student enrolled in test class (not nursery)
+        $student = new User();
+        $studentId = Uuid::v7();
+        $studentReflection = new \ReflectionClass($student);
+        $studentProperty = $studentReflection->getProperty('id');
+        $studentProperty->setAccessible(true);
+        $studentProperty->setValue($student, $studentId);
+        $student->setEmail('student-class-filter-2-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM-CLASS-2-' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-class-filter-2-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        // Create exam for nursery class
+        $nurseryExam = new \App\Entity\ExamSession();
+        $nurseryExamId = Uuid::v7();
+        $esReflection = new \ReflectionClass($nurseryExam);
+        $esProperty = $esReflection->getProperty('id');
+        $esProperty->setAccessible(true);
+        $esProperty->setValue($nurseryExam, $nurseryExamId);
+        $nurseryExam->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+        $nurseryExam->setQuestionPaper($entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($this->testQuestionPaperId));
+        $nurseryExam->setTitle('Nursery Exam 2 ' . $this->unique);
+        $nurseryExam->setAvailableFrom(new \DateTimeImmutable('-1 hour'));
+        $nurseryExam->setAvailableTo(new \DateTimeImmutable('+1 hour'));
+        $nurseryExam->setTotalMarks(100);
+        $nurseryExam->setStatus(\App\Enum\ExamSessionStatus::Active);
+        $nurseryExam->setCreatedBy($entityManager->getRepository(User::class)->findOneBy(['email' => 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai']));
+        $nurseryExam->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $nurseryExam->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($nurseryClassId));
+
+        $entityManager->persist($nurseryExam);
+        $entityManager->flush();
+
+        // Try to access nursery exam directly by ID
+        $client->request('GET', '/api/v1/exam-sessions/' . $nurseryExamId, [], [], $this->getAuthHeaders($studentToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    public function testStudentCannotStartAttemptForOtherClassExam(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        // Create a second class (Nursery)
+        $nurseryClass = new AcademicClass();
+        $nurseryClassId = Uuid::v7();
+        $classReflection = new \ReflectionClass($nurseryClass);
+        $classProperty = $classReflection->getProperty('id');
+        $classProperty->setAccessible(true);
+        $classProperty->setValue($nurseryClass, $nurseryClassId);
+        $nurseryClass->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+        $nurseryClass->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $nurseryClass->setName('Nursery');
+        $nurseryClass->setCode('NUR' . $this->unique);
+        $nurseryClass->setStatus(ClassStatus::Active);
+
+        $entityManager->persist($nurseryClass);
+        $entityManager->flush();
+
+        // Re-fetch the nursery class to ensure it's managed by Doctrine
+        $nurseryClass = $entityManager->getRepository(AcademicClass::class)->find($nurseryClassId);
+
+        // Create student enrolled in test class (not nursery)
+        $student = new User();
+        $studentId = Uuid::v7();
+        $studentReflection = new \ReflectionClass($student);
+        $studentProperty = $studentReflection->getProperty('id');
+        $studentProperty->setAccessible(true);
+        $studentProperty->setValue($student, $studentId);
+        $student->setEmail('student-class-filter-3-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM-CLASS-3-' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-class-filter-3-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        // Create exam for nursery class
+        $nurseryExam = new \App\Entity\ExamSession();
+        $nurseryExamId = Uuid::v7();
+        $esReflection = new \ReflectionClass($nurseryExam);
+        $esProperty = $esReflection->getProperty('id');
+        $esProperty->setAccessible(true);
+        $esProperty->setValue($nurseryExam, $nurseryExamId);
+        $nurseryExam->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+        $nurseryExam->setQuestionPaper($entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($this->testQuestionPaperId));
+        $nurseryExam->setTitle('Nursery Exam 3 ' . $this->unique);
+        $nurseryExam->setAvailableFrom(new \DateTimeImmutable('-1 hour'));
+        $nurseryExam->setAvailableTo(new \DateTimeImmutable('+1 hour'));
+        $nurseryExam->setTotalMarks(100);
+        $nurseryExam->setStatus(\App\Enum\ExamSessionStatus::Active);
+        $nurseryExam->setCreatedBy($entityManager->getRepository(User::class)->findOneBy(['email' => 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai']));
+        $nurseryExam->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $nurseryExam->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($nurseryClassId));
+
+        $entityManager->persist($nurseryExam);
+        $entityManager->flush();
+
+        // Try to start attempt for nursery exam
+        $client->request('POST', '/api/v1/exam-sessions/' . $nurseryExamId . '/attempts', [], [], $this->getAuthHeaders($studentToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertStringContainsString('not eligible', strtolower($data['message']));
+    }
+
+    public function testStudentWithNoSectionCanAccessClassLevelExamById(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $institute = $entityManager->getRepository(Institute::class)->find($this->testInstituteId);
+        $academicYear = $entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId);
+        $academicClass = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+        $questionPaper = $entityManager->getRepository(\App\Entity\QuestionPaper::class)->find($this->testQuestionPaperId);
+        $superAdmin = $entityManager->getRepository(User::class)->findOneBy(['email' => 'superadmin-exam-session-test-' . $this->unique . '@edupulse.ai']);
+
+        $student = new User();
+        $studentId = Uuid::v7();
+        $studentRef = new \ReflectionClass($student);
+        $studentProp = $studentRef->getProperty('id');
+        $studentProp->setAccessible(true);
+        $studentProp->setValue($student, $studentId);
+        $student->setEmail('student-get-by-id-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($institute);
+
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $eRef = new \ReflectionClass($enrollment);
+        $eProp = $eRef->getProperty('id');
+        $eProp->setAccessible(true);
+        $eProp->setValue($enrollment, Uuid::v7());
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($academicYear);
+        $enrollment->setAcademicClass($academicClass);
+        $enrollment->setAdmissionNumber('ADM-GETID-' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $classLevelSession = new \App\Entity\ExamSession();
+        $sessionId = Uuid::v7();
+        $sRef = new \ReflectionClass($classLevelSession);
+        $sProp = $sRef->getProperty('id');
+        $sProp->setAccessible(true);
+        $sProp->setValue($classLevelSession, $sessionId);
+        $classLevelSession->setInstitute($institute);
+        $classLevelSession->setQuestionPaper($questionPaper);
+        $classLevelSession->setTitle('Class Level Exam GET ' . $this->unique);
+        $classLevelSession->setAvailableFrom(new \DateTimeImmutable('-1 hour'));
+        $classLevelSession->setAvailableTo(new \DateTimeImmutable('+1 hour'));
+        $classLevelSession->setTotalMarks(100);
+        $classLevelSession->setStatus(\App\Enum\ExamSessionStatus::Active);
+        $classLevelSession->setCreatedBy($superAdmin);
+        $classLevelSession->setAcademicYear($academicYear);
+        $classLevelSession->setAcademicClass($academicClass);
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->persist($classLevelSession);
+        $entityManager->flush();
+
+        $studentToken = $this->login($client, 'student-get-by-id-' . $this->unique . '@edupulse.ai', 'Student123!');
+
+        $client->request('GET', '/api/v1/exam-sessions/' . $sessionId, [], [], $this->getAuthHeaders($studentToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame((string) $sessionId, $data['data']['id']);
     }
 }

@@ -81,6 +81,41 @@ readonly class ExamSessionService
         return $this->mapToResponse($examSession);
     }
 
+    public function getStudentExamSessions(Uuid $studentId, Uuid $instituteId, ExamSessionFilterRequest $filter): ExamSessionListResponse
+    {
+        $result = $this->examSessionRepository->findPaginatedForStudent(
+            $studentId,
+            $instituteId,
+            $filter->search,
+            $filter->status,
+            $filter->page,
+            $filter->limit,
+            $filter->sortBy,
+            $filter->sortOrder,
+        );
+
+        $items = array_map(
+            fn (ExamSession $examSession) => $this->mapToResponse($examSession),
+            $result['items'],
+        );
+
+        return new ExamSessionListResponse(
+            items: $items,
+            pagination: $result['pagination'],
+        );
+    }
+
+    public function getStudentExamSession(Uuid $id, Uuid $studentId, Uuid $instituteId): ExamSessionResponseDTO
+    {
+        $examSession = $this->examSessionRepository->findByIdForStudent($id, $studentId, $instituteId);
+
+        if (!$examSession instanceof ExamSession) {
+            throw new AuthenticationException('Exam session not found.');
+        }
+
+        return $this->mapToResponse($examSession);
+    }
+
     public function createExamSession(Uuid $instituteId, CreateExamSessionRequestDTO $request): ExamSessionResponseDTO
     {
         $institute = $this->instituteRepository->find($instituteId);
@@ -247,9 +282,10 @@ readonly class ExamSessionService
             $this->logger->error('Failed to create exam session.', [
                 'institute_id' => (string) $instituteId,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
-            throw new \App\Common\Exception\BusinessException('Failed to create exam session. Please try again.', previous: $e);
+            throw new \App\Common\Exception\BusinessException($e->getMessage(), previous: $e);
         }
     }
 
@@ -261,8 +297,8 @@ readonly class ExamSessionService
             throw new AuthenticationException('Exam session not found.');
         }
 
-        if (!$examSession->isDraft()) {
-            throw new \App\Common\Exception\BusinessException('Only draft exam sessions can be modified through the update endpoint.');
+        if (!$examSession->isDraft() && !$examSession->isScheduled()) {
+            throw new \App\Common\Exception\BusinessException('Only draft or scheduled exam sessions can be modified through the update endpoint.');
         }
 
         try {
@@ -527,6 +563,7 @@ readonly class ExamSessionService
         $createdBy = $examSession->getCreatedBy();
         $academicYear = $examSession->getAcademicYear();
         $academicClass = $examSession->getAcademicClass();
+        $subject = $questionPaper->getSubject();
 
         $sections = array_map(
             fn (Section $section) => [
@@ -538,12 +575,22 @@ readonly class ExamSessionService
 
         $displayTimezone = new \DateTimeZone($institute->getTimezone()?->value ?? 'UTC');
 
+        $effectiveDurationMinutes = $examSession->getDurationOverride() ?? $questionPaper->getDuration();
+
+        $questionDetails = [
+            'questionPaperId' => $questionPaper->getId()->toRfc4122(),
+            'title' => $questionPaper->getTitle(),
+            'subjectId' => $subject->getId()->toRfc4122(),
+            'subjectName' => $subject->getName(),
+            'totalQuestions' => $questionPaper->getQuestions()->count(),
+            'totalMarks' => $questionPaper->getMaximumMarks(),
+            'durationSeconds' => $effectiveDurationMinutes * 60,
+        ];
+
         return new ExamSessionResponseDTO(
             id: $examSession->getId()->toRfc4122(),
             instituteId: $institute->getId()->toRfc4122(),
             instituteName: $institute->getName(),
-            questionPaperId: $questionPaper->getId()->toRfc4122(),
-            questionPaperTitle: $questionPaper->getTitle(),
             examinationId: $examSession->getExamination()?->getId()->toRfc4122(),
             examinationName: $examSession->getExamination()?->getName(),
             examSubjectId: $examSession->getExamSubject()?->getId()->toRfc4122(),
@@ -563,11 +610,93 @@ readonly class ExamSessionService
             status: $examSession->getStatus()->value,
             createdAt: $examSession->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $examSession->getUpdatedAt()?->format(DateTimeInterface::ATOM),
-            academicYearId: $academicYear->getId()->toRfc4122(),
-            academicYearName: $academicYear->getName(),
-            academicClassId: $academicClass->getId()->toRfc4122(),
-            academicClassName: $academicClass->getName(),
+            academicYear: [
+                'id' => $academicYear->getId()->toRfc4122(),
+                'name' => $academicYear->getName(),
+            ],
+            academicClass: [
+                'id' => $academicClass->getId()->toRfc4122(),
+                'name' => $academicClass->getName(),
+            ],
             sections: $sections,
+            questionDetails: $questionDetails,
         );
+    }
+
+    public function syncSessionStatuses(\DateTimeImmutable $now): array
+    {
+        $activated = 0;
+        $closed = 0;
+
+        $publishedOverdue = $this->examSessionRepository->findPublishedOverdueForClosure($now);
+        foreach ($publishedOverdue as $session) {
+            $workflow = $this->workflowRegistry->get($session);
+
+            if ($workflow->can($session, 'start')) {
+                $workflow->apply($session, 'start');
+                $activated++;
+                $this->logger->info('Exam session {id}: PUBLISHED → ACTIVE (overdue)', ['id' => (string) $session->getId()]);
+            }
+
+            if ($workflow->can($session, 'close')) {
+                $workflow->apply($session, 'close');
+                $closed++;
+                $this->logger->info('Exam session {id}: ACTIVE → CLOSED (overdue)', ['id' => (string) $session->getId()]);
+            }
+        }
+
+        $publishedReady = $this->examSessionRepository->findPublishedReadyForActivation($now);
+        foreach ($publishedReady as $session) {
+            if ($session->getAvailableTo() <= $now) {
+                $workflow = $this->workflowRegistry->get($session);
+
+                if ($workflow->can($session, 'start')) {
+                    $workflow->apply($session, 'start');
+                    $activated++;
+                    $this->logger->info('Exam session {id}: PUBLISHED → ACTIVE', ['id' => (string) $session->getId()]);
+                }
+
+                if ($workflow->can($session, 'close')) {
+                    $workflow->apply($session, 'close');
+                    $closed++;
+                    $this->logger->info('Exam session {id}: ACTIVE → CLOSED', ['id' => (string) $session->getId()]);
+                }
+                continue;
+            }
+
+            $workflow = $this->workflowRegistry->get($session);
+
+            if ($workflow->can($session, 'start')) {
+                $workflow->apply($session, 'start');
+                $activated++;
+                $this->logger->info('Exam session {id}: PUBLISHED → ACTIVE', ['id' => (string) $session->getId()]);
+            }
+        }
+
+        $activeExpired = $this->examSessionRepository->findActiveReadyForClosure($now);
+        foreach ($activeExpired as $session) {
+            $workflow = $this->workflowRegistry->get($session);
+
+            if ($workflow->can($session, 'close')) {
+                $workflow->apply($session, 'close');
+                $closed++;
+                $this->logger->info('Exam session {id}: ACTIVE → CLOSED', ['id' => (string) $session->getId()]);
+            }
+        }
+
+        $this->entityManager->flush();
+
+        $summary = [
+            'activated' => $activated,
+            'closed' => $closed,
+        ];
+
+        $this->logger->info('Processed {total} sessions: {activated} transitioned to ACTIVE, {closed} transitioned to CLOSED', [
+            'total' => $activated + $closed,
+            'activated' => $activated,
+            'closed' => $closed,
+        ]);
+
+        return $summary;
     }
 }

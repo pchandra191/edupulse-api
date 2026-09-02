@@ -292,6 +292,15 @@ readonly class ExamSubmissionDocumentService
     {
         $status = $attempt->getStatus();
 
+        if ($attempt->isOffline()) {
+            return match ($status->value) {
+                ExamAttemptStatus::NotStarted->value => true,
+                ExamAttemptStatus::InProgress->value => true,
+                ExamAttemptStatus::Submitted->value => true,
+                default => false,
+            };
+        }
+
         return match ($status->value) {
             ExamAttemptStatus::InProgress->value => true,
             ExamAttemptStatus::Submitted->value => true,

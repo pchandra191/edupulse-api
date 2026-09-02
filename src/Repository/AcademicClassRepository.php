@@ -117,6 +117,16 @@ class AcademicClassRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    public function countByAcademicYear(Uuid $academicYearId): int
+    {
+        return (int) $this->createQueryBuilder('c')
+            ->select('COUNT(c.id)')
+            ->where('c.academicYear = :academicYear')
+            ->setParameter('academicYear', $academicYearId)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
     public function archiveByAcademicYear(Uuid $academicYearId): void
     {
         $this->createQueryBuilder('c')

@@ -48,6 +48,10 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    App\Service\QuestionPaperModule\QuestionImageService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
     App\Common\Api\Response\ApiResponseFactory:
         arguments:
             $apiVersion: '%app.api_version%'
@@ -78,3 +82,9 @@ services:
         arguments:
             $property: 'status'
             $enumClass: App\Enum\ExamAttemptStatus
+
+when@test:
+    services:
+        clock:
+            class: Symfony\Component\Clock\MockClock
+            public: true

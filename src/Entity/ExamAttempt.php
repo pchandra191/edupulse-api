@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Enum\ExamAttemptMode;
 use App\Enum\ExamAttemptStatus;
 use App\Repository\ExamAttemptRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -31,6 +32,9 @@ class ExamAttempt extends AbstractEntity
     #[ORM\Column(type: Types::STRING, length: 20)]
     private string $status = ExamAttemptStatus::NotStarted->value;
 
+    #[ORM\Column(type: Types::STRING, length: 10, name: 'attempt_mode')]
+    private string $mode = ExamAttemptMode::Online->value;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $startedAt = null;
 
@@ -52,10 +56,17 @@ class ExamAttempt extends AbstractEntity
     #[ORM\Column(type: Types::INTEGER, nullable: true)]
     private ?int $timeTakenSeconds = null;
 
+    #[ORM\Column(type: Types::INTEGER, nullable: true, name: 'allowed_duration_seconds')]
+    private ?int $allowedDurationSeconds = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true, name: 'expires_at')]
+    private ?\DateTimeImmutable $expiresAt = null;
+
     public function __construct()
     {
         parent::__construct();
         $this->examAnswers = new ArrayCollection();
+        $this->questionProgresses = new ArrayCollection();
         $this->submissionDocuments = new ArrayCollection();
     }
 
@@ -93,6 +104,28 @@ class ExamAttempt extends AbstractEntity
         $this->status = $status->value;
 
         return $this;
+    }
+
+    public function getMode(): ExamAttemptMode
+    {
+        return ExamAttemptMode::from($this->mode);
+    }
+
+    public function setMode(ExamAttemptMode $mode): self
+    {
+        $this->mode = $mode->value;
+
+        return $this;
+    }
+
+    public function isOnline(): bool
+    {
+        return $this->mode === ExamAttemptMode::Online->value;
+    }
+
+    public function isOffline(): bool
+    {
+        return $this->mode === ExamAttemptMode::Offline->value;
     }
 
     public function getStartedAt(): ?\DateTimeImmutable
@@ -156,12 +189,18 @@ class ExamAttempt extends AbstractEntity
         return $this->status === ExamAttemptStatus::Abandoned->value;
     }
 
+    public function isEvaluated(): bool
+    {
+        return $this->status === ExamAttemptStatus::Evaluated->value;
+    }
+
     public function isTerminal(): bool
     {
         return match ($this->status) {
             ExamAttemptStatus::Submitted->value,
             ExamAttemptStatus::AutoSubmitted->value,
-            ExamAttemptStatus::Abandoned->value => true,
+            ExamAttemptStatus::Abandoned->value,
+            ExamAttemptStatus::Evaluated->value => true,
             default => false,
         };
     }
@@ -169,12 +208,15 @@ class ExamAttempt extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'examAttempt', targetEntity: ExamAnswer::class, cascade: ['persist'], orphanRemoval: true)]
     private Collection $examAnswers;
 
+    #[ORM\OneToMany(mappedBy: 'examAttempt', targetEntity: ExamAttemptQuestionProgress::class, cascade: ['persist'], orphanRemoval: true)]
+    private Collection $questionProgresses;
+
     #[ORM\OneToMany(mappedBy: 'examAttempt', targetEntity: ExamSubmissionDocument::class, cascade: ['persist'], orphanRemoval: true)]
     private Collection $submissionDocuments;
 
     /**
-     * @return Collection<int, ExamAnswer>
-     */
+      * @return Collection<int, ExamAnswer>
+      */
     public function getExamAnswers(): Collection
     {
         return $this->examAnswers;
@@ -195,6 +237,35 @@ class ExamAttempt extends AbstractEntity
         if ($this->examAnswers->removeElement($examAnswer)) {
             if ($examAnswer->getExamAttempt() === $this) {
                 $examAnswer->setExamAttempt(new ExamAttempt());
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+      * @return Collection<int, ExamAttemptQuestionProgress>
+      */
+    public function getQuestionProgresses(): Collection
+    {
+        return $this->questionProgresses;
+    }
+
+    public function addQuestionProgress(ExamAttemptQuestionProgress $progress): self
+    {
+        if (!$this->questionProgresses->contains($progress)) {
+            $this->questionProgresses->add($progress);
+            $progress->setExamAttempt($this);
+        }
+
+        return $this;
+    }
+
+    public function removeQuestionProgress(ExamAttemptQuestionProgress $progress): self
+    {
+        if ($this->questionProgresses->removeElement($progress)) {
+            if ($progress->getExamAttempt() === $this) {
+                $progress->setExamAttempt(new ExamAttempt());
             }
         }
 
@@ -276,5 +347,52 @@ class ExamAttempt extends AbstractEntity
         $this->timeTakenSeconds = $timeTakenSeconds;
 
         return $this;
+    }
+
+    public function getAllowedDurationSeconds(): ?int
+    {
+        return $this->allowedDurationSeconds;
+    }
+
+    public function setAllowedDurationSeconds(?int $allowedDurationSeconds): self
+    {
+        $this->allowedDurationSeconds = $allowedDurationSeconds;
+
+        return $this;
+    }
+
+    public function getExpiresAt(): ?\DateTimeImmutable
+    {
+        return $this->expiresAt;
+    }
+
+    public function setExpiresAt(?\DateTimeImmutable $expiresAt): self
+    {
+        $this->expiresAt = $expiresAt;
+
+        return $this;
+    }
+
+    public function isExpired(?\DateTimeImmutable $now = null): bool
+    {
+        if ($this->expiresAt === null) {
+            return false;
+        }
+
+        $checkTime = $now ?? new \DateTimeImmutable();
+
+        return $checkTime >= $this->expiresAt;
+    }
+
+    public function getRemainingSeconds(?\DateTimeImmutable $now = null): ?int
+    {
+        if ($this->expiresAt === null) {
+            return null;
+        }
+
+        $checkTime = $now ?? new \DateTimeImmutable();
+        $remaining = $this->expiresAt->getTimestamp() - $checkTime->getTimestamp();
+
+        return max(0, $remaining);
     }
 }

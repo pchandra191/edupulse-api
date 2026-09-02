@@ -12,9 +12,9 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: UserAddressRepository::class)]
 #[ORM\Table(name: 'user_addresses')]
-#[ORM\Index(name: 'idx_user_address_user', fields: ['user_id'])]
-#[ORM\Index(name: 'idx_user_address_type', fields: ['address_type'])]
-#[ORM\Index(name: 'idx_user_address_primary', fields: ['is_primary'])]
+#[ORM\Index(name: 'idx_user_address_user', fields: ['userId'])]
+#[ORM\Index(name: 'idx_user_address_type', fields: ['addressType'])]
+#[ORM\Index(name: 'idx_user_address_primary', fields: ['isPrimary'])]
 class UserAddress extends AbstractEntity
 {
     #[ORM\Column(type: 'uuid')]

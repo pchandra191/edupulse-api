@@ -11,9 +11,11 @@ use App\DTO\ExamSessionModule\ExamSessionFilterRequest;
 use App\DTO\ExamSessionModule\ExamSessionResponseDTO;
 use App\DTO\ExamSessionModule\UpdateExamSessionRequestDTO;
 use App\DTO\Response\ExamSessionListResponse;
+use App\DTO\Response\ExamSessionStudentParticipationListResponse;
 use App\Entity\User;
 use App\Exception\AuthenticationException;
 use App\Service\ExamSessionModule\ExamSessionService;
+use App\Service\ExamSessionModule\ExamSessionStudentParticipationService;
 use App\Service\Role\RolePermissionService;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -27,6 +29,7 @@ class ExamSessionController extends AbstractApiController
 {
     public function __construct(
         private ExamSessionService $examSessionService,
+        private ExamSessionStudentParticipationService $examSessionStudentParticipationService,
         private RolePermissionService $rolePermissionService,
         private ValidatorInterface $validator,
         private Security $security,
@@ -64,10 +67,22 @@ class ExamSessionController extends AbstractApiController
         }
     }
 
-    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[SecurityAttribute("is_granted('ROLE_STUDENT') or is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
     #[Route('/exam-sessions', name: 'exam_session_list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
+        $user = $this->security->getUser();
+
+        if (!$user instanceof User) {
+            return $this->notFound();
+        }
+
+        $isStudent = in_array('ROLE_STUDENT', $user->getRoles(), true);
+
+        if ($isStudent) {
+            return $this->listForStudent($request, $user);
+        }
+
         $this->requirePermission('exam_sessions.view');
 
         $instituteId = $this->getCurrentInstituteId();
@@ -91,6 +106,43 @@ class ExamSessionController extends AbstractApiController
             totalItems: $result->pagination['totalItems'],
             totalPages: $result->pagination['totalPages'],
         ), ['version' => 'v1']);
+    }
+
+    private function listForStudent(Request $request, User $user): JsonResponse
+    {
+        $institute = $user->getInstitute();
+
+        if (!$institute) {
+            return $this->error('You do not have permission to access exam sessions.');
+        }
+
+        $filter = new ExamSessionFilterRequest(
+            search: $request->query->get('search'),
+            questionPaperId: $request->query->get('questionPaperId'),
+            examinationId: $request->query->get('examinationId'),
+            status: $request->query->get('status'),
+            page: max(1, (int) $request->query->get('page', 1)),
+            limit: max(1, min(100, (int) $request->query->get('limit', 10))),
+            sortBy: $request->query->get('sortBy', 'createdAt'),
+            sortOrder: $request->query->get('sortOrder', 'DESC'),
+        );
+
+        try {
+            $result = $this->examSessionService->getStudentExamSessions(
+                $user->getId(),
+                $institute->getId(),
+                $filter
+            );
+
+            return $this->paginated('Exam sessions retrieved successfully.', $result->items, new PaginationResponse(
+                page: $result->pagination['page'],
+                limit: $result->pagination['limit'],
+                totalItems: $result->pagination['totalItems'],
+                totalPages: $result->pagination['totalPages'],
+            ), ['version' => 'v1']);
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        }
     }
 
     #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
@@ -160,10 +212,40 @@ class ExamSessionController extends AbstractApiController
         }
     }
 
-    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[SecurityAttribute("is_granted('ROLE_STUDENT') or is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
     #[Route('/exam-sessions/{id}', name: 'exam_session_get', methods: ['GET'])]
     public function get(string $id): JsonResponse
     {
+        $user = $this->security->getUser();
+
+        if (!$user instanceof User) {
+            return $this->notFound();
+        }
+
+        $isStudent = in_array('ROLE_STUDENT', $user->getRoles(), true);
+
+        if ($isStudent) {
+            $institute = $user->getInstitute();
+
+            if (!$institute) {
+                return $this->error('You do not have permission to access this exam session.');
+            }
+
+            try {
+                $examSession = $this->examSessionService->getStudentExamSession(
+                    $this->parseUuid($id),
+                    $user->getId(),
+                    $institute->getId()
+                );
+
+                return $this->success('Exam session retrieved successfully.', $examSession);
+            } catch (AuthenticationException $e) {
+                return $this->notFound();
+            } catch (\App\Common\Exception\BusinessException $e) {
+                return $this->error($e->getMessage());
+            }
+        }
+
         $this->requirePermission('exam_sessions.view');
 
         try {
@@ -354,6 +436,33 @@ class ExamSessionController extends AbstractApiController
         }
 
         return $this->success('Exam session archived successfully.', $examSession);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN') or is_granted('ROLE_TEACHER')")]
+    #[Route('/exam-sessions/{id}/student-participation', name: 'exam_session_student_participation', methods: ['GET'])]
+    public function studentParticipation(Request $request, string $id): JsonResponse
+    {
+        $this->requirePermission('exam_attempts.view');
+
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+
+            $result = $this->examSessionStudentParticipationService->getStudentParticipation(
+                $this->parseUuid($id),
+                $instituteId,
+                $request->query->get('search'),
+                $request->query->get('status'),
+                $request->query->get('sectionId') ? Uuid::fromString($request->query->get('sectionId')) : null,
+                max(1, (int) $request->query->get('page', 1)),
+                max(1, min(100, (int) $request->query->get('limit', 20))),
+            );
+
+            return $this->success('Student participation retrieved successfully.', $result->toArray(), ['version' => 'v1']);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\InvalidArgumentException $e) {
+            return $this->error($e->getMessage());
+        }
     }
 
     private function getCurrentInstituteId(): ?Uuid

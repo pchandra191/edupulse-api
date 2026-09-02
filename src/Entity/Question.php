@@ -13,9 +13,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: QuestionRepository::class)]
 #[ORM\Table(name: 'questions')]
-#[ORM\Index(name: 'idx_question_paper', fields: ['question_paper_id'])]
+#[ORM\Index(name: 'idx_question_paper', fields: ['questionPaper'])]
 #[ORM\Index(name: 'idx_question_type', fields: ['type'])]
-#[ORM\Index(name: 'idx_question_display_order', fields: ['question_paper_id', 'display_order'])]
+#[ORM\Index(name: 'idx_question_display_order', fields: ['questionPaper', 'displayOrder'])]
 class Question extends AbstractEntity
 {
     #[Assert\NotBlank]
@@ -43,6 +43,12 @@ class Question extends AbstractEntity
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $image = null;
+
+    #[ORM\Column(type: Types::STRING, length: 500, nullable: true)]
+    private ?string $imageFileReference = null;
+
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $referenceAnswer = null;
 
     #[ORM\OneToMany(mappedBy: 'question', targetEntity: QuestionOption::class, cascade: ['persist'], orphanRemoval: true)]
     private Collection $options;
@@ -120,7 +126,44 @@ class Question extends AbstractEntity
 
     public function setImage(?string $image): self
     {
-        $this->image = $image;
+        $this->image = $image !== null ? trim($image) !== '' ? trim($image) : null : null;
+
+        return $this;
+    }
+
+    public function getImageFileReference(): ?string
+    {
+        return $this->imageFileReference;
+    }
+
+    public function setImageFileReference(?string $imageFileReference): self
+    {
+        $this->imageFileReference = $imageFileReference !== null ? trim($imageFileReference) !== '' ? trim($imageFileReference) : null : null;
+
+        return $this;
+    }
+
+    public function getImageSource(): ?string
+    {
+        if ($this->imageFileReference !== null) {
+            return 'UPLOAD';
+        }
+
+        if ($this->image !== null) {
+            return 'URL';
+        }
+
+        return null;
+    }
+
+    public function getReferenceAnswer(): ?string
+    {
+        return $this->referenceAnswer;
+    }
+
+    public function setReferenceAnswer(?string $referenceAnswer): self
+    {
+        $this->referenceAnswer = $referenceAnswer;
 
         return $this;
     }

@@ -90,6 +90,7 @@ class UserController extends AbstractApiController
             password: $data['password'] ?? '',
             instituteName: $data['instituteName'] ?? null,
             instituteId: $data['instituteId'] ?? null,
+            isVerified: $data['isVerified'] ?? null,
         );
 
         $errors = $this->validator->validate($createRequest);
@@ -132,6 +133,7 @@ class UserController extends AbstractApiController
             department: $data['department'] ?? null,
             roles: $roles,
             status: isset($data['status']) ? UserStatus::from((string) $data['status']) : null,
+            isVerified: $data['isVerified'] ?? null,
         );
 
         $errors = $this->validator->validate($updateRequest);

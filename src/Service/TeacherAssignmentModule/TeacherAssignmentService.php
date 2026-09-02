@@ -147,7 +147,7 @@ readonly class TeacherAssignmentService
         );
 
         if ($duplicate instanceof TeacherAssignment) {
-            throw new \App\Common\Exception\BusinessException('An active assignment already exists for this combination.');
+            throw new \App\Common\Exception\BusinessException('An active assignment already exists for this combination of the teacher, academic year, class and section.');
         }
 
         try {

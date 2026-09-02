@@ -13,9 +13,9 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: UserDocumentRepository::class)]
 #[ORM\Table(name: 'user_documents')]
-#[ORM\Index(name: 'idx_user_document_user', fields: ['user_id'])]
-#[ORM\Index(name: 'idx_user_document_type', fields: ['document_type'])]
-#[ORM\Index(name: 'idx_user_document_verification', fields: ['verification_status'])]
+#[ORM\Index(name: 'idx_user_document_user', fields: ['userId'])]
+#[ORM\Index(name: 'idx_user_document_type', fields: ['documentType'])]
+#[ORM\Index(name: 'idx_user_document_verification', fields: ['verificationStatus'])]
 class UserDocument extends AbstractEntity
 {
     #[ORM\Column(type: 'uuid')]

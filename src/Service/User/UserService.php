@@ -283,6 +283,10 @@ readonly class UserService
         $user->setRoles($request->roles);
         $user->setStatus(UserStatus::Active);
 
+        if ($request->isVerified) {
+            $user->verify();
+        }
+
         return $user;
     }
 
@@ -411,6 +415,12 @@ readonly class UserService
             }
 
             $user->setRoles($request->roles);
+        }
+
+        if ($request->isVerified !== null) {
+            if ($request->isVerified) {
+                $user->verify();
+            }
         }
     }
 

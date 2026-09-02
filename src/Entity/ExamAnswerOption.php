@@ -8,8 +8,8 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: ExamAnswerOptionRepository::class)]
 #[ORM\Table(name: 'exam_answer_options')]
-#[ORM\Index(name: 'idx_exam_answer_option_answer', fields: ['exam_answer_id'])]
-#[ORM\Index(name: 'idx_exam_answer_option_option', fields: ['question_option_id'])]
+#[ORM\Index(name: 'idx_exam_answer_option_answer', fields: ['examAnswer'])]
+#[ORM\Index(name: 'idx_exam_answer_option_option', fields: ['questionOption'])]
 #[ORM\UniqueConstraint(name: 'uniq_exam_answer_option_answer_option', columns: ['exam_answer_id', 'question_option_id'])]
 class ExamAnswerOption extends AbstractEntity
 {

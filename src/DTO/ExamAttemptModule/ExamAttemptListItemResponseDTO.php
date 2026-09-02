@@ -9,6 +9,7 @@ readonly class ExamAttemptListItemResponseDTO
         public string $attemptId,
         public string $studentId,
         public string $studentName,
+        public string $mode,
         public string $status,
         public ?string $startedAt,
         public ?string $submittedAt,

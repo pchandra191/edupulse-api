@@ -13,8 +13,8 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: UserEducationRepository::class)]
 #[ORM\Table(name: 'user_education')]
-#[ORM\Index(name: 'idx_user_education_user', fields: ['user_id'])]
-#[ORM\Index(name: 'idx_user_education_level', fields: ['education_level'])]
+#[ORM\Index(name: 'idx_user_education_user', fields: ['userId'])]
+#[ORM\Index(name: 'idx_user_education_level', fields: ['educationLevel'])]
 class UserEducation extends AbstractEntity
 {
     #[ORM\Column(type: 'uuid')]

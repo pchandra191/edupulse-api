@@ -49,6 +49,7 @@ readonly class QuestionPaperService
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
         private \Symfony\Component\Workflow\Registry $workflowRegistry,
+        private QuestionImageService $questionImageService,
     ) {
     }
 
@@ -499,15 +500,27 @@ readonly class QuestionPaperService
                 }
 
                 $hasValidOption = false;
+                $correctCount = 0;
                 foreach ($rawOptions as $optionRow) {
                     if (empty($optionRow['optionText'])) {
                         throw new \InvalidArgumentException('All MCQ options must have text.');
                     }
                     $hasValidOption = true;
+                    if ((bool) ($optionRow['isCorrect'] ?? false) === true) {
+                        $correctCount++;
+                    }
                 }
 
                 if (!$hasValidOption) {
                     throw new \InvalidArgumentException('MCQ questions must have at least one option.');
+                }
+
+                if ($correctCount === 0) {
+                    throw new \InvalidArgumentException('MCQ questions must have exactly one correct option.');
+                }
+
+                if ($correctCount > 1) {
+                    throw new \InvalidArgumentException('MCQ questions must have exactly one correct option.');
                 }
             }
 
@@ -620,7 +633,7 @@ readonly class QuestionPaperService
         return $this->mapQuestionToResponse($question);
     }
 
-    public function createQuestion(Uuid $paperId, ?Uuid $instituteId, CreateQuestionRequestDTO $request): QuestionResponseDTO
+    public function createQuestion(Uuid $paperId, ?Uuid $instituteId, CreateQuestionRequestDTO $request, ?\Symfony\Component\HttpFoundation\File\UploadedFile $uploadedFile = null): QuestionResponseDTO
     {
         $paper = $this->questionPaperRepository->findById($paperId, $instituteId);
 
@@ -638,6 +651,21 @@ readonly class QuestionPaperService
             throw new \InvalidArgumentException('MCQ questions must have at least one option.');
         }
 
+        if ($type === QuestionType::MCQ) {
+            $correctCount = 0;
+            foreach ($request->options as $optionData) {
+                if (is_array($optionData) && isset($optionData['isCorrect']) && (bool) $optionData['isCorrect'] === true) {
+                    $correctCount++;
+                }
+            }
+            if ($correctCount === 0) {
+                throw new \InvalidArgumentException('MCQ questions must have exactly one correct option.');
+            }
+            if ($correctCount > 1) {
+                throw new \InvalidArgumentException('MCQ questions must have exactly one correct option.');
+            }
+        }
+
         if ($type === QuestionType::Descriptive && !empty($request->options)) {
             throw new \InvalidArgumentException('Descriptive questions must not have options.');
         }
@@ -653,10 +681,22 @@ readonly class QuestionPaperService
             $question->setQuestionText($request->questionText);
             $question->setMarks($request->marks);
             $question->setDisplayOrder($request->displayOrder > 0 ? $request->displayOrder : $maxOrder + 1);
-            $question->setImage($request->image);
+            $this->applyQuestionImageFromRequest($question, $request->image, $request->imageUrl, $request->imageFileReference);
+            $question->setReferenceAnswer($request->referenceAnswer !== null ? trim($request->referenceAnswer) : null);
 
             $this->entityManager->persist($question);
             $this->entityManager->flush();
+
+            if ($uploadedFile !== null) {
+                $reference = $this->questionImageService->uploadImage($question, $uploadedFile);
+                $oldReference = $question->getImageFileReference();
+                $question->setImage(null);
+                $question->setImageFileReference($reference);
+                if ($oldReference !== null) {
+                    $this->questionImageService->removeImageFile($oldReference);
+                }
+                $this->entityManager->flush();
+            }
 
             if ($type === QuestionType::MCQ && !empty($request->options)) {
                 foreach ($request->options as $index => $optionData) {
@@ -710,7 +750,7 @@ readonly class QuestionPaperService
         }
     }
 
-    public function updateQuestion(Uuid $paperId, Uuid $questionId, ?Uuid $instituteId, UpdateQuestionRequestDTO $request): QuestionResponseDTO
+    public function updateQuestion(Uuid $paperId, Uuid $questionId, ?Uuid $instituteId, UpdateQuestionRequestDTO $request, ?\Symfony\Component\HttpFoundation\File\UploadedFile $uploadedFile = null): QuestionResponseDTO
     {
         $paper = $this->questionPaperRepository->findById($paperId, $instituteId);
 
@@ -731,6 +771,17 @@ readonly class QuestionPaperService
         try {
             $this->entityManager->beginTransaction();
             $this->updateQuestionFields($paper, $question, $request);
+
+            if ($uploadedFile !== null) {
+                $reference = $this->questionImageService->uploadImage($question, $uploadedFile);
+                $oldReference = $question->getImageFileReference();
+                $question->setImage(null);
+                $question->setImageFileReference($reference);
+                if ($oldReference !== null && $oldReference !== $reference) {
+                    $this->questionImageService->removeImageFile($oldReference);
+                }
+            }
+
             $this->entityManager->flush();
             $this->entityManager->commit();
 
@@ -787,8 +838,12 @@ readonly class QuestionPaperService
 
         try {
             $this->questionOptionRepository->deleteByQuestion($questionId);
+            $oldReference = $question->getImageFileReference();
             $this->entityManager->remove($question);
             $this->entityManager->flush();
+            if ($oldReference !== null) {
+                $this->questionImageService->removeImageFile($oldReference);
+            }
         } catch (\Throwable $e) {
             $this->logger->error('Failed to delete question.', [
                 'question_id' => (string) $questionId,
@@ -859,6 +914,101 @@ readonly class QuestionPaperService
             marks: $request->marks,
             instruction: $request->instruction,
         );
+    }
+
+    public function replaceQuestionImage(Uuid $paperId, Uuid $questionId, ?Uuid $instituteId, \Symfony\Component\HttpFoundation\File\UploadedFile $file): QuestionResponseDTO
+    {
+        $paper = $this->questionPaperRepository->findById($paperId, $instituteId);
+
+        if (!$paper instanceof QuestionPaper) {
+            throw new AuthenticationException('Question paper not found.');
+        }
+
+        if (!$paper->isDraft()) {
+            throw new \App\Common\Exception\BusinessException('Question image can only be modified in draft question papers.');
+        }
+
+        $question = $this->questionRepository->findById($questionId, $paperId);
+
+        if (!$question instanceof Question) {
+            throw new AuthenticationException('Question not found.');
+        }
+
+        try {
+            $this->entityManager->beginTransaction();
+
+            $reference = $this->questionImageService->uploadImage($question, $file);
+            $oldReference = $question->getImageFileReference();
+            $question->setImage(null);
+            $question->setImageFileReference($reference);
+
+            $this->entityManager->flush();
+            $this->entityManager->commit();
+
+            if ($oldReference !== null && $oldReference !== $reference) {
+                $this->questionImageService->removeImageFile($oldReference);
+            }
+
+            return $this->mapQuestionToResponse($question);
+        } catch (\InvalidArgumentException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+            throw $e;
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+            $this->logger->error('Failed to upload question image.', [
+                'question_id' => (string) $questionId,
+                'error' => $e->getMessage(),
+            ]);
+            throw new \App\Common\Exception\BusinessException('Failed to upload question image. Please try again.', previous: $e);
+        }
+    }
+
+    public function clearQuestionImage(Uuid $paperId, Uuid $questionId, ?Uuid $instituteId): QuestionResponseDTO
+    {
+        $paper = $this->questionPaperRepository->findById($paperId, $instituteId);
+
+        if (!$paper instanceof QuestionPaper) {
+            throw new AuthenticationException('Question paper not found.');
+        }
+
+        $question = $this->questionRepository->findById($questionId, $paperId);
+
+        if (!$question instanceof Question) {
+            throw new AuthenticationException('Question not found.');
+        }
+
+        $oldReference = $question->getImageFileReference();
+        $question->setImage(null);
+        $question->setImageFileReference(null);
+
+        $this->entityManager->flush();
+
+        if ($oldReference !== null) {
+            $this->questionImageService->removeImageFile($oldReference);
+        }
+
+        return $this->mapQuestionToResponse($question);
+    }
+
+    public function getQuestionImageReference(Uuid $paperId, Uuid $questionId, ?Uuid $instituteId): ?string
+    {
+        $paper = $this->questionPaperRepository->findById($paperId, $instituteId);
+
+        if (!$paper instanceof QuestionPaper) {
+            throw new AuthenticationException('Question paper not found.');
+        }
+
+        $question = $this->questionRepository->findById($questionId, $paperId);
+
+        if (!$question instanceof Question) {
+            throw new AuthenticationException('Question not found.');
+        }
+
+        return $question->getImageFileReference();
     }
 
     private function updateFields(QuestionPaper $paper, UpdateQuestionPaperRequestDTO $request): void
@@ -1021,13 +1171,35 @@ readonly class QuestionPaperService
             $question->setDisplayOrder($request->displayOrder);
         }
 
-        if ($request->image !== null) {
-            $question->setImage($request->image);
+        if ($request->image !== null || $request->imageUrl !== null || $request->imageFileReference !== null) {
+            $this->applyQuestionImageFromRequest(
+                $question,
+                $request->image,
+                $request->imageUrl,
+                $request->imageFileReference
+            );
+        }
+
+        if ($request->referenceAnswer !== null) {
+            $question->setReferenceAnswer(trim($request->referenceAnswer) !== '' ? trim($request->referenceAnswer) : null);
         }
 
         if ($request->options !== null) {
             if ($question->isDescriptive()) {
                 throw new \InvalidArgumentException('Descriptive questions must not have options.');
+            }
+
+            $correctCount = 0;
+            foreach ($request->options as $optionData) {
+                if (is_array($optionData) && isset($optionData['isCorrect']) && (bool) $optionData['isCorrect'] === true) {
+                    $correctCount++;
+                }
+            }
+            if ($question->isMCQ() && $correctCount === 0) {
+                throw new \InvalidArgumentException('MCQ questions must have exactly one correct option.');
+            }
+            if ($question->isMCQ() && $correctCount > 1) {
+                throw new \InvalidArgumentException('MCQ questions must have exactly one correct option.');
             }
 
             $this->questionOptionRepository->deleteByQuestion($question->getId());
@@ -1207,10 +1379,61 @@ readonly class QuestionPaperService
             marks: $question->getMarks(),
             displayOrder: $question->getDisplayOrder(),
             image: $question->getImage(),
+            imageUrl: $this->resolveImageUrl($question),
+            imageSource: $question->getImageSource(),
+            referenceAnswer: $question->getReferenceAnswer(),
             options: $options,
             createdAt: $question->getCreatedAt()->format(DateTimeInterface::ATOM),
             updatedAt: $question->getUpdatedAt()?->format(DateTimeInterface::ATOM),
         );
+    }
+
+    private function resolveImageUrl(Question $question): ?string
+    {
+        if ($question->getImageFileReference() !== null) {
+            return $this->questionImageService->getPublicUrl($question->getImageFileReference());
+        }
+
+        return $question->getImage();
+    }
+
+    private function applyQuestionImageFromRequest(
+        Question $question,
+        ?string $image,
+        ?string $imageUrl,
+        ?string $imageFileReference
+    ): void {
+        if ($imageFileReference !== null) {
+            $oldReference = $question->getImageFileReference();
+            $newReference = $imageFileReference !== '' ? $imageFileReference : null;
+            $question->setImageFileReference($newReference);
+            $question->setImage(null);
+            if ($oldReference !== null && $oldReference !== $newReference) {
+                $this->questionImageService->removeImageFile($oldReference);
+            }
+
+            return;
+        }
+
+        if ($imageUrl !== null) {
+            $oldReference = $question->getImageFileReference();
+            $question->setImage($imageUrl !== '' ? $imageUrl : null);
+            $question->setImageFileReference(null);
+            if ($oldReference !== null) {
+                $this->questionImageService->removeImageFile($oldReference);
+            }
+
+            return;
+        }
+
+        if ($image !== null) {
+            $oldReference = $question->getImageFileReference();
+            $question->setImage($image !== '' ? $image : null);
+            $question->setImageFileReference(null);
+            if ($oldReference !== null) {
+                $this->questionImageService->removeImageFile($oldReference);
+            }
+        }
     }
 
     private function renderPdfHtml(QuestionPaperPreviewResponseDTO $preview): string

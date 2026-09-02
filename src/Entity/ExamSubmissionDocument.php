@@ -9,9 +9,9 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: ExamSubmissionDocumentRepository::class)]
 #[ORM\Table(name: 'exam_submission_documents')]
-#[ORM\Index(name: 'idx_exam_submission_document_attempt', fields: ['exam_attempt_id'])]
-#[ORM\Index(name: 'idx_exam_submission_document_uploaded_by', fields: ['uploaded_by_id'])]
-#[ORM\Index(name: 'idx_exam_submission_document_status', fields: ['processing_status'])]
+#[ORM\Index(name: 'idx_exam_submission_document_attempt', fields: ['examAttempt'])]
+#[ORM\Index(name: 'idx_exam_submission_document_uploaded_by', fields: ['uploadedBy'])]
+#[ORM\Index(name: 'idx_exam_submission_document_status', fields: ['processingStatus'])]
 class ExamSubmissionDocument extends AbstractEntity
 {
     #[ORM\ManyToOne(targetEntity: ExamAttempt::class, inversedBy: 'submissionDocuments')]
