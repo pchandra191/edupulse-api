@@ -6,6 +6,7 @@ namespace App\Controller\ExaminationModule;
 use App\Common\Api\Controller\AbstractApiController;
 use App\Common\Api\Response\ApiResponseFactory;
 use App\DTO\ExaminationModule\ExamSubjectResponseDTO;
+use App\DTO\ExaminationModule\StartExamSubjectResponseDTO;
 use App\DTO\ExaminationModule\UpdateExamSubjectRequestDTO;
 use App\Entity\User;
 use App\Exception\AuthenticationException;
@@ -115,6 +116,31 @@ class ExamSubjectController extends AbstractApiController
         }
 
         return $this->deleted('Exam subject archived successfully.');
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/examinations/{examinationId}/subjects/{examSubjectId}/start', name: 'exam_subject_start', methods: ['POST'])]
+    public function start(string $examinationId, string $examSubjectId): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $result = $this->examinationService->startExamSubject(
+                $this->parseUuid($examSubjectId),
+                $instituteId,
+            );
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            return $this->unprocessableEntity($e->getMessage());
+        }
+
+        if (!$result->success) {
+            return $this->success($result->message, $result);
+        }
+
+        return $this->success($result->message, $result);
     }
 
     private function getCurrentInstituteId(): ?Uuid

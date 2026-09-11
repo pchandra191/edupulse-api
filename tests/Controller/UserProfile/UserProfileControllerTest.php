@@ -237,7 +237,6 @@ class UserProfileControllerTest extends WebTestCase
     public function testTeacherCanUpdateOwnProfile(): void
     {
         $this->client->request('PUT', '/api/v1/users/' . $this->teacherAId . '/profile', [], [], $this->authHeaders($this->teacherAToken), json_encode([
-            'firstName' => 'Updated',
             'mobile' => '9999999999',
         ]));
 
@@ -245,10 +244,7 @@ class UserProfileControllerTest extends WebTestCase
         $this->assertSame(200, $response->getStatusCode());
 
         $data = json_decode($response->getContent(), true);
-
-        $data = json_decode($response->getContent(), true);
         $this->assertTrue($data['success']);
-        $this->assertSame('Updated', $data['data']['firstName']);
         $this->assertSame('9999999999', $data['data']['mobile']);
     }
 
@@ -1314,7 +1310,7 @@ class UserProfileControllerTest extends WebTestCase
     public function testStudentCanUpdateOwnProfile(): void
     {
         $this->client->request('PUT', '/api/v1/users/' . $this->studentId . '/profile', [], [], $this->authHeaders($this->studentToken), json_encode([
-            'firstName' => 'Updated Student',
+            'mobile' => '8888888888',
         ]));
 
         $response = $this->client->getResponse();
@@ -1322,7 +1318,7 @@ class UserProfileControllerTest extends WebTestCase
 
         $data = json_decode($response->getContent(), true);
         $this->assertTrue($data['success']);
-        $this->assertSame('Updated Student', $data['data']['firstName']);
+        $this->assertSame('8888888888', $data['data']['mobile']);
     }
 
     public function testStudentCannotAccessOtherUserProfile(): void

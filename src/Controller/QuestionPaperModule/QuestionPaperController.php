@@ -171,6 +171,26 @@ class QuestionPaperController extends AbstractApiController
     }
 
     #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/question-papers/{id}/clone', name: 'question_paper_clone', methods: ['POST'])]
+    public function clone(string $id): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $this->requirePermission('question-papers.create');
+
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $paper = $this->questionPaperService->cloneQuestionPaper($this->parseUuid($id), $instituteId);
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            return $this->unprocessableEntity($e->getMessage());
+        }
+
+        return $this->created('Question paper cloned successfully.', $paper);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
     #[Route('/question-papers/{id}', name: 'question_paper_get', methods: ['GET'])]
     public function get(string $id): \Symfony\Component\HttpFoundation\JsonResponse
     {

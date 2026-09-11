@@ -30,11 +30,10 @@ readonly class CreateExamSessionRequestDTO
         #[Assert\Uuid(message: 'Invalid UUID format.')]
         public string $academicClassId,
 
-        #[Assert\NotBlank]
         #[Assert\All([
             new Assert\Uuid(message: 'Invalid section UUID.'),
         ])]
-        public array $sectionIds,
+        public array $sectionIds = [],
 
         #[Assert\PositiveOrZero]
         public int $totalMarks = 0,

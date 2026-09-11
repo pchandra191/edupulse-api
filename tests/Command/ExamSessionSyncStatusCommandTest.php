@@ -5,6 +5,7 @@ namespace App\Tests\Command;
 
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
+use App\Entity\ExamAttempt;
 use App\Entity\ExamSession;
 use App\Entity\Institute;
 use App\Entity\QuestionPaper;
@@ -13,6 +14,7 @@ use App\Entity\Subject;
 use App\Entity\User;
 use App\Enum\AcademicYearStatus;
 use App\Enum\ClassStatus;
+use App\Enum\ExamAttemptStatus;
 use App\Enum\ExamSessionStatus;
 use App\Enum\InstituteStatus;
 use App\Enum\QuestionPaperStatus;
@@ -355,5 +357,396 @@ class ExamSessionSyncStatusCommandTest extends KernelTestCase
 
         $updatedSession = $entityManager->getRepository(ExamSession::class)->find($session->getId());
         $this->assertSame('ACTIVE', $updatedSession->getStatus()->value);
+    }
+
+    public function testActiveSessionWithInProgressAttemptsBecomesClosedAndAttemptsFinalized(): void
+    {
+        $entityManager = self::getContainer()->get('doctrine')->getManager();
+
+        $pastStart = new \DateTimeImmutable('-2 hours', new \DateTimeZone('UTC'));
+        $pastEnd = new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC'));
+
+        $session = $this->createExamSession('Expired Session With Attempts', 'ACTIVE', $pastStart, $pastEnd);
+
+        // Create a student
+        $student = new User();
+        $studentId = Uuid::v7();
+        $reflection = new \ReflectionClass($student);
+        $property = $reflection->getProperty('id');
+        $property->setAccessible(true);
+        $property->setValue($student, $studentId);
+        $student->setEmail('student-sync-test-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        // Create enrollment
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $enrollmentSection = new \App\Entity\EnrollmentSection();
+        $enrollmentSection->setStudentEnrollment($enrollment);
+        $enrollmentSection->setSection($entityManager->getRepository(Section::class)->find($this->testSectionId));
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->persist($enrollmentSection);
+        $entityManager->flush();
+
+        // Create in-progress attempt
+        $attempt = new ExamAttempt();
+        $attempt->setExamSession($session);
+        $attempt->setStudent($student);
+        $attempt->setStatus(ExamAttemptStatus::InProgress);
+        $attempt->setStartedAt(new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC')));
+        $attempt->setAllowedDurationSeconds(3600);
+        $attempt->setExpiresAt(new \DateTimeImmutable('+1 hour', new \DateTimeZone('UTC')));
+
+        $entityManager->persist($attempt);
+        $entityManager->flush();
+
+        $this->createdEmails[] = 'student-sync-test-' . $this->unique . '@edupulse.ai';
+
+        $application = new Application(self::$kernel);
+        $command = $application->find('app:exam-sessions:sync-status');
+        $commandTester = new CommandTester($command);
+        $commandTester->execute([]);
+
+        $commandTester->assertCommandIsSuccessful();
+
+        $updatedSession = $entityManager->getRepository(ExamSession::class)->find($session->getId());
+        $this->assertSame('CLOSED', $updatedSession->getStatus()->value);
+
+        $updatedAttempt = $entityManager->getRepository(ExamAttempt::class)->find($attempt->getId());
+        $this->assertSame('SUBMITTED', $updatedAttempt->getStatus()->value);
+        $this->assertNotNull($updatedAttempt->getSubmittedAt());
+        $this->assertNull($updatedAttempt->getAutoSubmittedAt());
+    }
+
+    public function testPublishedOverdueSessionWithInProgressAttemptsBecomesClosedAndAttemptsAutoSubmitted(): void
+    {
+        $entityManager = self::getContainer()->get('doctrine')->getManager();
+
+        $pastStart = new \DateTimeImmutable('-2 hours', new \DateTimeZone('UTC'));
+        $pastEnd = new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC'));
+
+        $session = $this->createExamSession('Overdue Session With Attempts', 'PUBLISHED', $pastStart, $pastEnd);
+
+        // Create a student
+        $student = new User();
+        $studentId = Uuid::v7();
+        $reflection = new \ReflectionClass($student);
+        $property = $reflection->getProperty('id');
+        $property->setAccessible(true);
+        $property->setValue($student, $studentId);
+        $student->setEmail('student-sync-test2-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        // Create enrollment
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM2' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $enrollmentSection = new \App\Entity\EnrollmentSection();
+        $enrollmentSection->setStudentEnrollment($enrollment);
+        $enrollmentSection->setSection($entityManager->getRepository(Section::class)->find($this->testSectionId));
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->persist($enrollmentSection);
+        $entityManager->flush();
+
+        // Create in-progress attempt that is already expired
+        $attempt = new ExamAttempt();
+        $attempt->setExamSession($session);
+        $attempt->setStudent($student);
+        $attempt->setStatus(ExamAttemptStatus::InProgress);
+        $attempt->setStartedAt(new \DateTimeImmutable('-3 hours', new \DateTimeZone('UTC')));
+        $attempt->setAllowedDurationSeconds(3600);
+        $attempt->setExpiresAt(new \DateTimeImmutable('-2 hours', new \DateTimeZone('UTC')));
+
+        $entityManager->persist($attempt);
+        $entityManager->flush();
+
+        $this->createdEmails[] = 'student-sync-test2-' . $this->unique . '@edupulse.ai';
+
+        $application = new Application(self::$kernel);
+        $command = $application->find('app:exam-sessions:sync-status');
+        $commandTester = new CommandTester($command);
+        $commandTester->execute([]);
+
+        $commandTester->assertCommandIsSuccessful();
+
+        $updatedSession = $entityManager->getRepository(ExamSession::class)->find($session->getId());
+        $this->assertSame('CLOSED', $updatedSession->getStatus()->value);
+
+        $updatedAttempt = $entityManager->getRepository(ExamAttempt::class)->find($attempt->getId());
+        $this->assertSame('AUTO_SUBMITTED', $updatedAttempt->getStatus()->value);
+        $this->assertNotNull($updatedAttempt->getSubmittedAt());
+        $this->assertNotNull($updatedAttempt->getAutoSubmittedAt());
+        $this->assertNotNull($updatedAttempt->getTimeTakenSeconds());
+    }
+
+    public function testAlreadySubmittedAttemptsRemainUnchanged(): void
+    {
+        $entityManager = self::getContainer()->get('doctrine')->getManager();
+
+        $pastStart = new \DateTimeImmutable('-2 hours', new \DateTimeZone('UTC'));
+        $pastEnd = new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC'));
+
+        $session = $this->createExamSession('Session With Submitted Attempt', 'ACTIVE', $pastStart, $pastEnd);
+
+        // Create a student
+        $student = new User();
+        $studentId = Uuid::v7();
+        $reflection = new \ReflectionClass($student);
+        $property = $reflection->getProperty('id');
+        $property->setAccessible(true);
+        $property->setValue($student, $studentId);
+        $student->setEmail('student-sync-test3-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        // Create enrollment
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM3' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $enrollmentSection = new \App\Entity\EnrollmentSection();
+        $enrollmentSection->setStudentEnrollment($enrollment);
+        $enrollmentSection->setSection($entityManager->getRepository(Section::class)->find($this->testSectionId));
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->persist($enrollmentSection);
+        $entityManager->flush();
+
+        // Create already submitted attempt
+        $attempt = new ExamAttempt();
+        $attempt->setExamSession($session);
+        $attempt->setStudent($student);
+        $attempt->setStatus(ExamAttemptStatus::Submitted);
+        $attempt->setStartedAt(new \DateTimeImmutable('-2 hours', new \DateTimeZone('UTC')));
+        $attempt->setSubmittedAt(new \DateTimeImmutable('-1.5 hours', new \DateTimeZone('UTC')));
+        $attempt->setAllowedDurationSeconds(3600);
+        $attempt->setExpiresAt(new \DateTimeImmutable('+1 hour', new \DateTimeZone('UTC')));
+
+        $entityManager->persist($attempt);
+        $entityManager->flush();
+
+        $originalSubmittedAt = $attempt->getSubmittedAt();
+
+        $this->createdEmails[] = 'student-sync-test3-' . $this->unique . '@edupulse.ai';
+
+        $application = new Application(self::$kernel);
+        $command = $application->find('app:exam-sessions:sync-status');
+        $commandTester = new CommandTester($command);
+        $commandTester->execute([]);
+
+        $commandTester->assertCommandIsSuccessful();
+
+        $updatedAttempt = $entityManager->getRepository(ExamAttempt::class)->find($attempt->getId());
+        $this->assertSame('SUBMITTED', $updatedAttempt->getStatus()->value);
+        $this->assertEquals($originalSubmittedAt, $updatedAttempt->getSubmittedAt());
+    }
+
+    public function testMultipleInProgressAttemptsAllFinalized(): void
+    {
+        $entityManager = self::getContainer()->get('doctrine')->getManager();
+
+        $pastStart = new \DateTimeImmutable('-2 hours', new \DateTimeZone('UTC'));
+        $pastEnd = new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC'));
+
+        $session = $this->createExamSession('Session With Multiple Attempts', 'ACTIVE', $pastStart, $pastEnd);
+
+        $attemptIds = [];
+
+        for ($i = 0; $i < 3; $i++) {
+            // Create a student
+            $student = new User();
+            $studentId = Uuid::v7();
+            $reflection = new \ReflectionClass($student);
+            $property = $reflection->getProperty('id');
+            $property->setAccessible(true);
+            $property->setValue($student, $studentId);
+            $student->setEmail('student-sync-multi-' . $i . '-' . $this->unique . '@edupulse.ai');
+            $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+            $student->setRoles([UserRole::Student->value]);
+            $student->setStatus(UserStatus::Active);
+            $student->verify();
+            $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+            // Create enrollment
+            $enrollment = new \App\Entity\StudentEnrollment();
+            $enrollment->setStudent($student);
+            $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+            $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+            $enrollment->setAdmissionNumber('ADM-MULTI-' . $i . '-' . $this->unique);
+            $enrollment->setIsCurrent(true);
+            $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+            $enrollment->setInstituteId($this->testInstituteId);
+
+            $enrollmentSection = new \App\Entity\EnrollmentSection();
+            $enrollmentSection->setStudentEnrollment($enrollment);
+            $enrollmentSection->setSection($entityManager->getRepository(Section::class)->find($this->testSectionId));
+
+            $entityManager->persist($student);
+            $entityManager->persist($enrollment);
+            $entityManager->persist($enrollmentSection);
+            $entityManager->flush();
+
+            // Create in-progress attempt
+            $attempt = new ExamAttempt();
+            $attempt->setExamSession($session);
+            $attempt->setStudent($student);
+            $attempt->setStatus(ExamAttemptStatus::InProgress);
+            $attempt->setStartedAt(new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC')));
+            $attempt->setAllowedDurationSeconds(3600);
+            $attempt->setExpiresAt(new \DateTimeImmutable('+1 hour', new \DateTimeZone('UTC')));
+
+            $entityManager->persist($attempt);
+            $entityManager->flush();
+
+            $attemptIds[] = $attempt->getId();
+            $this->createdEmails[] = 'student-sync-multi-' . $i . '-' . $this->unique . '@edupulse.ai';
+        }
+
+        $application = new Application(self::$kernel);
+        $command = $application->find('app:exam-sessions:sync-status');
+        $commandTester = new CommandTester($command);
+        $commandTester->execute([]);
+
+        $commandTester->assertCommandIsSuccessful();
+
+        $updatedSession = $entityManager->getRepository(ExamSession::class)->find($session->getId());
+        $this->assertSame('CLOSED', $updatedSession->getStatus()->value);
+
+        foreach ($attemptIds as $attemptId) {
+            $updatedAttempt = $entityManager->getRepository(ExamAttempt::class)->find($attemptId);
+            $this->assertSame('SUBMITTED', $updatedAttempt->getStatus()->value);
+            $this->assertNotNull($updatedAttempt->getSubmittedAt());
+        }
+    }
+
+    public function testSyncCommandIdempotentForAttempts(): void
+    {
+        $entityManager = self::getContainer()->get('doctrine')->getManager();
+
+        $pastStart = new \DateTimeImmutable('-2 hours', new \DateTimeZone('UTC'));
+        $pastEnd = new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC'));
+
+        $session = $this->createExamSession('Idempotent Attempt Session', 'ACTIVE', $pastStart, $pastEnd);
+
+        // Create a student
+        $student = new User();
+        $studentId = Uuid::v7();
+        $reflection = new \ReflectionClass($student);
+        $property = $reflection->getProperty('id');
+        $property->setAccessible(true);
+        $property->setValue($student, $studentId);
+        $student->setEmail('student-sync-idempotent-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        // Create enrollment
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM-IDEM' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $enrollmentSection = new \App\Entity\EnrollmentSection();
+        $enrollmentSection->setStudentEnrollment($enrollment);
+        $enrollmentSection->setSection($entityManager->getRepository(Section::class)->find($this->testSectionId));
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->persist($enrollmentSection);
+        $entityManager->flush();
+
+        // Create in-progress attempt
+        $attempt = new ExamAttempt();
+        $attempt->setExamSession($session);
+        $attempt->setStudent($student);
+        $attempt->setStatus(ExamAttemptStatus::InProgress);
+        $attempt->setStartedAt(new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC')));
+        $attempt->setAllowedDurationSeconds(3600);
+        $attempt->setExpiresAt(new \DateTimeImmutable('+1 hour', new \DateTimeZone('UTC')));
+
+        $entityManager->persist($attempt);
+        $entityManager->flush();
+
+        $this->createdEmails[] = 'student-sync-idempotent-' . $this->unique . '@edupulse.ai';
+
+        $application = new Application(self::$kernel);
+        $command = $application->find('app:exam-sessions:sync-status');
+        $commandTester = new CommandTester($command);
+
+        // Run first time
+        $commandTester->execute([]);
+        $commandTester->assertCommandIsSuccessful();
+
+        $attemptAfterFirst = $entityManager->getRepository(ExamAttempt::class)->find($attempt->getId());
+        $firstSubmittedAt = $attemptAfterFirst->getSubmittedAt();
+        $this->assertSame('SUBMITTED', $attemptAfterFirst->getStatus()->value);
+
+        // Run second time
+        $commandTester->execute([]);
+        $commandTester->assertCommandIsSuccessful();
+
+        $attemptAfterSecond = $entityManager->getRepository(ExamAttempt::class)->find($attempt->getId());
+        $this->assertSame('SUBMITTED', $attemptAfterSecond->getStatus()->value);
+        $this->assertEquals($firstSubmittedAt, $attemptAfterSecond->getSubmittedAt());
+    }
+
+    public function testSessionWithNoInProgressAttemptsClosesNormally(): void
+    {
+        $entityManager = self::getContainer()->get('doctrine')->getManager();
+
+        $pastStart = new \DateTimeImmutable('-2 hours', new \DateTimeZone('UTC'));
+        $pastEnd = new \DateTimeImmutable('-1 hour', new \DateTimeZone('UTC'));
+
+        $session = $this->createExamSession('Empty Session', 'ACTIVE', $pastStart, $pastEnd);
+
+        $application = new Application(self::$kernel);
+        $command = $application->find('app:exam-sessions:sync-status');
+        $commandTester = new CommandTester($command);
+        $commandTester->execute([]);
+
+        $commandTester->assertCommandIsSuccessful();
+
+        $updatedSession = $entityManager->getRepository(ExamSession::class)->find($session->getId());
+        $this->assertSame('CLOSED', $updatedSession->getStatus()->value);
     }
 }

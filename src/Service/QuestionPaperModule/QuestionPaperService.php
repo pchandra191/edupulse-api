@@ -16,9 +16,11 @@ use App\DTO\QuestionPaperModule\UpdateQuestionRequestDTO;
 use App\DTO\Response\QuestionPaperListResponse;
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
+use App\Entity\ExamSubject;
 use App\Entity\Examination;
 use App\Entity\Institute;
 use App\Entity\Question;
+use App\Entity\QuestionOption;
 use App\Entity\QuestionPaper;
 use App\Entity\Section;
 use App\Entity\Subject;
@@ -51,6 +53,139 @@ readonly class QuestionPaperService
         private \Symfony\Component\Workflow\Registry $workflowRegistry,
         private QuestionImageService $questionImageService,
     ) {
+    }
+
+    public function cloneQuestionPaper(Uuid $id, ?Uuid $instituteId): QuestionPaperResponseDTO
+    {
+        $sourcePaper = $this->questionPaperRepository->findById($id, $instituteId);
+
+        if (!$sourcePaper instanceof QuestionPaper) {
+            throw new AuthenticationException('Question paper not found.');
+        }
+
+        try {
+            $this->entityManager->beginTransaction();
+
+            $newPaper = $this->performClone($sourcePaper);
+            $this->entityManager->persist($newPaper);
+            $this->entityManager->flush();
+
+            $this->entityManager->commit();
+
+            return $this->mapToResponse($newPaper);
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            $this->logger->error('Failed to clone question paper.', [
+                'question_paper_id' => (string) $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \App\Common\Exception\BusinessException('Failed to clone question paper. Please try again.', previous: $e);
+        }
+    }
+
+    public function performClone(QuestionPaper $sourcePaper): QuestionPaper
+    {
+        $sourceQuestions = $this->questionRepository->findByPaper($sourcePaper->getId());
+
+        $newPaper = $this->cloneQuestionPaperEntity($sourcePaper);
+        $newPaper->setTitle($this->generateUniqueTitle($sourcePaper->getTitle(), $sourcePaper->getInstitute()->getId()));
+
+        foreach ($sourcePaper->getClasses() as $class) {
+            $newPaper->addClass($class);
+        }
+
+        foreach ($sourcePaper->getSections() as $section) {
+            $newPaper->addSection($section);
+        }
+
+        $this->entityManager->persist($newPaper);
+
+        foreach ($sourceQuestions as $sourceQuestion) {
+            $newQuestion = $this->cloneQuestion($sourceQuestion, $newPaper);
+            $newPaper->addQuestion($newQuestion);
+            $this->entityManager->persist($newQuestion);
+
+            foreach ($sourceQuestion->getOptions() as $sourceOption) {
+                $newOption = $this->cloneQuestionOption($sourceOption, $newQuestion);
+                $newQuestion->addOption($newOption);
+                $this->entityManager->persist($newOption);
+            }
+
+            if ($sourceQuestion->getImageFileReference() !== null) {
+                $newReference = $this->questionImageService->copyImageFile(
+                    $sourceQuestion->getImageFileReference(),
+                    $newPaper->getId(),
+                    $newQuestion->getId()
+                );
+                $newQuestion->setImageFileReference($newReference);
+                $newQuestion->setImage(null);
+            }
+        }
+
+        return $newPaper;
+    }
+
+    private function cloneQuestionPaperEntity(QuestionPaper $source): QuestionPaper
+    {
+        $newPaper = new QuestionPaper();
+        $newPaper->setInstitute($source->getInstitute());
+        $newPaper->setAcademicYear($source->getAcademicYear());
+        $newPaper->setSubject($source->getSubject());
+        $newPaper->setTitle($source->getTitle());
+        $newPaper->setDate($source->getDate());
+        $newPaper->setDuration($source->getDuration());
+        $newPaper->setMaximumMarks($source->getMaximumMarks());
+        $newPaper->setInstructions($source->getInstructions());
+        $newPaper->setStatus(QuestionPaperStatus::Draft);
+        $newPaper->setCreatedBy($source->getCreatedBy());
+
+        return $newPaper;
+    }
+
+    private function cloneQuestion(Question $source, QuestionPaper $newPaper): Question
+    {
+        $newQuestion = new Question();
+        $newQuestion->setQuestionPaper($newPaper);
+        $newQuestion->setType($source->getType());
+        $newQuestion->setQuestionText($source->getQuestionText());
+        $newQuestion->setMarks($source->getMarks());
+        $newQuestion->setDisplayOrder($source->getDisplayOrder());
+        $newQuestion->setReferenceAnswer($source->getReferenceAnswer());
+
+        if ($source->getImage() !== null) {
+            $newQuestion->setImage($source->getImage());
+        }
+
+        return $newQuestion;
+    }
+
+    private function cloneQuestionOption(QuestionOption $source, Question $newQuestion): QuestionOption
+    {
+        $newOption = new QuestionOption();
+        $newOption->setQuestion($newQuestion);
+        $newOption->setOptionText($source->getOptionText());
+        $newOption->setDisplayOrder($source->getDisplayOrder());
+        $newOption->setIsCorrect($source->isCorrect());
+
+        return $newOption;
+    }
+
+    private function generateUniqueTitle(string $title, Uuid $instituteId): string
+    {
+        if (!$this->questionPaperRepository->titleExistsForInstitute($title . ' (Copy)', $instituteId)) {
+            return $title . ' (Copy)';
+        }
+
+        $counter = 2;
+        while ($this->questionPaperRepository->titleExistsForInstitute($title . ' (Copy ' . $counter . ')', $instituteId)) {
+            $counter++;
+        }
+
+        return $title . ' (Copy ' . $counter . ')';
     }
 
     public function getQuestionPapers(?Uuid $instituteId, QuestionPaperFilterRequest $filter): QuestionPaperListResponse
@@ -187,7 +322,7 @@ readonly class QuestionPaperService
         }
 
         if ($this->questionPaperRepository->titleExistsForInstitute($request->title, $instituteId)) {
-            throw new \App\Common\Exception\BusinessException('Question paper title already exists for this institute.');
+            throw new \App\Common\Exception\BusinessException('Question paper with same title already exists for this institute.');
         }
 
         $date = \DateTimeImmutable::createFromFormat('Y-m-d', $request->date);
@@ -221,6 +356,8 @@ readonly class QuestionPaperService
 
             if ($examination !== null) {
                 $paper->setExamination($examination);
+
+                $this->linkPaperToExamSubject($paper, $examination, $subject);
             }
 
             $this->entityManager->persist($paper);
@@ -233,7 +370,7 @@ readonly class QuestionPaperService
                 $this->entityManager->rollback();
             }
 
-            throw new \App\Common\Exception\BusinessException('Question paper title already exists for this institute.', previous: $e);
+            throw new \App\Common\Exception\BusinessException('Question paper with same title already exists for this institute.', previous: $e);
         } catch (\ValueError $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -266,16 +403,29 @@ readonly class QuestionPaperService
         }
     }
 
+    private function linkPaperToExamSubject(
+        QuestionPaper $paper,
+        Examination $examination,
+        Subject $subject
+    ): void {
+        $examSubjectRepository = $this->entityManager->getRepository(ExamSubject::class);
+
+        $examSubject = $examSubjectRepository->findByExaminationAndSubject(
+            $examination->getId(),
+            $subject->getId()
+        );
+
+        if ($examSubject instanceof ExamSubject && $examSubject->getQuestionPaper() === null) {
+            $examSubject->setQuestionPaper($paper);
+        }
+    }
+
     public function updateQuestionPaper(Uuid $id, ?Uuid $instituteId, UpdateQuestionPaperRequestDTO $request): QuestionPaperResponseDTO
     {
         $paper = $this->questionPaperRepository->findById($id, $instituteId);
 
         if (!$paper instanceof QuestionPaper) {
             throw new AuthenticationException('Question paper not found.');
-        }
-
-        if ($paper->isFinalized() || $paper->isReview() || $paper->isArchived()) {
-            throw new \App\Common\Exception\BusinessException('Finalized, review, or archived question papers cannot be modified.');
         }
 
         try {
@@ -361,10 +511,6 @@ readonly class QuestionPaperService
 
         if (!$paper instanceof QuestionPaper) {
             throw new AuthenticationException('Question paper not found.');
-        }
-
-        if (!$paper->isDraft()) {
-            throw new \App\Common\Exception\BusinessException('Only draft question papers can be submitted for review.');
         }
 
         $questionCount = $this->questionRepository->countByPaper($paper->getId());
@@ -502,9 +648,9 @@ readonly class QuestionPaperService
                 $hasValidOption = false;
                 $correctCount = 0;
                 foreach ($rawOptions as $optionRow) {
-                    if (empty($optionRow['optionText'])) {
-                        throw new \InvalidArgumentException('All MCQ options must have text.');
-                    }
+                    // if (empty($optionRow['optionText'])) {
+                    //     throw new \InvalidArgumentException('All MCQ options must have text.');
+                    // }
                     $hasValidOption = true;
                     if ((bool) ($optionRow['isCorrect'] ?? false) === true) {
                         $correctCount++;
@@ -641,10 +787,6 @@ readonly class QuestionPaperService
             throw new AuthenticationException('Question paper not found.');
         }
 
-        if (!$paper->isDraft()) {
-            throw new \App\Common\Exception\BusinessException('Questions can only be added to draft question papers.');
-        }
-
         $type = QuestionType::from($request->type);
 
         if ($type === QuestionType::MCQ && empty($request->options)) {
@@ -758,10 +900,6 @@ readonly class QuestionPaperService
             throw new AuthenticationException('Question paper not found.');
         }
 
-        if (!$paper->isDraft()) {
-            throw new \App\Common\Exception\BusinessException('Questions can only be modified in draft question papers.');
-        }
-
         $question = $this->questionRepository->findById($questionId, $paperId);
 
         if (!$question instanceof Question) {
@@ -826,10 +964,6 @@ readonly class QuestionPaperService
             throw new AuthenticationException('Question paper not found.');
         }
 
-        if (!$paper->isDraft()) {
-            throw new \App\Common\Exception\BusinessException('Questions can only be deleted from draft question papers.');
-        }
-
         $question = $this->questionRepository->findById($questionId, $paperId);
 
         if (!$question instanceof Question) {
@@ -860,10 +994,6 @@ readonly class QuestionPaperService
 
         if (!$paper instanceof QuestionPaper) {
             throw new AuthenticationException('Question paper not found.');
-        }
-
-        if (!$paper->isDraft()) {
-            throw new \App\Common\Exception\BusinessException('Questions can only be reordered in draft question papers.');
         }
 
         try {
@@ -922,10 +1052,6 @@ readonly class QuestionPaperService
 
         if (!$paper instanceof QuestionPaper) {
             throw new AuthenticationException('Question paper not found.');
-        }
-
-        if (!$paper->isDraft()) {
-            throw new \App\Common\Exception\BusinessException('Question image can only be modified in draft question papers.');
         }
 
         $question = $this->questionRepository->findById($questionId, $paperId);
@@ -1017,7 +1143,7 @@ readonly class QuestionPaperService
             $instituteId = $paper->getInstitute()->getId();
 
             if ($this->questionPaperRepository->titleExistsForInstitute($request->title, $instituteId, $paper->getId())) {
-                throw new \App\Common\Exception\BusinessException('Question paper title already exists for this institute.');
+                throw new \App\Common\Exception\BusinessException('Question paper with same title already exists for this institute.');
             }
 
             $paper->setTitle($request->title);

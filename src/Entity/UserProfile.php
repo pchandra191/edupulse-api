@@ -23,15 +23,7 @@ class UserProfile extends AbstractEntity
 
     #[Assert\Length(max: 100)]
     #[ORM\Column(length: 100, nullable: true)]
-    private ?string $firstName = null;
-
-    #[Assert\Length(max: 100)]
-    #[ORM\Column(length: 100, nullable: true)]
     private ?string $middleName = null;
-
-    #[Assert\Length(max: 100)]
-    #[ORM\Column(length: 100, nullable: true)]
-    private ?string $lastName = null;
 
     #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $dateOfBirth = null;
@@ -90,18 +82,6 @@ class UserProfile extends AbstractEntity
         return $this;
     }
 
-    public function getFirstName(): ?string
-    {
-        return $this->firstName;
-    }
-
-    public function setFirstName(?string $firstName): self
-    {
-        $this->firstName = $firstName !== null ? trim($firstName) : null;
-
-        return $this;
-    }
-
     public function getMiddleName(): ?string
     {
         return $this->middleName;
@@ -112,23 +92,6 @@ class UserProfile extends AbstractEntity
         $this->middleName = $middleName !== null ? trim($middleName) : null;
 
         return $this;
-    }
-
-    public function getLastName(): ?string
-    {
-        return $this->lastName;
-    }
-
-    public function setLastName(?string $lastName): self
-    {
-        $this->lastName = $lastName !== null ? trim($lastName) : null;
-
-        return $this;
-    }
-
-    public function getFullName(): string
-    {
-        return trim(($this->firstName ?? '') . ' ' . ($this->middleName ?? '') . ' ' . ($this->lastName ?? ''));
     }
 
     public function getDateOfBirth(): ?\DateTimeImmutable

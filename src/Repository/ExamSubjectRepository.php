@@ -8,6 +8,7 @@ use App\Entity\Examination;
 use App\Entity\Institute;
 use App\Entity\Section;
 use App\Entity\Subject;
+use App\Enum\ExaminationStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -91,6 +92,47 @@ class ExamSubjectRepository extends ServiceEntityRepository
         ];
     }
 
+    /**
+     * Find an exam subject by examination and subject, ignoring section.
+     * Returns the first matching exam subject (sections are not unique per subject).
+     */
+    public function findByExaminationAndSubject(
+        Uuid $examinationId,
+        Uuid $subjectId
+    ): ?ExamSubject {
+        $qb = $this->createQueryBuilder('es')
+            ->where('es.examination = :examination')
+            ->andWhere('es.subject = :subject')
+            ->setParameter('examination', $examinationId)
+            ->setParameter('subject', $subjectId)
+            ->setMaxResults(1);
+
+        return $qb->getQuery()->getOneOrNullResult();
+    }
+
+    public function findByExaminationSubjectAndSection(
+        Uuid $examinationId,
+        Uuid $subjectId,
+        ?Uuid $sectionId
+    ): ?ExamSubject {
+        $qb = $this->createQueryBuilder('es')
+            ->where('es.examination = :examination')
+            ->setParameter('examination', $examinationId);
+
+        if ($sectionId !== null) {
+            $qb->andWhere('es.subject = :subject')
+               ->andWhere('es.section = :section')
+               ->setParameter('subject', $subjectId)
+               ->setParameter('section', $sectionId);
+        } else {
+            $qb->andWhere('es.subject = :subject')
+               ->andWhere('es.section IS NULL')
+               ->setParameter('subject', $subjectId);
+        }
+
+        return $qb->getQuery()->getOneOrNullResult();
+    }
+
     public function existsByExaminationSubjectAndSection(
         Uuid $examinationId,
         Uuid $subjectId,
@@ -101,14 +143,18 @@ class ExamSubjectRepository extends ServiceEntityRepository
             ->select('COUNT(es.id)')
             ->where('es.examination = :examination')
             ->andWhere('es.subject = :subject')
-            ->andWhere('es.section IS NULL')
             ->setParameter('examination', $examinationId)
             ->setParameter('subject', $subjectId);
 
         if ($sectionId !== null) {
             $qb->andWhere('es.section = :section')
                ->setParameter('section', $sectionId);
+        } else {
+            $qb->andWhere('es.section IS NULL');
         }
+
+        $qb->andWhere('es.status != :archived')
+           ->setParameter('archived', \App\Enum\ExaminationStatus::Archived->value);
 
         if (null !== $excludeId) {
             $qb->andWhere('es.id != :excludeId')
@@ -182,5 +228,35 @@ class ExamSubjectRepository extends ServiceEntityRepository
             ->setParameter('examinationIds', $examinationIds)
             ->getQuery()
             ->execute();
+    }
+
+    /**
+     * @return array<int, ExamSubject>
+     */
+    public function findScheduledSubjectsWithTimes(): array
+    {
+        return $this->createQueryBuilder('es')
+            ->where('es.status = :scheduledStatus')
+            ->andWhere('es.examDate IS NOT NULL')
+            ->andWhere('es.startTime IS NOT NULL')
+            ->andWhere('es.endTime IS NOT NULL')
+            ->setParameter('scheduledStatus', ExaminationStatus::Scheduled->value)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * @return array<int, ExamSubject>
+     */
+    public function findOngoingSubjectsWithTimes(): array
+    {
+        return $this->createQueryBuilder('es')
+            ->where('es.status = :ongoingStatus')
+            ->andWhere('es.examDate IS NOT NULL')
+            ->andWhere('es.startTime IS NOT NULL')
+            ->andWhere('es.endTime IS NOT NULL')
+            ->setParameter('ongoingStatus', ExaminationStatus::Ongoing->value)
+            ->getQuery()
+            ->getResult();
     }
 }

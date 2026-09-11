@@ -1016,7 +1016,7 @@ class QuestionPaperControllerTest extends WebTestCase
 
         $updatePayload = json_encode(['title' => 'Hacked Title']);
         $client->request('PUT', '/api/v1/question-papers/' . $paperId, [], [], $this->getAuthHeaders($this->superAdminToken), $updatePayload);
-        $this->assertSame(400, $client->getResponse()->getStatusCode());
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
     }
 
     public function testSubmitForReviewInvalidWhenEmpty(): void
@@ -1785,7 +1785,7 @@ class QuestionPaperControllerTest extends WebTestCase
         return $data['data']['id'];
     }
 
-    public function testArchivedQuestionPaperCannotBeUpdated(): void
+    public function testArchivedQuestionPaperCanBeUpdated(): void
     {
         $client = $this->client;
 
@@ -1799,10 +1799,11 @@ class QuestionPaperControllerTest extends WebTestCase
         ]);
 
         $client->request('PUT', '/api/v1/question-papers/' . $paperId, [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
-        $this->assertSame(400, $client->getResponse()->getStatusCode());
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
 
         $data = json_decode($client->getResponse()->getContent(), true);
-        $this->assertStringContainsString('archived', strtolower($data['message']));
+        $this->assertTrue($data['success']);
+        $this->assertSame('Updated Archived Paper', $data['data']['title']);
     }
 
     public function testArchivedQuestionPaperCannotBeDeleted(): void
