@@ -333,4 +333,18 @@ class ExamAttemptRepository extends ServiceEntityRepository
 
         return $byStudent;
     }
+
+    /**
+     * @return ExamAttempt[]
+     */
+    public function findInProgressByExamSession(Uuid $examSessionId): array
+    {
+        return $this->createQueryBuilder('ea')
+            ->where('ea.examSession = :examSession')
+            ->andWhere('ea.status = :status')
+            ->setParameter('examSession', $examSessionId)
+            ->setParameter('status', 'IN_PROGRESS')
+            ->getQuery()
+            ->getResult();
+    }
 }

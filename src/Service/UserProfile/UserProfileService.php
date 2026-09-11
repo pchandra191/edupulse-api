@@ -27,30 +27,7 @@ readonly class UserProfileService
     {
         $profile = $this->userProfileRepository->findByUserId($user->getId());
 
-        if (!$profile instanceof UserProfile) {
-            return new UserProfileResponseDTO(
-                id: $user->getId()->toRfc4122(),
-                firstName: $user->getFirstName(),
-                middleName: null,
-                lastName: $user->getLastName(),
-                fullName: $user->getFullName(),
-                dateOfBirth: null,
-                gender: null,
-                bloodGroup: null,
-                mobile: $user->getPhone(),
-                alternateMobile: null,
-                profilePhotoReference: null,
-                nationality: null,
-                maritalStatus: null,
-                emergencyContactName: null,
-                emergencyContactPhone: null,
-                emergencyContactRelationship: null,
-                createdAt: $user->getCreatedAt()->format(DateTimeInterface::ATOM),
-                updatedAt: $user->getUpdatedAt()?->format(DateTimeInterface::ATOM),
-            );
-        }
-
-        return $this->mapToResponse($profile);
+        return $this->mapToResponse($user, $profile);
     }
 
     public function updateProfile(User $user, UpdateUserProfileRequestDTO $request): UserProfileResponseDTO
@@ -66,21 +43,13 @@ readonly class UserProfileService
         $this->updateFields($profile, $request);
         $this->entityManager->flush();
 
-        return $this->mapToResponse($profile);
+        return $this->mapToResponse($user, $profile);
     }
 
     private function updateFields(UserProfile $profile, UpdateUserProfileRequestDTO $request): void
     {
-        if ($request->firstName !== null) {
-            $profile->setFirstName($request->firstName);
-        }
-
         if ($request->middleName !== null) {
             $profile->setMiddleName($request->middleName);
-        }
-
-        if ($request->lastName !== null) {
-            $profile->setLastName($request->lastName);
         }
 
         if ($request->dateOfBirth !== null) {
@@ -132,27 +101,27 @@ readonly class UserProfileService
         }
     }
 
-    private function mapToResponse(UserProfile $profile): UserProfileResponseDTO
+    private function mapToResponse(User $user, ?UserProfile $profile): UserProfileResponseDTO
     {
         return new UserProfileResponseDTO(
-            id: $profile->getId()->toRfc4122(),
-            firstName: $profile->getFirstName(),
-            middleName: $profile->getMiddleName(),
-            lastName: $profile->getLastName(),
-            fullName: $profile->getFullName(),
-            dateOfBirth: $profile->getDateOfBirth()?->format('Y-m-d'),
-            gender: $profile->getGender()?->value,
-            bloodGroup: $profile->getBloodGroup()?->value,
-            mobile: $profile->getMobile(),
-            alternateMobile: $profile->getAlternateMobile(),
-            profilePhotoReference: $profile->getProfilePhotoReference(),
-            nationality: $profile->getNationality(),
-            maritalStatus: $profile->getMaritalStatus()?->value,
-            emergencyContactName: $profile->getEmergencyContactName(),
-            emergencyContactPhone: $profile->getEmergencyContactPhone(),
-            emergencyContactRelationship: $profile->getEmergencyContactRelationship(),
-            createdAt: $profile->getCreatedAt()->format(DateTimeInterface::ATOM),
-            updatedAt: $profile->getUpdatedAt()?->format(DateTimeInterface::ATOM),
+            id: $user->getId()->toRfc4122(),
+            firstName: $user->getFirstName(),
+            middleName: $profile?->getMiddleName(),
+            lastName: $user->getLastName(),
+            fullName: $user->getFullName(),
+            dateOfBirth: $profile?->getDateOfBirth()?->format('Y-m-d'),
+            gender: $profile?->getGender()?->value,
+            bloodGroup: $profile?->getBloodGroup()?->value,
+            mobile: $profile?->getMobile() ?? $user->getPhone(),
+            alternateMobile: $profile?->getAlternateMobile(),
+            profilePhotoReference: $profile?->getProfilePhotoReference(),
+            nationality: $profile?->getNationality(),
+            maritalStatus: $profile?->getMaritalStatus()?->value,
+            emergencyContactName: $profile?->getEmergencyContactName(),
+            emergencyContactPhone: $profile?->getEmergencyContactPhone(),
+            emergencyContactRelationship: $profile?->getEmergencyContactRelationship(),
+            createdAt: $user->getCreatedAt()->format(DateTimeInterface::ATOM),
+            updatedAt: $user->getUpdatedAt()?->format(DateTimeInterface::ATOM),
         );
     }
 }

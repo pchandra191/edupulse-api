@@ -10,16 +10,19 @@ use App\DTO\ExamSessionModule\UpdateExamSessionRequestDTO;
 use App\DTO\Response\ExamSessionListResponse;
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
+use App\Entity\ExamAttempt;
 use App\Entity\ExamSession;
 use App\Entity\Institute;
 use App\Entity\QuestionPaper;
 use App\Entity\Section;
 use App\Entity\User;
+use App\Enum\ExamAttemptStatus;
 use App\Enum\ExamSessionStatus;
 use App\Enum\Timezone;
 use App\Exception\AuthenticationException;
 use App\Repository\AcademicClassRepository;
 use App\Repository\AcademicYearRepository;
+use App\Repository\ExamAttemptRepository;
 use App\Repository\ExamSessionRepository;
 use App\Repository\InstituteRepository;
 use App\Repository\SectionRepository;
@@ -35,6 +38,7 @@ readonly class ExamSessionService
     public function __construct(
         private Security $security,
         private ExamSessionRepository $examSessionRepository,
+        private ExamAttemptRepository $examAttemptRepository,
         private InstituteRepository $instituteRepository,
         private AcademicYearRepository $academicYearRepository,
         private AcademicClassRepository $academicClassRepository,
@@ -206,10 +210,6 @@ readonly class ExamSessionService
             throw new \InvalidArgumentException('Academic class does not belong to the authenticated institute.');
         }
 
-        if (empty($request->sectionIds)) {
-            throw new \InvalidArgumentException('At least one section must be selected.');
-        }
-
         $validSectionIds = [];
         foreach ($request->sectionIds as $sectionId) {
             $section = $this->sectionRepository->find($sectionId);
@@ -274,6 +274,12 @@ readonly class ExamSessionService
             }
 
             throw $e;
+        } catch (\Doctrine\DBAL\Exception\UniqueConstraintViolationException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            throw new \App\Common\Exception\BusinessException('An exam session with this title already exists for your institute. Please use a different title.', previous: $e);
         } catch (\Throwable $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -285,7 +291,7 @@ readonly class ExamSessionService
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            throw new \App\Common\Exception\BusinessException($e->getMessage(), previous: $e);
+            throw new \App\Common\Exception\BusinessException('Failed to create exam session. Please try again.', previous: $e);
         }
     }
 
@@ -314,6 +320,12 @@ readonly class ExamSessionService
             }
 
             throw $e;
+        } catch (\Doctrine\DBAL\Exception\UniqueConstraintViolationException $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+
+            throw new \App\Common\Exception\BusinessException('An exam session with this title already exists for your institute. Please use a different title.', previous: $e);
         } catch (\Throwable $e) {
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
@@ -387,6 +399,12 @@ readonly class ExamSessionService
 
             if ($transition === 'publish') {
                 $examSession->setPublishedAt(new \DateTimeImmutable());
+            }
+
+            $now = new \DateTimeImmutable();
+
+            if ($transition === 'close') {
+                $this->finalizeInProgressAttempts($examSession, $now);
             }
 
             $this->entityManager->flush();
@@ -492,10 +510,6 @@ readonly class ExamSessionService
         }
 
         if ($request->sectionIds !== null) {
-            if (empty($request->sectionIds)) {
-                throw new \InvalidArgumentException('At least one section must be selected.');
-            }
-
             $validSectionIds = [];
             foreach ($request->sectionIds as $sectionId) {
                 $section = $this->sectionRepository->find($sectionId);
@@ -627,6 +641,7 @@ readonly class ExamSessionService
     {
         $activated = 0;
         $closed = 0;
+        $closedSessions = [];
 
         $publishedOverdue = $this->examSessionRepository->findPublishedOverdueForClosure($now);
         foreach ($publishedOverdue as $session) {
@@ -641,6 +656,7 @@ readonly class ExamSessionService
             if ($workflow->can($session, 'close')) {
                 $workflow->apply($session, 'close');
                 $closed++;
+                $closedSessions[] = $session;
                 $this->logger->info('Exam session {id}: ACTIVE → CLOSED (overdue)', ['id' => (string) $session->getId()]);
             }
         }
@@ -659,6 +675,7 @@ readonly class ExamSessionService
                 if ($workflow->can($session, 'close')) {
                     $workflow->apply($session, 'close');
                     $closed++;
+                    $closedSessions[] = $session;
                     $this->logger->info('Exam session {id}: ACTIVE → CLOSED', ['id' => (string) $session->getId()]);
                 }
                 continue;
@@ -680,11 +697,16 @@ readonly class ExamSessionService
             if ($workflow->can($session, 'close')) {
                 $workflow->apply($session, 'close');
                 $closed++;
+                $closedSessions[] = $session;
                 $this->logger->info('Exam session {id}: ACTIVE → CLOSED', ['id' => (string) $session->getId()]);
             }
         }
 
         $this->entityManager->flush();
+
+        foreach ($closedSessions as $session) {
+            $this->finalizeInProgressAttempts($session, $now);
+        }
 
         $summary = [
             'activated' => $activated,
@@ -698,5 +720,52 @@ readonly class ExamSessionService
         ]);
 
         return $summary;
+    }
+
+    /**
+     * Finalizes all IN_PROGRESS exam attempts for a closed session.
+     *
+     * @param ExamSession $session The exam session that was closed
+     * @param \DateTimeImmutable $now The timestamp to use for submission
+     */
+    private function finalizeInProgressAttempts(ExamSession $session, \DateTimeImmutable $now): void
+    {
+        $inProgressAttempts = $this->examAttemptRepository->findInProgressByExamSession($session->getId());
+
+        if (empty($inProgressAttempts)) {
+            return;
+        }
+
+        foreach ($inProgressAttempts as $attempt) {
+            $isExpired = $attempt->getExpiresAt() !== null && $now >= $attempt->getExpiresAt();
+
+            $workflow = $this->workflowRegistry->get($attempt);
+
+            if ($isExpired && $workflow->can($attempt, 'auto_submit')) {
+                $attempt->setSubmittedAt($now);
+                $attempt->setAutoSubmittedAt($now);
+                if ($attempt->getAllowedDurationSeconds() !== null && $attempt->getStartedAt() !== null) {
+                    $expiredAt = $attempt->getExpiresAt();
+                    if ($expiredAt !== null) {
+                        $elapsed = $expiredAt->getTimestamp() - $attempt->getStartedAt()->getTimestamp();
+                        $attempt->setTimeTakenSeconds(max(0, min($elapsed, $attempt->getAllowedDurationSeconds())));
+                    }
+                }
+                $workflow->apply($attempt, 'auto_submit');
+                $this->logger->info('Exam attempt {attemptId} auto-submitted due to session closure', [
+                    'attempt_id' => (string) $attempt->getId(),
+                    'session_id' => (string) $session->getId(),
+                ]);
+            } elseif ($workflow->can($attempt, 'submit')) {
+                $attempt->setSubmittedAt($now);
+                $workflow->apply($attempt, 'submit');
+                $this->logger->info('Exam attempt {attemptId} submitted due to session closure', [
+                    'attempt_id' => (string) $attempt->getId(),
+                    'session_id' => (string) $session->getId(),
+                ]);
+            }
+        }
+
+        $this->entityManager->flush();
     }
 }

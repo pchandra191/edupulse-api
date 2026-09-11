@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 namespace App\DTO\ExaminationModule;
 
+use App\Enum\ReadinessReason;
+use App\Enum\ReadinessStatus;
+use App\Enum\ExaminationStatus as StatusEnum;
+
 readonly class ExamSubjectResponseDTO
 {
     public function __construct(
@@ -22,6 +26,13 @@ readonly class ExamSubjectResponseDTO
         public ?int $passingMarks,
         public string $status,
         public ?string $remarks,
+        public ?QuestionPaperSummary $questionPaper,
+        public ?ExamSessionSummary $examSession,
+        public ?ReadinessStatus $readinessStatus,
+        public ?ReadinessReason $readinessReason,
+        public ?string $readinessMessage,
+        public bool $hasSession,
+        public bool $isValidated,
         public string $createdAt,
         public ?string $updatedAt,
     ) {

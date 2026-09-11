@@ -116,6 +116,39 @@ readonly class QuestionImageService
         return '/uploads/question-images/' . $relativePath;
     }
 
+    public function copyImageFile(string $relativePath, Uuid $newPaperId, Uuid $newQuestionId): string
+    {
+        $sourcePath = $this->getBaseDirectory() . '/' . $relativePath;
+
+        if (!file_exists($sourcePath)) {
+            throw new \RuntimeException(sprintf('Source image file not found: %s', $relativePath));
+        }
+
+        $parts = explode('/', $relativePath);
+        $filename = end($parts);
+        $instituteId = $parts[0] ?? '';
+
+        $newRelativePath = sprintf(
+            '%s/%s/%s/%s',
+            $instituteId,
+            $newPaperId->toRfc4122(),
+            $newQuestionId->toRfc4122(),
+            $filename
+        );
+
+        $destDir = $this->getBaseDirectory() . '/' . dirname($newRelativePath);
+
+        if (!is_dir($destDir) && !mkdir($destDir, 0755, true) && !is_dir($destDir)) {
+            throw new \RuntimeException(sprintf('Unable to create directory for image copy: %s', $destDir));
+        }
+
+        if (!copy($sourcePath, $this->getBaseDirectory() . '/' . $newRelativePath)) {
+            throw new \RuntimeException(sprintf('Failed to copy image file from %s to %s', $relativePath, $newRelativePath));
+        }
+
+        return $newRelativePath;
+    }
+
     private function removeFileIfExists(?string $relativePath): void
     {
         if ($relativePath === null) {

@@ -262,7 +262,6 @@ class ExaminationControllerTest extends WebTestCase
         $client->request('POST', '/api/v1/examinations', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
 
         $response = $client->getResponse();
-        var_dump($response->getContent());
         $this->assertSame(201, $response->getStatusCode());
 
         $data = json_decode($response->getContent(), true);
@@ -343,7 +342,6 @@ class ExaminationControllerTest extends WebTestCase
         $client->request('PUT', '/api/v1/examinations/' . $examinationId, [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
 
         $response = $client->getResponse();
-        var_dump($response->getContent());
         $this->assertSame(200, $response->getStatusCode());
 
         $data = json_decode($response->getContent(), true);
@@ -555,11 +553,9 @@ class ExaminationControllerTest extends WebTestCase
         $entityManager->flush();
 
         $studentToken = $this->login($client, $studentEmail, 'Student123!');
-        var_dump($studentToken);
 
         $client->request('GET', '/api/v1/examinations', [], [], $this->getAuthHeaders($studentToken));
         $response = $client->getResponse();
-        var_dump($response->getContent());
         $this->assertSame(403, $response->getStatusCode());
 
         $entityManager->getConnection()->executeStatement(
@@ -586,7 +582,7 @@ class ExaminationControllerTest extends WebTestCase
 
         $client->request('POST', '/api/v1/examinations/' . $examinationId . '/subjects', [], [], $this->getAuthHeaders($this->superAdminToken), $payload);
 
-        $response = $client->getResponse();
+        $response = $this->client->getResponse();
         $this->assertSame(201, $response->getStatusCode());
 
         $data = json_decode($response->getContent(), true);

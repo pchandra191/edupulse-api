@@ -262,6 +262,50 @@ class ExaminationController extends AbstractApiController
         return $this->created('Exam subject created successfully.', $examSubject);
     }
 
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/examinations/{id}/readiness', name: 'examination_readiness', methods: ['GET'])]
+    public function readiness(string $id): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $readiness = $this->examinationService->getExaminationReadiness(
+                $this->parseUuid($id),
+                $instituteId,
+            );
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage());
+        }
+
+        return $this->success('Examination readiness retrieved successfully.', $readiness);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/examinations/{id}/validate-and-start', name: 'examination_validate_and_start', methods: ['POST'])]
+    public function validateAndStart(string $id): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        try {
+            $instituteId = $this->getCurrentInstituteId();
+            $result = $this->examinationService->validateAndStartExam(
+                $this->parseUuid($id),
+                $instituteId,
+            );
+        } catch (AuthenticationException $e) {
+            return $this->notFound();
+        } catch (\App\Common\Exception\BusinessException $e) {
+            return $this->error($e->getMessage(), [], [], $e->getCode());
+        } catch (\InvalidArgumentException $e) {
+            return $this->unprocessableEntity($e->getMessage());
+        }
+
+        if (!$result->success) {
+            return $this->success($result->message, $result);
+        }
+
+        return $this->success($result->message, $result);
+    }
+
     private function getCurrentInstituteId(): ?Uuid
     {
         $user = $this->security->getUser();

@@ -19,6 +19,7 @@ readonly class ExaminationResponseDTO
         public string $startDate,
         public string $endDate,
         public string $status,
+        public ?ExaminationReadinessSummaryDTO $readiness,
         public string $createdAt,
         public ?string $updatedAt,
     ) {

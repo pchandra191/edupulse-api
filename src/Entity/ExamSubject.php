@@ -56,6 +56,13 @@ class ExamSubject extends AbstractEntity
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $remarks = null;
 
+    #[ORM\ManyToOne(targetEntity: QuestionPaper::class)]
+    #[ORM\JoinColumn(name: 'question_paper_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?QuestionPaper $questionPaper = null;
+
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $isValidated = false;
+
     public function __construct()
     {
         parent::__construct();
@@ -189,6 +196,30 @@ class ExamSubject extends AbstractEntity
     public function setRemarks(?string $remarks): self
     {
         $this->remarks = $remarks !== null ? trim($remarks) : null;
+
+        return $this;
+    }
+
+    public function getQuestionPaper(): ?QuestionPaper
+    {
+        return $this->questionPaper;
+    }
+
+    public function setQuestionPaper(?QuestionPaper $questionPaper): self
+    {
+        $this->questionPaper = $questionPaper;
+
+        return $this;
+    }
+
+    public function isValidated(): bool
+    {
+        return $this->isValidated;
+    }
+
+    public function setValidated(bool $isValidated): self
+    {
+        $this->isValidated = $isValidated;
 
         return $this;
     }

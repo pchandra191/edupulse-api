@@ -9,13 +9,7 @@ readonly class UpdateUserProfileRequestDTO
 {
     public function __construct(
         #[Assert\Length(max: 100)]
-        public ?string $firstName = null,
-
-        #[Assert\Length(max: 100)]
         public ?string $middleName = null,
-
-        #[Assert\Length(max: 100)]
-        public ?string $lastName = null,
 
         public ?string $dateOfBirth = null,
 
@@ -55,9 +49,7 @@ readonly class UpdateUserProfileRequestDTO
     public static function fromArray(array $data): self
     {
         return new self(
-            firstName: $data['firstName'] ?? null,
             middleName: $data['middleName'] ?? null,
-            lastName: $data['lastName'] ?? null,
             dateOfBirth: $data['dateOfBirth'] ?? null,
             gender: self::normalizeString($data['gender'] ?? null),
             bloodGroup: self::normalizeString($data['bloodGroup'] ?? null),

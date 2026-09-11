@@ -323,6 +323,21 @@ class ExamSessionRepository extends ServiceEntityRepository
         return $qb->getQuery()->getOneOrNullResult();
     }
 
+    public function findByExamSubject(Uuid $examSubjectId, ?Uuid $instituteId = null): ?ExamSession
+    {
+        $qb = $this->createQueryBuilder('es')
+            ->where('IDENTITY(es.examSubject) = :examSubject')
+            ->setParameter('examSubject', $examSubjectId)
+            ->orderBy('es.createdAt', 'DESC');
+
+        if ($instituteId !== null) {
+            $qb->andWhere('IDENTITY(es.institute) = :institute')
+               ->setParameter('institute', $instituteId);
+        }
+
+        return $qb->getQuery()->setMaxResults(1)->getOneOrNullResult();
+    }
+
     public function findPublishedReadyForActivation(\DateTimeImmutable $now): array
     {
         return $this->createQueryBuilder('es')

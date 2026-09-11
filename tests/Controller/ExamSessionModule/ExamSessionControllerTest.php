@@ -5,6 +5,7 @@ namespace App\Tests\Controller\ExamSessionModule;
 
 use App\Entity\AcademicClass;
 use App\Entity\AcademicYear;
+use App\Entity\ExamAttempt;
 use App\Entity\ExamSession;
 use App\Entity\ExamSubject;
 use App\Entity\Examination;
@@ -15,6 +16,7 @@ use App\Entity\Subject;
 use App\Entity\User;
 use App\Enum\AcademicYearStatus;
 use App\Enum\ClassStatus;
+use App\Enum\ExamAttemptStatus;
 use App\Enum\ExamSessionStatus;
 use App\Enum\InstituteStatus;
 use App\Enum\QuestionPaperStatus;
@@ -440,7 +442,7 @@ class ExamSessionControllerTest extends WebTestCase
         $this->assertSame('CANCELLED', $data['data']['status']);
     }
 
-    public function testClosing(): void
+public function testClosing(): void
     {
         $client = $this->client;
 
@@ -463,6 +465,99 @@ class ExamSessionControllerTest extends WebTestCase
         $data = json_decode($response->getContent(), true);
         $this->assertTrue($data['success']);
         $this->assertSame('CLOSED', $data['data']['status']);
+    }
+
+    public function testClosingSessionWithInProgressAttemptsFinalizesAttempts(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $sessionId = $this->createTestExamSession($this->superAdminToken);
+
+        $client->request('POST', '/api/v1/exam-sessions/' . $sessionId . '/schedule', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/exam-sessions/' . $sessionId . '/publish', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        $client->request('POST', '/api/v1/exam-sessions/' . $sessionId . '/start', [], [], $this->getAuthHeaders($this->superAdminToken));
+        $this->assertSame(200, $client->getResponse()->getStatusCode());
+
+        // Create a student with enrollment
+        $student = new User();
+        $studentId = Uuid::v7();
+        $reflection = new \ReflectionClass($student);
+        $property = $reflection->getProperty('id');
+        $property->setAccessible(true);
+        $property->setValue($student, $studentId);
+        $student->setEmail('student-close-test-' . $this->unique . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $enrollment = new \App\Entity\StudentEnrollment();
+        $enrollment->setStudent($student);
+        $enrollment->setAcademicYear($entityManager->getRepository(AcademicYear::class)->find($this->testAcademicYearId));
+        $enrollment->setAcademicClass($entityManager->getRepository(AcademicClass::class)->find($this->testClassId));
+        $enrollment->setAdmissionNumber('ADM-CLOSE' . $this->unique);
+        $enrollment->setIsCurrent(true);
+        $enrollment->setStatus(\App\Enum\StudentEnrollmentStatus::Active);
+        $enrollment->setInstituteId($this->testInstituteId);
+
+        $enrollmentSection = new \App\Entity\EnrollmentSection();
+        $enrollmentSection->setStudentEnrollment($enrollment);
+        $enrollmentSection->setSection($entityManager->getRepository(Section::class)->find($this->testSectionId));
+
+        $entityManager->persist($student);
+        $entityManager->persist($enrollment);
+        $entityManager->persist($enrollmentSection);
+        $entityManager->flush();
+
+        // Create in-progress attempt
+        $examSession = $entityManager->getRepository(ExamSession::class)->find($sessionId);
+        $this->assertNotNull($examSession);
+
+        $attempt = new ExamAttempt();
+        $attempt->setExamSession($examSession);
+        $attempt->setStudent($student);
+        $attempt->setStatus(ExamAttemptStatus::InProgress);
+        $attempt->setStartedAt(new \DateTimeImmutable());
+        $attempt->setAllowedDurationSeconds(3600);
+        $attempt->setExpiresAt(new \DateTimeImmutable('+1 hour'));
+
+        $entityManager->persist($attempt);
+        $entityManager->flush();
+
+        $attemptId = $attempt->getId();
+
+        $this->createdEmails[] = 'student-close-test-' . $this->unique . '@edupulse.ai';
+
+        // Verify attempt exists and is in progress
+        $attemptRepo = $entityManager->getRepository(ExamAttempt::class);
+        $foundAttempt = $attemptRepo->find($attemptId);
+        $this->assertNotNull($foundAttempt);
+        $this->assertSame('IN_PROGRESS', $foundAttempt->getStatus()->value);
+        $this->assertSame($sessionId, $foundAttempt->getExamSession()->getId()->toRfc4122());
+
+        // Close the session
+        $client->request('POST', '/api/v1/exam-sessions/' . $sessionId . '/close', [], [], $this->getAuthHeaders($this->superAdminToken));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame('CLOSED', $data['data']['status']);
+
+        // Verify attempt was finalized
+        $entityManager->clear();
+        $updatedAttempt = $entityManager->getRepository(ExamAttempt::class)->find($attemptId);
+        $this->assertNotNull($updatedAttempt);
+        $this->assertSame('SUBMITTED', $updatedAttempt->getStatus()->value);
+        $this->assertNotNull($updatedAttempt->getSubmittedAt());
+        $this->assertNull($updatedAttempt->getAutoSubmittedAt());
     }
 
     public function testArchivedOrCancelledSessionCannotBeModified(): void
