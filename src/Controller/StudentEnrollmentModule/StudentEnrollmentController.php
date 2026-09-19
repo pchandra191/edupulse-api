@@ -9,10 +9,13 @@ use App\DTO\StudentEnrollmentModule\CreateEnrollmentSectionRequestDTO;
 use App\DTO\StudentEnrollmentModule\CreateStudentEnrollmentRequestDTO;
 use App\DTO\StudentEnrollmentModule\StudentEnrollmentFilterRequest;
 use App\DTO\StudentEnrollmentModule\StudentEnrollmentResponseDTO;
+use App\DTO\StudentEnrollmentModule\StudentEnrollmentStudentsFilterRequest;
+use App\DTO\Response\StudentEnrollmentListResponse;
 use App\DTO\StudentEnrollmentModule\UpdateEnrollmentSectionRequestDTO;
 use App\DTO\StudentEnrollmentModule\UpdateStudentEnrollmentRequestDTO;
 use App\Entity\User;
 use App\Exception\AuthenticationException;
+use App\Service\Role\RolePermissionService;
 use App\Service\StudentEnrollmentModule\StudentEnrollmentService;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Request;
@@ -52,6 +55,37 @@ class StudentEnrollmentController extends AbstractApiController
         );
 
         $result = $this->studentEnrollmentService->getStudentEnrollments($instituteId, $filter);
+
+        return $this->success('Student enrollments retrieved successfully.', $result);
+    }
+
+    #[SecurityAttribute("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]
+    #[Route('/student-enrollments/students', name: 'student_enrollment_students_list', methods: ['GET'])]
+    public function studentsList(Request $request): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $instituteId = $this->getCurrentInstituteId();
+
+        $filter = new StudentEnrollmentStudentsFilterRequest(
+            academicYearId: $request->query->get('academicYearId', ''),
+            academicClassId: $request->query->get('academicClassId', ''),
+            sectionId: $request->query->get('sectionId'),
+            page: max(1, (int) $request->query->get('page', 1)),
+            limit: max(1, min(100, (int) $request->query->get('limit', 10))),
+        );
+
+        $errors = $this->validator->validate($filter);
+
+        if (count($errors) > 0) {
+            $formattedErrors = [];
+
+            foreach ($errors as $error) {
+                $formattedErrors[$error->getPropertyPath()][] = $error->getMessage();
+            }
+
+            return $this->unprocessableEntity('Validation failed.', $formattedErrors);
+        }
+
+        $result = $this->studentEnrollmentService->getStudentEnrollmentStudents($instituteId, $filter);
 
         return $this->success('Student enrollments retrieved successfully.', $result);
     }

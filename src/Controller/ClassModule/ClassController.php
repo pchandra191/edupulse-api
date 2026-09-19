@@ -66,6 +66,8 @@ class ClassController extends AbstractApiController
             name: (string) ($data['name'] ?? ''),
             code: (string) ($data['code'] ?? ''),
             description: $data['description'] ?? null,
+            startDate: $data['startDate'] ?? null,
+            endDate: $data['endDate'] ?? null,
             status: (string) ($data['status'] ?? 'ACTIVE'),
             instituteId: $data['instituteId'] ?? null,
         );
@@ -137,6 +139,8 @@ class ClassController extends AbstractApiController
             name: $data['name'] ?? null,
             code: $data['code'] ?? null,
             description: $data['description'] ?? null,
+            startDate: $data['startDate'] ?? null,
+            endDate: $data['endDate'] ?? null,
             status: $data['status'] ?? null,
         );
 

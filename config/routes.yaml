@@ -96,3 +96,8 @@ exam_security_event_api:
     resource: '../src/Controller/ExamAttemptSecurityEventModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+attendance_api:
+    resource: '../src/Controller/AttendanceModule/'
+    type: attribute
+    prefix: /api/%app.api_version%
