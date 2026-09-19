@@ -7,6 +7,8 @@ readonly class AcademicClassReferenceDTO
     public function __construct(
         public string $id,
         public string $name,
+        public ?string $startDate = null,
+        public ?string $endDate = null,
     ) {
     }
 }

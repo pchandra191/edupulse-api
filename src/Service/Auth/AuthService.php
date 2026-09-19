@@ -31,6 +31,7 @@ use App\Repository\PasswordResetTokenRepository;
 use App\Repository\StudentEnrollmentRepository;
 use App\Repository\UserRepository;
 use App\Service\Notification\EmailServiceInterface;
+use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken;
 use Gesdinet\JWTRefreshTokenBundle\Model\RefreshTokenManagerInterface;
@@ -115,6 +116,8 @@ readonly class AuthService
                     ? new AcademicClassReferenceDTO(
                         id: (string) $se->getAcademicClass()->getId(),
                         name: $se->getAcademicClass()->getName(),
+                        startDate: $se->getAcademicClass()->getStartDate()?->format(DateTimeInterface::ATOM),
+                        endDate: $se->getAcademicClass()->getEndDate()?->format(DateTimeInterface::ATOM),
                     )
                     : null,
             ),

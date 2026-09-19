@@ -13,6 +13,8 @@ readonly class ClassResponseDTO
         public string $name,
         public string $code,
         public ?string $description,
+        public ?string $startDate,
+        public ?string $endDate,
         public string $status,
         public ?AcademicYearResponse $academicYear,
         public string $createdAt,

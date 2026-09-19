@@ -116,6 +116,18 @@ class StudentEnrollmentRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
+    public function findActiveEnrollmentByStudent(Uuid $studentId): ?StudentEnrollment
+    {
+        return $this->createQueryBuilder('se')
+            ->where('se.student = :student')
+            ->andWhere('se.status = :status')
+            ->setParameter('student', $studentId)
+            ->setParameter('status', 'ACTIVE')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
     public function rollNumberExistsForClass(string $rollNumber, Uuid $academicYearId, Uuid $classId, ?Uuid $excludeId = null): bool
     {
         $qb = $this->createQueryBuilder('se')

@@ -2,5 +2,9 @@
 
 when@test:
     services:
-        clock:
-            class: Symfony\Component\Clock\MockClock
+        # Use the global Clock::get() so that tests can freeze time via
+        # Symfony\Component\Clock\Clock::set() before creating the client.
+        # This ensures ALL services (including those created during HTTP sub-requests)
+        # see the frozen clock, not the real system clock.
+        Symfony\Component\Clock\ClockInterface:
+            factory: ['Symfony\Component\Clock\Clock', 'get']

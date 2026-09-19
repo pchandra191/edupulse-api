@@ -106,6 +106,15 @@ readonly class ClassService
             $class->setName($request->name);
             $class->setCode($request->code);
             $class->setDescription($request->description);
+
+            if ($request->startDate !== null && $request->startDate !== '') {
+                $class->setStartDate(new \DateTimeImmutable($request->startDate));
+            }
+
+            if ($request->endDate !== null && $request->endDate !== '') {
+                $class->setEndDate(new \DateTimeImmutable($request->endDate));
+            }
+
             $class->setStatus(ClassStatus::from($request->status));
 
             $this->entityManager->persist($class);
@@ -213,6 +222,22 @@ readonly class ClassService
             $class->setDescription($request->description);
         }
 
+        if ($request->startDate !== null && $request->startDate !== '') {
+            $currentStart = $class->getStartDate();
+            $newStart = new \DateTimeImmutable($request->startDate);
+            if ($currentStart === null || $currentStart->format('Y-m-d') !== $newStart->format('Y-m-d')) {
+                $class->setStartDate($newStart);
+            }
+        }
+
+        if ($request->endDate !== null && $request->endDate !== '') {
+            $currentEnd = $class->getEndDate();
+            $newEnd = new \DateTimeImmutable($request->endDate);
+            if ($currentEnd === null || $currentEnd->format('Y-m-d') !== $newEnd->format('Y-m-d')) {
+                $class->setEndDate($newEnd);
+            }
+        }
+
         if ($request->status !== null) {
             $class->setStatus(ClassStatus::from($request->status));
         }
@@ -228,6 +253,8 @@ readonly class ClassService
             name: $class->getName(),
             code: $class->getCode(),
             description: $class->getDescription(),
+            startDate: $class->getStartDate()?->format(DateTimeInterface::ATOM),
+            endDate: $class->getEndDate()?->format(DateTimeInterface::ATOM),
             status: $class->getStatus()->value,
             academicYear: new AcademicYearResponse(
                 id: (string) $academicYear->getId(),

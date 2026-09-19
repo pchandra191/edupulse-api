@@ -11,6 +11,7 @@ use App\DTO\StudentEnrollmentModule\InstituteResponse;
 use App\DTO\StudentEnrollmentModule\SectionResponse;
 use App\DTO\StudentEnrollmentModule\StudentEnrollmentFilterRequest;
 use App\DTO\StudentEnrollmentModule\StudentEnrollmentResponseDTO;
+use App\DTO\StudentEnrollmentModule\StudentEnrollmentStudentsFilterRequest;
 use App\DTO\StudentEnrollmentModule\StudentResponse;
 use App\DTO\StudentEnrollmentModule\UpdateStudentEnrollmentRequestDTO;
 use App\DTO\Response\StudentEnrollmentListResponse;
@@ -61,6 +62,40 @@ readonly class StudentEnrollmentService
             $filter->limit,
             $filter->sortBy,
             $filter->sortOrder,
+        );
+
+        $enrollmentIds = [];
+        foreach ($result['items'] as $enrollment) {
+            $enrollmentIds[] = $enrollment->getId()->toRfc4122();
+        }
+
+        $enrollmentSectionsByEnrollment = $this->studentEnrollmentRepository->findEnrollmentSectionsByEnrollmentIds($enrollmentIds);
+
+        $items = array_map(
+            fn (StudentEnrollment $enrollment) => $this->mapToListItemResponse($enrollment, $enrollmentSectionsByEnrollment),
+            $result['items'],
+        );
+
+        return new StudentEnrollmentListResponse(
+            items: $items,
+            pagination: $result['pagination'],
+        );
+    }
+
+    public function getStudentEnrollmentStudents(?Uuid $instituteId, StudentEnrollmentStudentsFilterRequest $filter): StudentEnrollmentListResponse
+    {
+        $result = $this->studentEnrollmentRepository->findPaginated(
+            $instituteId,
+            null,
+            Uuid::fromString($filter->academicYearId),
+            Uuid::fromString($filter->academicClassId),
+            $filter->sectionId ? Uuid::fromString($filter->sectionId) : null,
+            null,
+            null,
+            $filter->page,
+            $filter->limit,
+            'createdAt',
+            'DESC',
         );
 
         $enrollmentIds = [];

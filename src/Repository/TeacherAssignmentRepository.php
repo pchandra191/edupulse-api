@@ -253,4 +253,30 @@ class TeacherAssignmentRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    public function findActiveByTeacherAndClassAndSection(
+        Uuid $teacherId,
+        Uuid $academicYearId,
+        Uuid $classId,
+        ?Uuid $sectionId = null
+    ): ?TeacherAssignment {
+        $qb = $this->createQueryBuilder('ta')
+            ->where('ta.teacher = :teacher')
+            ->andWhere('ta.academicYear = :academicYear')
+            ->andWhere('ta.academicClass = :academicClass')
+            ->andWhere('ta.status = :status')
+            ->setParameter('teacher', $teacherId)
+            ->setParameter('academicYear', $academicYearId)
+            ->setParameter('academicClass', $classId)
+            ->setParameter('status', 'ACTIVE');
+
+        if ($sectionId !== null) {
+            $qb->andWhere('ta.section = :section')
+                ->setParameter('section', $sectionId);
+        }
+
+        return $qb->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
 }

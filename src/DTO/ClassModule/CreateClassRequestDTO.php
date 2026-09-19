@@ -22,6 +22,10 @@ readonly class CreateClassRequestDTO
         #[Assert\Length(max: 1000)]
         public ?string $description = null,
 
+        public ?string $startDate = null,
+
+        public ?string $endDate = null,
+
         #[Assert\NotBlank]
         public string $status = 'ACTIVE',
 
