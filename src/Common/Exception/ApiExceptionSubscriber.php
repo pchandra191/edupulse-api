@@ -62,7 +62,7 @@ class ApiExceptionSubscriber implements EventSubscriberInterface
         }
 
         if ($exception instanceof UserNotVerifiedException) {
-            return $this->json(403, $exception->getMessage());
+            return $this->json(403, $exception->getMessage(), [], [], $exception->getErrorCode());
         }
 
         if ($exception instanceof UserDisabledException) {
@@ -138,12 +138,14 @@ class ApiExceptionSubscriber implements EventSubscriberInterface
         return $this->json(400, 'Validation failed.', $errors);
     }
 
-    private function json(int $statusCode, string $message, array $errors = []): JsonResponse
+    private function json(int $statusCode, string $message, array $errors = [], array $meta = [], ?string $code = null): JsonResponse
     {
         return new JsonResponse(
             (new ApiErrorResponse(
                 message: $message,
                 errors: $errors,
+                meta: $meta,
+                code: $code,
             ))->jsonSerialize(),
             $statusCode
         );

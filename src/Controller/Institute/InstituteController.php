@@ -9,27 +9,27 @@ use App\DTO\Institute\InstituteFilterRequest;
 use App\DTO\Institute\InstituteOptionResponse;
 use App\DTO\Institute\InstituteProfileResponseDTO;
 use App\DTO\Institute\InstituteProfileUpdateRequestDTO;
-use App\Entity\User;
+use App\DTO\Institute\PublicInstituteResponse;
 use App\Enum\Currency;
 use App\Enum\Timezone;
 use App\Exception\AuthenticationException;
 use App\Common\Exception\BusinessException;
 use App\Service\Institute\InstituteService;
+use App\Service\Auth\StudentRegistrationService;
+use App\Repository\InstituteRepository;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
-use Symfony\Component\Security\Http\Attribute\Security;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Uid\Uuid;
-use Symfony\Bundle\SecurityBundle\Security as SecurityService;
 
 class InstituteController extends AbstractApiController
 {
     public function __construct(
         private InstituteService $instituteService,
+        private StudentRegistrationService $studentRegistrationService,
+        private InstituteRepository $instituteRepository,
         private ValidatorInterface $validator,
-        private SecurityService $security,
         ApiResponseFactory $responseFactory,
     ) {
         parent::__construct($responseFactory);
@@ -42,6 +42,14 @@ class InstituteController extends AbstractApiController
         $options = $this->instituteService->getOptions();
 
         return $this->success('Institutes retrieved successfully.', $options);
+    }
+
+    #[Route('/institutes/public', name: 'institute_public_list', methods: ['GET'])]
+    public function publicList(): JsonResponse
+    {
+        $institutes = $this->instituteService->getPublicInstitutes();
+
+        return $this->success('Active institutes retrieved successfully.', $institutes);
     }
 
     #[IsGranted('ROLE_SUPER_ADMIN')]
@@ -152,6 +160,66 @@ class InstituteController extends AbstractApiController
         }
 
         return $this->success('Onboarding completed successfully.', $institute);
+    }
+
+    #[Route('/institutes/{id}/student-registration-link', name: 'institute_student_registration_link', methods: ['GET'])]
+    public function studentRegistrationLink(string $id): JsonResponse
+    {
+        try {
+            $instituteId = $this->parseUuid($id);
+        } catch (AuthenticationException $e) {
+            return $this->notFound($e->getMessage());
+        }
+
+        try {
+            $institute = $this->instituteRepository->findById((string) $instituteId);
+
+            if (!$institute instanceof \App\Entity\Institute) {
+                throw new AuthenticationException('Institute not found.');
+            }
+
+            $link = $this->studentRegistrationService->getOrCreateRegistrationLink($institute);
+
+            return $this->success('Student registration link retrieved successfully.', [
+                'registrationUrl' => $link->registrationUrl,
+            ]);
+        } catch (\App\Exception\InstituteNotActiveException $e) {
+            return $this->accessDenied($e->getMessage());
+        } catch (AuthenticationException $e) {
+            return $this->notFound($e->getMessage());
+        }
+    }
+
+    #[Route('/institutes/{id}/student-registration-link/public', name: 'institute_student_registration_link_public', methods: ['GET'])]
+    public function publicStudentRegistrationLink(string $id): JsonResponse
+    {
+        try {
+            $instituteId = $this->parseUuid($id);
+        } catch (AuthenticationException $e) {
+            return $this->notFound($e->getMessage());
+        }
+
+        try {
+            $institute = $this->instituteRepository->findById((string) $instituteId);
+
+            if (!$institute instanceof \App\Entity\Institute) {
+                throw new AuthenticationException('Institute not found.');
+            }
+
+            if (!$institute->isActive()) {
+                return $this->accessDenied('Institute is not active.');
+            }
+
+            $link = $this->studentRegistrationService->getOrCreateRegistrationLink($institute);
+
+            return $this->success('Student registration link retrieved successfully.', [
+                'registrationUrl' => $link->registrationUrl,
+            ]);
+        } catch (\App\Exception\InstituteNotActiveException $e) {
+            return $this->accessDenied($e->getMessage());
+        } catch (AuthenticationException $e) {
+            return $this->notFound($e->getMessage());
+        }
     }
 
     #[Security("is_granted('ROLE_INSTITUTE') or is_granted('ROLE_SUPER_ADMIN')")]

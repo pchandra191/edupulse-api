@@ -6,6 +6,7 @@ parameters:
     app.mailer_from: '%env(MAILER_FROM)%'
     app.mailer_from_name: 'EduPulse AI'
     app.openai_api_key: '%env(OPENAI_API_KEY)%'
+    app.student_portal_url: '%env(STUDENT_PORTAL_URL)%'
 
 services:
     _defaults:
@@ -19,12 +20,17 @@ services:
         arguments:
             $fromEmail: '%app.mailer_from%'
             $fromName: '%app.mailer_from_name%'
+            $studentPortalUrl: '%app.student_portal_url%'
 
     App\Service\Notification\EmailServiceInterface: '@App\Service\Notification\SymfonyEmailService'
 
     App\Service\Auth\AuthService:
         arguments:
             $refreshTokenTtl: '%app.refresh_token_ttl%'
+
+    App\Service\Auth\StudentRegistrationService:
+        arguments:
+            $studentPortalUrl: '%app.student_portal_url%'
 
     App\Service\QuestionPaperModule\AiQuestionGenerationServiceInterface: '@App\Service\QuestionPaperModule\OpenAiQuestionGenerationService'
 

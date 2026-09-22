@@ -7,6 +7,7 @@ use App\DTO\Institute\InstituteFilterRequest;
 use App\DTO\Institute\InstituteOptionResponse;
 use App\DTO\Institute\InstituteProfileResponseDTO;
 use App\DTO\Institute\InstituteProfileUpdateRequestDTO;
+use App\DTO\Institute\PublicInstituteResponse;
 use App\DTO\Response\InstituteListResponse;
 use App\Common\Exception\BusinessException;
 use App\Repository\InstituteRepository;
@@ -68,6 +69,23 @@ readonly class InstituteService
                     onboardingCompletedAt: $row['onboardingCompletedAt'] instanceof DateTimeInterface ? $row['onboardingCompletedAt']->format(DateTimeInterface::ATOM) : null,
                     createdAt: (string) $createdAt,
                     updatedAt: $updatedAt !== null ? (string) $updatedAt : null,
+                );
+            },
+            $rows,
+        );
+    }
+
+    public function getPublicInstitutes(): array
+    {
+        $rows = $this->instituteRepository->findActiveOptions();
+
+        return array_map(
+            function (array $row): PublicInstituteResponse {
+                return new PublicInstituteResponse(
+                    id: (string) $row['id'],
+                    name: (string) $row['name'],
+                    code: (string) $row['code'],
+                    logo: isset($row['logo']) ? $this->instituteLogoService->getLogoUrl((string) $row['logo']) : null,
                 );
             },
             $rows,

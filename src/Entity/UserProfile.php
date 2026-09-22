@@ -65,6 +65,18 @@ class UserProfile extends AbstractEntity
     #[ORM\Column(length: 100, nullable: true)]
     private ?string $emergencyContactRelationship = null;
 
+    #[Assert\Length(max: 255)]
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $academicYear = null;
+
+    #[Assert\Length(max: 255)]
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $academicClass = null;
+
+    #[Assert\Length(max: 50)]
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $section = null;
+
     public function __construct()
     {
         parent::__construct();
@@ -246,6 +258,42 @@ class UserProfile extends AbstractEntity
     public function setEmergencyContactRelationship(?string $emergencyContactRelationship): self
     {
         $this->emergencyContactRelationship = $emergencyContactRelationship !== null ? trim($emergencyContactRelationship) : null;
+
+        return $this;
+    }
+
+    public function getAcademicYear(): ?string
+    {
+        return $this->academicYear;
+    }
+
+    public function setAcademicYear(?string $academicYear): self
+    {
+        $this->academicYear = $academicYear !== null ? trim($academicYear) : null;
+
+        return $this;
+    }
+
+    public function getAcademicClass(): ?string
+    {
+        return $this->academicClass;
+    }
+
+    public function setAcademicClass(?string $academicClass): self
+    {
+        $this->academicClass = $academicClass !== null ? trim($academicClass) : null;
+
+        return $this;
+    }
+
+    public function getSection(): ?string
+    {
+        return $this->section;
+    }
+
+    public function setSection(?string $section): self
+    {
+        $this->section = $section !== null ? trim($section) : null;
 
         return $this;
     }
