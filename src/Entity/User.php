@@ -1,9 +1,9 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Entity\Institute;
 use App\Enum\TeacherDepartment;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
@@ -59,11 +59,15 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
     #[ORM\OneToMany(mappedBy: 'student', targetEntity: ExamAttempt::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $examAttempts;
 
+    #[ORM\OneToMany(mappedBy: 'user', targetEntity: EmailVerificationToken::class, cascade: ['persist'], orphanRemoval: true)]
+    private Collection $emailVerificationTokens;
+
     public function __construct()
     {
         parent::__construct();
         $this->roles = [];
         $this->examAttempts = new ArrayCollection();
+        $this->emailVerificationTokens = new ArrayCollection();
     }
 
     public function getEmail(): string
@@ -234,10 +238,16 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
         return null !== $this->deletedAt;
     }
 
+    /** @return Collection<int, EmailVerificationToken> */
+    public function getEmailVerificationTokens(): Collection
+    {
+        return $this->emailVerificationTokens;
+    }
+
     #[Assert\Callback]
     public function validateInstitute(ExecutionContextInterface $context, mixed $payload): void
     {
-        if ($this->getRole() === UserRole::SuperAdmin) {
+        if ($this->getRole() === UserRole::SuperAdmin || $this->getRole() === UserRole::Student) {
             return;
         }
 
@@ -260,9 +270,7 @@ class User extends AbstractEntity implements UserInterface, PasswordAuthenticate
         return $this;
     }
 
-    /**
-     * @return Collection<int, ExamAttempt>
-     */
+    /** @return Collection<int, ExamAttempt> */
     public function getExamAttempts(): Collection
     {
         return $this->examAttempts;

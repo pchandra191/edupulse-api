@@ -101,3 +101,8 @@ attendance_api:
     resource: '../src/Controller/AttendanceModule/'
     type: attribute
     prefix: /api/%app.api_version%
+
+student_api:
+    resource: '../src/Controller/Student/'
+    type: attribute
+    prefix: /api/%app.api_version%

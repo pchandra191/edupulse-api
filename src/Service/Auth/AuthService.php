@@ -76,11 +76,18 @@ readonly class AuthService
             throw InvalidCredentialsException::create();
         }
 
+        $result = $this->authenticate($user);
+
+        $this->logger->info('Login successful', ['email' => $request->email]);
+
+        return $result;
+    }
+
+    public function authenticate(User $user): LoginResponseDTO
+    {
         $token = $this->issueJwt($user);
         $refreshToken = $this->createRefreshToken($user);
         $userProfile = $this->getCurrentUserProfile($user);
-
-        $this->logger->info('Login successful', ['email' => $request->email]);
 
         return new LoginResponseDTO(
             accessToken: $token,

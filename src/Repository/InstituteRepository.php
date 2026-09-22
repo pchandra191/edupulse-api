@@ -52,6 +52,7 @@ class InstituteRepository extends ServiceEntityRepository
         $qb = $this->createQueryBuilder('i')
             ->select('i.id, i.name, i.code, i.email, i.phone, i.website, i.logo, i.addressLine1, i.addressLine2, i.city, i.state, i.country, i.postalCode, i.timezone, i.currency, i.status, i.onboardingCompletedAt, i.createdAt, i.updatedAt')
             ->where('i.status = :status')
+            ->andWhere('i.deletedAt IS NULL')
             ->setParameter('status', 'ACTIVE')
             ->orderBy('i.name', 'ASC');
 
@@ -62,8 +63,9 @@ class InstituteRepository extends ServiceEntityRepository
     {
         return $this->createQueryBuilder('i')
             ->where('i.id = :id')
-            ->setParameter('id', $id)
             ->andWhere('i.status = :status')
+            ->andWhere('i.deletedAt IS NULL')
+            ->setParameter('id', $id)
             ->setParameter('status', 'ACTIVE')
             ->getQuery()
             ->getOneOrNullResult();

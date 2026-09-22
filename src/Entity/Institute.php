@@ -98,6 +98,9 @@ class Institute extends AbstractEntity
     #[ORM\OneToMany(mappedBy: 'institute', targetEntity: User::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $users;
 
+    #[ORM\OneToMany(mappedBy: 'institute', targetEntity: InstituteStudentRegistrationLink::class, cascade: ['persist'], orphanRemoval: false)]
+    private Collection $studentRegistrationLinks;
+
     #[ORM\OneToMany(mappedBy: 'institute', targetEntity: AcademicYear::class, cascade: ['persist'], orphanRemoval: false)]
     private Collection $academicYears;
 
@@ -117,6 +120,7 @@ class Institute extends AbstractEntity
     {
         parent::__construct();
         $this->users = new ArrayCollection();
+        $this->studentRegistrationLinks = new ArrayCollection();
         $this->academicYears = new ArrayCollection();
         $this->classes = new ArrayCollection();
         $this->subjects = new ArrayCollection();
@@ -319,7 +323,12 @@ class Institute extends AbstractEntity
 
     public function isActive(): bool
     {
-        return $this->status === InstituteStatus::Active->value;
+        return $this->status === InstituteStatus::Active->value && !$this->isDeleted();
+    }
+
+    public function isDeleted(): bool
+    {
+        return null !== $this->deletedAt;
     }
 
     public function getOnboardingCompletedAt(): ?\DateTimeInterface
@@ -359,6 +368,32 @@ class Institute extends AbstractEntity
         if ($this->users->removeElement($user)) {
             if ($user->getInstitute() === $this) {
                 $user->setInstitute(null);
+            }
+        }
+
+        return $this;
+    }
+
+    public function getStudentRegistrationLinks(): Collection
+    {
+        return $this->studentRegistrationLinks;
+    }
+
+    public function addStudentRegistrationLink(InstituteStudentRegistrationLink $link): self
+    {
+        if (!$this->studentRegistrationLinks->contains($link)) {
+            $this->studentRegistrationLinks[] = $link;
+            $link->setInstitute($this);
+        }
+
+        return $this;
+    }
+
+    public function removeStudentRegistrationLink(InstituteStudentRegistrationLink $link): self
+    {
+        if ($this->studentRegistrationLinks->removeElement($link)) {
+            if ($link->getInstitute() === $this) {
+                $link->setInstitute(null);
             }
         }
 

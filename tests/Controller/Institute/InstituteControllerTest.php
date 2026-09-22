@@ -588,4 +588,61 @@ class InstituteControllerTest extends WebTestCase
         $this->assertTrue($data['success']);
         $this->assertNull($data['data']['logo']);
     }
+
+    public function testPublicCanAccessInstitutesWithoutAuthentication(): void
+    {
+        $client = $this->client;
+
+        $client->request('GET', '/api/v1/institutes/public');
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('data', $data);
+        $this->assertIsArray($data['data']);
+        
+        foreach ($data['data'] as $institute) {
+            $this->assertArrayHasKey('id', $institute);
+            $this->assertArrayHasKey('name', $institute);
+            $this->assertArrayHasKey('code', $institute);
+            $this->assertArrayHasKey('logo', $institute);
+        }
+    }
+
+    public function testPublicInstitutesOnlyReturnsActiveInstitutes(): void
+    {
+        $client = $this->client;
+        $container = $client->getContainer();
+        $entityManager = $container->get('doctrine')->getManager();
+
+        $inactiveInstitute = new Institute();
+        $inactiveInstitute->setName('Inactive Institute');
+        $inactiveInstitute->setCode('INACT' . uniqid());
+        $inactiveInstitute->setEmail('inactive-' . uniqid() . '@edupulse.ai');
+        $inactiveInstitute->setStatus(InstituteStatus::INACTIVE);
+
+        $entityManager->persist($inactiveInstitute);
+        $entityManager->flush();
+
+        $inactiveInstituteId = $inactiveInstitute->getId();
+
+        $client->request('GET', '/api/v1/institutes/public');
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        
+        $instituteNames = array_column($data['data'], 'name');
+        $this->assertNotContains('Inactive Institute', $instituteNames);
+
+        $inactiveInstitute = $entityManager->getRepository(Institute::class)->find($inactiveInstituteId);
+        if ($inactiveInstitute) {
+            $entityManager->remove($inactiveInstitute);
+            $entityManager->flush();
+        }
+    }
 }
