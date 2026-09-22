@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service\Auth;
 
+use App\DTO\Auth\StudentRegistrationLinkResponseDTO;
 use App\DTO\Auth\StudentRegistrationRequestDTO;
 use App\DTO\Auth\StudentRegistrationResponseDTO;
 use App\Entity\EmailVerificationToken;
