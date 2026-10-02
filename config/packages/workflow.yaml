@@ -1,12 +1,20 @@
 framework:
     workflows:
+
+        # ============================================================
+        # EXAMINATION WORKFLOW
+        # ============================================================
         examination:
             type: state_machine
+
             marking_store:
                 service: app.workflow.marking_store.examination
+
             supports:
                 - App\Entity\Examination
+
             initial_marking: DRAFT
+
             places:
                 - DRAFT
                 - SCHEDULED
@@ -14,57 +22,95 @@ framework:
                 - COMPLETED
                 - CANCELLED
                 - ARCHIVED
+
             transitions:
                 schedule:
                     from: DRAFT
                     to: SCHEDULED
+
                 start:
                     from: SCHEDULED
                     to: ONGOING
+
                 complete:
                     from: ONGOING
                     to: COMPLETED
+
                 archive:
-                    from: [DRAFT, SCHEDULED, ONGOING, COMPLETED]
+                    from:
+                        - DRAFT
+                        - SCHEDULED
+                        - ONGOING
+                        - COMPLETED
                     to: ARCHIVED
+
                 cancel:
-                    from: [DRAFT, SCHEDULED, ONGOING]
+                    from:
+                        - DRAFT
+                        - SCHEDULED
+                        - ONGOING
                     to: CANCELLED
+
                 reopen:
                     from: COMPLETED
                     to: SCHEDULED
+
+
+        # ============================================================
+        # QUESTION PAPER WORKFLOW
+        # ============================================================
         question_paper:
             type: state_machine
+
             marking_store:
                 service: app.workflow.marking_store.question_paper
+
             supports:
                 - App\Entity\QuestionPaper
+
             initial_marking: DRAFT
+
             places:
                 - DRAFT
                 - REVIEW
                 - FINALIZED
                 - ARCHIVED
+
             transitions:
                 submit_for_review:
                     from: DRAFT
                     to: REVIEW
+
                 request_changes:
                     from: REVIEW
                     to: DRAFT
+
                 finalize:
                     from: REVIEW
                     to: FINALIZED
+
                 archive:
-                    from: [DRAFT, REVIEW, FINALIZED]
+                    from:
+                        - DRAFT
+                        - REVIEW
+                        - FINALIZED
                     to: ARCHIVED
+
+
+        # ============================================================
+        # EXAM SESSION WORKFLOW
+        # ============================================================
         exam_session:
             type: state_machine
+
             marking_store:
                 service: app.workflow.marking_store.exam_session
+
             supports:
                 - App\Entity\ExamSession
+
             initial_marking: DRAFT
+
             places:
                 - DRAFT
                 - SCHEDULED
@@ -73,51 +119,135 @@ framework:
                 - CLOSED
                 - CANCELLED
                 - ARCHIVED
+
             transitions:
                 schedule:
                     from: DRAFT
                     to: SCHEDULED
+
                 publish:
                     from: SCHEDULED
                     to: PUBLISHED
+
                 start:
                     from: PUBLISHED
                     to: ACTIVE
+
                 close:
                     from: ACTIVE
                     to: CLOSED
+
                 archive:
-                    from: [DRAFT, SCHEDULED, PUBLISHED, ACTIVE, CLOSED]
+                    from:
+                        - DRAFT
+                        - SCHEDULED
+                        - PUBLISHED
+                        - ACTIVE
+                        - CLOSED
                     to: ARCHIVED
+
                 cancel:
-                    from: [DRAFT, SCHEDULED, PUBLISHED, ACTIVE]
+                    from:
+                        - DRAFT
+                        - SCHEDULED
+                        - PUBLISHED
+                        - ACTIVE
                     to: CANCELLED
+
                 reopen:
                     from: PUBLISHED
                     to: DRAFT
+
+
+        # ============================================================
+        # EXAM ATTEMPT WORKFLOW
+        # ============================================================
         exam_attempt:
             type: state_machine
+
             marking_store:
                 service: app.workflow.marking_store.exam_attempt
+
             supports:
                 - App\Entity\ExamAttempt
+
             initial_marking: NOT_STARTED
+
             places:
                 - NOT_STARTED
                 - IN_PROGRESS
                 - SUBMITTED
                 - AUTO_SUBMITTED
                 - ABANDONED
+
             transitions:
                 start:
                     from: NOT_STARTED
                     to: IN_PROGRESS
+
                 submit:
                     from: IN_PROGRESS
                     to: SUBMITTED
+
                 auto_submit:
                     from: IN_PROGRESS
                     to: AUTO_SUBMITTED
+
                 abandon:
                     from: IN_PROGRESS
                     to: ABANDONED
+
+
+        # ============================================================
+        # ANALYSIS WORKFLOW
+        # ============================================================
+        analysis:
+            type: state_machine
+
+            marking_store:
+                service: app.workflow.marking_store.analysis
+
+            supports:
+                - App\Entity\Analysis
+
+            initial_marking: DRAFT
+
+            places:
+                - DRAFT
+                - PUBLISHED
+                - PROCESSING
+                - DONE
+                - FAILED
+                - ARCHIVED
+
+            transitions:
+                publish:
+                    from: DRAFT
+                    to: PUBLISHED
+
+                start_analysis:
+                    from: PUBLISHED
+                    to: PROCESSING
+
+                analysis_completed:
+                    from: PROCESSING
+                    to: DONE
+
+                analysis_failed:
+                    from: PROCESSING
+                    to: FAILED
+
+                regenerate:
+                    from: DONE
+                    to: PROCESSING
+
+                retry:
+                    from: FAILED
+                    to: PROCESSING
+
+                archive:
+                    from:
+                        - DRAFT
+                        - PUBLISHED
+                        - DONE
+                    to: ARCHIVED

@@ -6,6 +6,7 @@ namespace App\Repository;
 use App\Entity\Subject;
 use App\Entity\AcademicClass;
 use App\Entity\Institute;
+use App\Enum\SubjectStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -38,6 +39,18 @@ class SubjectRepository extends ServiceEntityRepository
             ->where('s.institute = :institute')
             ->setParameter('institute', $instituteId)
             ->orderBy('s.createdAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findActiveByInstitute(Uuid $instituteId): array
+    {
+        return $this->createQueryBuilder('s')
+            ->where('s.institute = :institute')
+            ->andWhere('s.status = :status')
+            ->setParameter('institute', $instituteId)
+            ->setParameter('status', SubjectStatus::Active->value)
+            ->orderBy('s.name', 'ASC')
             ->getQuery()
             ->getResult();
     }

@@ -137,7 +137,8 @@ readonly class AttendanceReportingService
             $academicYear ? (string) $academicYear->getId() : null,
             $academicClass ? (string) $academicClass->getId() : null,
             $section ? (string) $section->getId() : null,
-            $today
+            $today,
+            $studentUser->getId()
         );
 
         $overallSummary = null;
@@ -276,20 +277,19 @@ readonly class AttendanceReportingService
             $subjectId = $row['subjectId'] ? (string) $row['subjectId'] : null;
             $subjectName = $row['subjectName'] ? (string) $row['subjectName'] : null;
             $subjectCode = $row['subjectCode'] ? (string) $row['subjectCode'] : null;
-
-            $counts = [];
-            foreach ($row as $key => $val) {
-                if (is_string($key) && $key !== 'subjectId' && $key !== 'subjectName' && $key !== 'subjectCode' && $key !== 'academicYearId') {
-                    if (is_numeric($val)) {
-                        $counts[$key] = (int) $val;
-                    }
-                }
-            }
+            $className = $row['className'] ? (string) $row['className'] : null;
+            $classCode = $row['classCode'] ? (string) $row['classCode'] : null;
+            $sectionName = $row['sectionName'] ? (string) $row['sectionName'] : null;
+            $sectionCode = $row['sectionCode'] ? (string) $row['sectionCode'] : null;
+            $classId = $row['classId'] ? (string) $row['classId'] : null;
+            $sectionId = $row['sectionId'] ? (string) $row['sectionId'] : null;
 
             $totalClasses = (int) $this->attendanceRecordRepository->getSubjectTotalClasses(
                 $studentUser->getId(),
                 Uuid::fromString($subjectId),
                 $academicYear->getId(),
+                $classId !== null ? Uuid::fromString($classId) : null,
+                $sectionId !== null ? Uuid::fromString($sectionId) : null,
                 $instituteId
             );
 
@@ -297,6 +297,8 @@ readonly class AttendanceReportingService
                 $studentUser->getId(),
                 Uuid::fromString($subjectId),
                 $academicYear->getId(),
+                $classId !== null ? Uuid::fromString($classId) : null,
+                $sectionId !== null ? Uuid::fromString($sectionId) : null,
                 $instituteId
             );
 
@@ -333,6 +335,10 @@ readonly class AttendanceReportingService
                 subjectId: $subjectId,
                 subjectName: $subjectName,
                 subjectCode: $subjectCode,
+                className: $className,
+                classCode: $classCode,
+                sectionName: $sectionName,
+                sectionCode: $sectionCode,
                 totalClasses: $totalClasses,
                 present: $present,
                 absent: $absent,
@@ -608,7 +614,8 @@ readonly class AttendanceReportingService
         ?string $academicYearId,
         ?string $classId,
         ?string $sectionId,
-        ?\DateTimeImmutable $date = null
+        ?\DateTimeImmutable $date = null,
+        ?Uuid $studentId = null
     ): TodayAttendanceDTO {
         $date = $date ?? $this->dateTimeProvider->currentBusinessDate($instituteId);
 
@@ -618,6 +625,11 @@ readonly class AttendanceReportingService
             ->innerJoin('ar.academicYear', 'ay')
             ->where('ar.attendanceDate = :date')
             ->setParameter('date', $date->setTime(0, 0, 0));
+
+        if ($studentId !== null) {
+            $qb->andWhere('ar.student = :student')
+                ->setParameter('student', $studentId);
+        }
 
         if ($classId !== null) {
             $qb->andWhere('ar.academicClass = :classId')
@@ -645,7 +657,7 @@ readonly class AttendanceReportingService
         }
 
         $totalMarked = array_sum($counts);
-        $notMarked = $this->calculateNotMarked($instituteId, $classId, $sectionId, $academicYearId, $date);
+        $notMarked = $this->calculateNotMarked($instituteId, $classId, $sectionId, $academicYearId, $date, $studentId);
 
         $onLeaveCount = $counts[AttendanceStatus::OnLeave->value] ?? 0;
         $leaveStudentCount = 0;
@@ -684,6 +696,11 @@ readonly class AttendanceReportingService
                     ->setParameter('section', $sectionId);
             }
 
+            if ($studentId !== null) {
+                $leaveCountQb->andWhere('lr.student = :student')
+                    ->setParameter('student', $studentId);
+            }
+
             $leaveStudentCount = (int) $leaveCountQb->getQuery()->getSingleScalarResult();
             $onLeaveCount += $leaveStudentCount;
             $notMarked = max(0, $notMarked - $leaveStudentCount);
@@ -704,13 +721,31 @@ readonly class AttendanceReportingService
         ?string $classId,
         ?string $sectionId,
         ?string $academicYearId,
-        \DateTimeImmutable $date
+        \DateTimeImmutable $date,
+        ?Uuid $studentId = null
     ): int {
         if ($instituteId === null || $classId === null) {
             return 0;
         }
 
         $academicYearUuid = $academicYearId ? Uuid::fromString($academicYearId) : null;
+
+        // Student-specific check: is this student marked today?
+        if ($studentId !== null) {
+            $studentMarked = (int) $this->entityManager->createQueryBuilder()
+                ->select('COUNT(ar.id)')
+                ->from(AttendanceRecord::class, 'ar')
+                ->where('ar.student = :student')
+                ->andWhere('ar.academicClass = :classId')
+                ->andWhere('ar.attendanceDate = :date')
+                ->setParameter('student', $studentId)
+                ->setParameter('classId', Uuid::fromString($classId))
+                ->setParameter('date', $date)
+                ->getQuery()
+                ->getSingleScalarResult();
+
+            return $studentMarked > 0 ? 0 : 1;
+        }
 
         $qb = $this->entityManager->createQueryBuilder()
             ->select('COUNT(DISTINCT se.student)')

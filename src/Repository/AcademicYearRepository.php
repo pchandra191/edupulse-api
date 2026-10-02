@@ -31,6 +31,23 @@ class AcademicYearRepository extends ServiceEntityRepository
         return $qb->getQuery()->getOneOrNullResult();
     }
 
+    public function findNameById(Uuid $id, ?Uuid $instituteId = null): ?string
+    {
+        $qb = $this->createQueryBuilder('a')
+            ->select('a.name')
+            ->where('a.id = :id')
+            ->setParameter('id', $id);
+
+        if ($instituteId !== null) {
+            $qb->andWhere('a.institute = :institute')
+               ->setParameter('institute', $instituteId);
+        }
+
+        $result = $qb->getQuery()->getSingleScalarResult();
+
+        return $result !== null ? (string) $result : null;
+    }
+
     public function findByInstitute(Uuid $instituteId): array
     {
         return $this->createQueryBuilder('a')

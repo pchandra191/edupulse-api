@@ -15,6 +15,8 @@
         <ini name="error_reporting" value="-1" />
         <server name="APP_ENV" value="test" force="true" />
         <server name="SHELL_VERBOSITY" value="-1" />
+        <env name="MONGODB_URI" value="mongodb://localhost:27017" />
+        <env name="MONGODB_DB" value="edupulse_test" />
     </php>
 
     <testsuites>

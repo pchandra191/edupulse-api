@@ -70,4 +70,9 @@ abstract class AbstractApiController
         return new JsonResponse($this->responseFactory->error($message, meta: $meta, code: $code), JsonResponse::HTTP_INTERNAL_SERVER_ERROR);
     }
 
+    protected function accepted(string $message = '', mixed $data = null, array $meta = []): JsonResponse
+    {
+        return new JsonResponse($this->responseFactory->success($message, $data, $meta), JsonResponse::HTTP_ACCEPTED);
+    }
+
 }

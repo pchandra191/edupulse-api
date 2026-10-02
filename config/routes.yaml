@@ -106,3 +106,8 @@ student_api:
     resource: '../src/Controller/Student/'
     type: attribute
     prefix: /api/%app.api_version%
+
+analysis_api:
+    resource: '../src/Controller/Analysis/'
+    type: attribute
+    prefix: /api/%app.api_version%

@@ -128,6 +128,26 @@ class StudentEnrollmentRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
+    public function findCurrentEnrollmentWithDetails(Uuid $studentId): ?StudentEnrollment
+    {
+        return $this->createQueryBuilder('se')
+            ->innerJoin('se.academicYear', 'ay')
+            ->addSelect('ay')
+            ->innerJoin('se.academicClass', 'c')
+            ->addSelect('c')
+            ->leftJoin('se.enrollmentSections', 'es')
+            ->addSelect('es')
+            ->leftJoin('es.section', 'sec')
+            ->addSelect('sec')
+            ->where('se.student = :student')
+            ->andWhere('se.status = :status')
+            ->setParameter('student', $studentId)
+            ->setParameter('status', 'ACTIVE')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
     public function rollNumberExistsForClass(string $rollNumber, Uuid $academicYearId, Uuid $classId, ?Uuid $excludeId = null): bool
     {
         $qb = $this->createQueryBuilder('se')
