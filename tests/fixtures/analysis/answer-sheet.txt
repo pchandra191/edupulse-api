@@ -1,0 +1,45 @@
+Student Name: Rahul Kumar
+Roll Number: 23
+Subject: Mathematics
+Exam: Mid Term Examination
+Academic Year: 2026-27
+Class: 8
+Section: A
+Total Marks: 100
+Scored Marks: 78
+
+Question 1:
+Solve 2x + 5 = 15.
+
+Answer:
+x = 5
+
+Question 2:
+Find the area of a circle with radius 7 cm.
+
+Answer:
+154 cm²
+
+Question 3:
+Solve 3x - 9 = 0.
+
+Answer:
+x = 3
+
+Question 4:
+What is the value of 5²?
+
+Answer:
+25
+
+Question 4:
+Find the perimeter of a square with side 6 cm.
+
+Answer:
+24 cm
+
+Question 5:
+Simplify 12/18.
+
+Answer:
+2/3

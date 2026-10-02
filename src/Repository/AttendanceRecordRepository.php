@@ -456,8 +456,10 @@ class AttendanceRecordRepository extends ServiceEntityRepository
         ?Uuid $instituteId = null
     ): array {
         $qb = $this->createQueryBuilder('ar')
-            ->select('s.id as subjectId, s.name as subjectName, s.code as subjectCode')
+            ->select('s.id as subjectId, s.name as subjectName, s.code as subjectCode, c.id as classId, c.name as className, c.code as classCode, sec.id as sectionId, sec.name as sectionName, sec.code as sectionCode')
             ->innerJoin('ar.subject', 's')
+            ->innerJoin('ar.academicClass', 'c')
+            ->leftJoin('ar.section', 'sec')
             ->where('ar.student = :student')
             ->andWhere('ar.academicYear = :academicYear')
             ->andWhere('ar.subject IS NOT NULL')
@@ -469,7 +471,7 @@ class AttendanceRecordRepository extends ServiceEntityRepository
                 ->setParameter('institute', $instituteId);
         }
 
-        $qb->groupBy('s.id, s.name, s.code');
+        $qb->groupBy('s.id, s.name, s.code, c.id, c.name, c.code, sec.id, sec.name, sec.code');
 
         return $qb->getQuery()->getArrayResult();
     }
@@ -478,6 +480,8 @@ class AttendanceRecordRepository extends ServiceEntityRepository
         Uuid $studentId,
         Uuid $subjectId,
         Uuid $academicYearId,
+        ?Uuid $classId = null,
+        ?Uuid $sectionId = null,
         ?Uuid $instituteId = null
     ): array {
         $qb = $this->createQueryBuilder('ar')
@@ -489,6 +493,16 @@ class AttendanceRecordRepository extends ServiceEntityRepository
             ->setParameter('student', $studentId)
             ->setParameter('subject', $subjectId)
             ->setParameter('academicYear', $academicYearId);
+
+        if ($classId !== null) {
+            $qb->andWhere('ar.academicClass = :class')
+                ->setParameter('class', $classId);
+        }
+
+        if ($sectionId !== null) {
+            $qb->andWhere('ar.section = :section')
+                ->setParameter('section', $sectionId);
+        }
 
         if ($instituteId !== null) {
             $qb->andWhere('ar.institute = :institute')
@@ -504,6 +518,8 @@ class AttendanceRecordRepository extends ServiceEntityRepository
         Uuid $studentId,
         Uuid $subjectId,
         Uuid $academicYearId,
+        ?Uuid $classId = null,
+        ?Uuid $sectionId = null,
         ?Uuid $instituteId = null
     ): int {
         $qb = $this->createQueryBuilder('ar')
@@ -515,6 +531,16 @@ class AttendanceRecordRepository extends ServiceEntityRepository
             ->setParameter('student', $studentId)
             ->setParameter('subject', $subjectId)
             ->setParameter('academicYear', $academicYearId);
+
+        if ($classId !== null) {
+            $qb->andWhere('ar.academicClass = :class')
+                ->setParameter('class', $classId);
+        }
+
+        if ($sectionId !== null) {
+            $qb->andWhere('ar.section = :section')
+                ->setParameter('section', $sectionId);
+        }
 
         if ($instituteId !== null) {
             $qb->andWhere('ar.institute = :institute')

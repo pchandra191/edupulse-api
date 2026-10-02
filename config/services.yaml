@@ -6,7 +6,13 @@ parameters:
     app.mailer_from: '%env(MAILER_FROM)%'
     app.mailer_from_name: 'EduPulse AI'
     app.openai_api_key: '%env(OPENAI_API_KEY)%'
+    app.openai_model: '%env(OPENAI_MODEL)%'
     app.student_portal_url: '%env(STUDENT_PORTAL_URL)%'
+    app.handwriting_ocr_base_url: '%env(HANDWRITING_OCR_BASE_URL)%'
+    app.handwriting_ocr_api_key: '%env(HANDWRITING_OCR_API_KEY)%'
+    app.handwriting_ocr_model: '%env(HANDWRITING_OCR_MODEL)%'
+    app.pdf_renderer_binary: '%env(PDF_RENDERER_BINARY)%'
+    app.max_analysis_document_size: 26214400
 
 services:
     _defaults:
@@ -38,6 +44,42 @@ services:
         arguments:
             $openAiApiKey: '%app.openai_api_key%'
 
+    # AI Analysis Services
+    App\Service\Analysis\AI\AiProviderInterface: '@App\Service\Analysis\AI\OpenAiProvider'
+
+    App\Service\Analysis\AI\OpenAiProvider:
+        arguments:
+            $apiKey: '%app.openai_api_key%'
+            $model: '%app.openai_model%'
+
+    App\Service\Analysis\AI\AiAuditLogger: ~
+
+    App\Service\Analysis\AI\PiiStripper: ~
+
+    App\Service\Analysis\AI\AuditedAiProvider:
+        arguments:
+            $provider: '@App\Service\Analysis\AI\AiProviderInterface'
+            $piiStripper: '@App\Service\Analysis\AI\PiiStripper'
+            $auditLogger: '@App\Service\Analysis\AI\AiAuditLogger'
+
+    App\Service\Analysis\AI\QuestionEvaluationService:
+        arguments:
+            $aiProvider: '@App\Service\Analysis\AI\AuditedAiProvider'
+
+    App\Service\Analysis\AI\MistakeClassificationService:
+        arguments:
+            $aiProvider: '@App\Service\Analysis\AI\AiProviderInterface'
+
+    App\Service\Analysis\AI\TopicClassificationService:
+        arguments:
+            $aiProvider: '@App\Service\Analysis\AI\AiProviderInterface'
+
+    App\Service\Analysis\AI\PatternAnalysisService: ~
+
+    App\Service\Analysis\AI\RecommendationService: ~
+
+    App\Service\Analysis\AI\AnalysisEngine: ~
+
     App\Service\ExamSubmissionDocumentModule\ExamSubmissionDocumentService:
         arguments:
             $projectDir: '%kernel.project_dir%'
@@ -57,6 +99,95 @@ services:
     App\Service\QuestionPaperModule\QuestionImageService:
         arguments:
             $projectDir: '%kernel.project_dir%'
+
+    # App\Service\Analysis\AnalysisWorkflowService:
+#         arguments:
+#             $analysisWorkflow: '@workflow.analysis'
+
+    App\Service\Analysis\AnalysisStorageResolver:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Analysis\AnalysisDocumentService:
+        arguments:
+            $analysisWorkflowService: '@App\Service\Analysis\AnalysisWorkflowService'
+            $messageBus: '@messenger.bus.default'
+            $storageResolver: '@App\Service\Analysis\AnalysisStorageResolver'
+
+    App\Service\Analysis\AnalysisProcessingService:
+        public: true
+        arguments:
+            $entityManager: '@doctrine.orm.entity_manager'
+            $pgAnalysisRepository: '@App\Repository\AnalysisRepository'
+            $mongoAnalysisRepository: '@App\Repository\MongoDB\AnalysisRepository'
+            $ocrCacheRepository: '@App\Repository\MongoDB\OcrCacheRepository'
+            $documentTextExtractor: '@App\Service\Analysis\Processing\DocumentTextExtractorInterface'
+            $questionExtractor: '@App\Service\Analysis\Processing\QuestionExtractor'
+            $answerSheetExtractor: '@App\Service\Analysis\Processing\AnswerSheetExtractor'
+            $extractionQualityValidator: '@App\Service\Analysis\Processing\ExtractionQualityValidator'
+            $meaningfulTextDetector: '@App\Service\Analysis\Processing\MeaningfulTextDetector'
+            $documentClassifier: '@App\Service\Analysis\Processing\AnswerSheetDocumentClassifier'
+            $openAiVisionProvider: '@App\Service\Analysis\Processing\OpenAiVisionProvider'
+            $visionOcrService: '@App\Service\Analysis\Processing\VisionOCRServiceInterface'
+            $pdfPageRenderer: '@App\Service\Analysis\Processing\PdfPageRendererInterface'
+            $logger: '@monolog.logger'
+            $messageBus: '@messenger.bus.default'
+            $storageResolver: '@App\Service\Analysis\AnalysisStorageResolver'
+
+    App\Service\Analysis\AnalysisProcessingRecoveryService:
+        arguments:
+            $mongoAnalysisRepository: '@App\Repository\MongoDB\AnalysisRepository'
+            $logger: '@monolog.logger'
+
+    App\Service\Analysis\Processing\DocumentTextExtractor:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Analysis\Processing\QuestionExtractor:
+        arguments: {}
+
+    App\Service\Analysis\Processing\AnswerSheetExtractor:
+        arguments: {}
+
+    App\Service\Analysis\Processing\ExtractionQualityValidator:
+        arguments: {}
+
+    App\Service\Analysis\Processing\MeaningfulTextDetector:
+        arguments: {}
+
+    App\Service\Analysis\Processing\VisionOCRServiceInterface: '@App\Service\Analysis\Processing\VisionOCRService'
+
+    App\Service\Analysis\Processing\OpenAiVisionProvider:
+        arguments:
+            $httpClient: '@Symfony\Contracts\HttpClient\HttpClientInterface'
+            $apiKey: '%app.openai_api_key%'
+            $model: '%app.openai_model%'
+            $projectDir: '%kernel.project_dir%'
+            $pdfRenderer: '@App\Service\Analysis\Processing\PdfPageRendererInterface'
+
+    App\Service\Analysis\Processing\AnswerSheetDocumentClassifier:
+        arguments: {}
+
+    App\Service\Analysis\Processing\VisionOCRService:
+        arguments:
+            $httpClient: '@Symfony\Contracts\HttpClient\HttpClientInterface'
+            $baseUrl: '%app.handwriting_ocr_base_url%'
+            $apiKey: '%app.handwriting_ocr_api_key%'
+            $model: '%app.handwriting_ocr_model%'
+            $projectDir: '%kernel.project_dir%'
+            $ocrCacheRepository: '@App\Repository\MongoDB\OcrCacheRepository'
+            $pdfRenderer: '@App\Service\Analysis\Processing\PdfPageRendererInterface'
+
+    App\Service\Analysis\Processing\PdfPageRendererInterface: '@App\Service\Analysis\Processing\PdftoppmRenderer'
+
+    App\Service\Analysis\Processing\PdftoppmRenderer:
+        arguments:
+            $binaryPath: '%app.pdf_renderer_binary%'
+
+    App\Repository\MongoDB\OcrCacheRepository:
+        class: App\Repository\MongoDB\OcrCacheRepository
+        factory: ['@doctrine_mongodb.odm.default_document_manager', 'getRepository']
+        arguments: ['App\Document\OcrCache']
 
     App\Common\Api\Response\ApiResponseFactory:
         arguments:
@@ -88,6 +219,14 @@ services:
         arguments:
             $property: 'status'
             $enumClass: App\Enum\ExamAttemptStatus
+
+    app.workflow.marking_store.analysis:
+        parent: App\Workflow\EnumMarkingStore
+        arguments:
+            $property: 'status'
+            $enumClass: App\Enum\AnalysisStatus
+
+    App\Service\Analysis\ExamSetService: ~
 
 when@test:
     services:
