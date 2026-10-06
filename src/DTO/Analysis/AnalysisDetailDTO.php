@@ -26,6 +26,8 @@ readonly class AnalysisDetailDTO
         public string $createdAt,
         public string $updatedAt,
         public ?array $documentClassification = null,
+        public ?MetadataConfirmationDTO $metadataConfirmation = null,
+        public ?array $limits = null,
     ) {
     }
 }

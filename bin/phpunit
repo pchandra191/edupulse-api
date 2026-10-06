@@ -1,4 +1,6 @@
 #!/usr/bin/env php
 <?php
 
+ini_set('memory_limit', '512M');
+
 require dirname(__DIR__).'/vendor/phpunit/phpunit/phpunit';

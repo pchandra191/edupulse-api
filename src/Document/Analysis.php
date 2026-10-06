@@ -53,6 +53,15 @@ class Analysis
     #[ODM\Field(type: 'raw', nullable: true)]
     private ?array $documentClassification = null;
 
+    #[ODM\Field(type: 'string', nullable: true)]
+    private ?string $metadataConfirmationStatus = null;
+
+    #[ODM\Field(type: 'date_immutable', nullable: true)]
+    private ?\DateTimeImmutable $metadataConfirmedAt = null;
+
+    #[ODM\Field(type: 'string', nullable: true)]
+    private ?string $metadataConfirmedBy = null;
+
     public function __construct()
     {
         $this->id = Uuid::v7()->toRfc4122();
@@ -193,6 +202,39 @@ class Analysis
     public function setDocumentClassification(?array $documentClassification): self
     {
         $this->documentClassification = $documentClassification;
+        return $this;
+    }
+
+    public function getMetadataConfirmationStatus(): ?string
+    {
+        return $this->metadataConfirmationStatus;
+    }
+
+    public function setMetadataConfirmationStatus(?string $metadataConfirmationStatus): self
+    {
+        $this->metadataConfirmationStatus = $metadataConfirmationStatus;
+        return $this;
+    }
+
+    public function getMetadataConfirmedAt(): ?\DateTimeImmutable
+    {
+        return $this->metadataConfirmedAt;
+    }
+
+    public function setMetadataConfirmedAt(?\DateTimeImmutable $metadataConfirmedAt): self
+    {
+        $this->metadataConfirmedAt = $metadataConfirmedAt;
+        return $this;
+    }
+
+    public function getMetadataConfirmedBy(): ?string
+    {
+        return $this->metadataConfirmedBy;
+    }
+
+    public function setMetadataConfirmedBy(?string $metadataConfirmedBy): self
+    {
+        $this->metadataConfirmedBy = $metadataConfirmedBy;
         return $this;
     }
 }

@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Enum\AnalysisSource;
 use App\Enum\AnalysisStatus;
+use App\Enum\MetadataConfirmationStatus;
 use App\Repository\AnalysisRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -57,6 +58,15 @@ class Analysis extends AbstractEntity
 
     #[ORM\Column(type: Types::STRING, length: 50, nullable: true)]
     private ?string $rollNumber = null;
+
+    #[ORM\Column(type: Types::STRING, length: 20, nullable: true)]
+    private ?string $metadataConfirmationStatus = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $metadataConfirmedAt = null;
+
+    #[ORM\Column(type: Types::STRING, length: 36, nullable: true)]
+    private ?string $metadataConfirmedBy = null;
 
     public function __construct()
     {
@@ -182,6 +192,39 @@ class Analysis extends AbstractEntity
     public function setRollNumber(?string $rollNumber): self
     {
         $this->rollNumber = $rollNumber;
+        return $this;
+    }
+
+    public function getMetadataConfirmationStatus(): ?string
+    {
+        return $this->metadataConfirmationStatus;
+    }
+
+    public function setMetadataConfirmationStatus(?string $metadataConfirmationStatus): self
+    {
+        $this->metadataConfirmationStatus = $metadataConfirmationStatus;
+        return $this;
+    }
+
+    public function getMetadataConfirmedAt(): ?\DateTimeImmutable
+    {
+        return $this->metadataConfirmedAt;
+    }
+
+    public function setMetadataConfirmedAt(?\DateTimeImmutable $metadataConfirmedAt): self
+    {
+        $this->metadataConfirmedAt = $metadataConfirmedAt;
+        return $this;
+    }
+
+    public function getMetadataConfirmedBy(): ?string
+    {
+        return $this->metadataConfirmedBy;
+    }
+
+    public function setMetadataConfirmedBy(?string $metadataConfirmedBy): self
+    {
+        $this->metadataConfirmedBy = $metadataConfirmedBy;
         return $this;
     }
 }

@@ -10,7 +10,9 @@ use App\Enum\AnalysisSource;
 use App\Enum\AnalysisStatus;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
+use App\Service\Analysis\Settings\AnalysisSettings;
 use App\Repository\MongoDB\AnalysisRepository;
+use App\Service\Analysis\AnalysisStorageResolver;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Uid\Uuid;
@@ -108,10 +110,11 @@ class AnalysisUploadControllerTest extends WebTestCase
 
         $data = json_decode($response->getContent(), true);
         $this->assertTrue($data['success']);
-        $this->assertSame('File uploaded successfully.', $data['message']);
+        $this->assertSame('File(s) uploaded successfully.', $data['message']);
         $this->assertSame($analysisId, $data['data']['analysisId']);
         $this->assertSame('QUESTION_PAPER', $data['data']['documentType']);
-        $this->assertArrayHasKey('fileId', $data['data']);
+        $this->assertArrayHasKey('files', $data['data']);
+        $this->assertCount(1, $data['data']['files']);
         $this->assertSame('UPLOADED', $data['data']['status']);
 
         // Verify MongoDB was updated
@@ -119,7 +122,7 @@ class AnalysisUploadControllerTest extends WebTestCase
         $mongoRepo = $container->get(AnalysisRepository::class);
         $mongoAnalysis = $mongoRepo->findByAnalysisIdAndStudentId($analysisId, (string) $this->student1Id);
         $this->assertNotNull($mongoAnalysis);
-        $this->assertSame($data['data']['fileId'], $mongoAnalysis->getDocuments()->getQuestionPaper()->getFileId());
+        $this->assertSame($data['data']['files'][0]['fileId'], $mongoAnalysis->getDocuments()->getQuestionPaper()->getFileId());
         $this->assertSame('UPLOADED', $mongoAnalysis->getDocuments()->getQuestionPaper()->getStatus());
     }
 
@@ -158,8 +161,124 @@ class AnalysisUploadControllerTest extends WebTestCase
         $mongoRepo = $container->get(AnalysisRepository::class);
         $mongoAnalysis = $mongoRepo->findByAnalysisIdAndStudentId($analysisId, (string) $this->student1Id);
         $this->assertNotNull($mongoAnalysis);
-        $this->assertSame($data['data']['fileId'], $mongoAnalysis->getDocuments()->getAnswerSheet()->getFileId());
+        $this->assertSame($data['data']['files'][0]['fileId'], $mongoAnalysis->getDocuments()->getAnswerSheet()->getFileId());
         $this->assertSame('UPLOADED', $mongoAnalysis->getDocuments()->getAnswerSheet()->getStatus());
+    }
+
+    public function testStudentCanUploadMultipleAnswerSheets(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // Upload 6 answer-sheet pages in a single request
+        $files = [];
+        for ($i = 1; $i <= 6; $i++) {
+            $files[] = $this->createTestFile("answer_page_{$i}.jpg", 'image/jpeg', "answer page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame($analysisId, $data['data']['analysisId']);
+        $this->assertCount(6, $data['data']['files']);
+
+        // All 6 files have separate file IDs and preserved ordering (page 1..6)
+        $fileIds = [];
+        foreach ($data['data']['files'] as $index => $file) {
+            $this->assertNotEmpty($file['fileId']);
+            $this->assertSame($index + 1, $file['page']);
+            $this->assertSame('UPLOADED', $file['status']);
+            $fileIds[] = $file['fileId'];
+        }
+        $this->assertSame(array_values(array_unique($fileIds)), $fileIds);
+
+        // All 6 belong to the SAME analysis, ordering preserved
+        $container = $this->client->getContainer();
+        $mongoRepo = $container->get(AnalysisRepository::class);
+        $mongoAnalysis = $mongoRepo->findByAnalysisIdAndStudentId($analysisId, (string) $this->student1Id);
+        $this->assertNotNull($mongoAnalysis);
+        $answerSheets = $mongoAnalysis->getDocuments()->getAnswerSheets();
+        $this->assertCount(6, $answerSheets);
+        foreach ($answerSheets as $index => $answerSheet) {
+            $this->assertSame($index + 1, $answerSheet->getPage());
+            $this->assertSame('UPLOADED', $answerSheet->getStatus());
+        }
+        $this->assertSame($fileIds, array_map(fn($as) => $as->getFileId(), $answerSheets));
+    }
+
+    public function testUploadMovesFileToPermanentStorageNotTempPath(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        $file = $this->createTestFile('permanent_storage.pdf', 'application/pdf', 'permanent storage check');
+        $tempPath = $file->getPathname();
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'file' => $file,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $fileId = $data['data']['files'][0]['fileId'];
+
+        // The PHP temporary upload file must be gone after the request
+        // (it was moved into permanent analysis storage during the request).
+        $this->assertFileDoesNotExist($tempPath);
+
+        // The permanent file must exist under the analysis storage directory,
+        // resolved via analysisId + fileId (never via a PHP temp path).
+        $container = $this->client->getContainer();
+        $storageResolver = $container->get(AnalysisStorageResolver::class);
+        $permanentPath = $storageResolver->getFilePathByFileId($analysisId, $fileId);
+        $this->assertFileExists($permanentPath);
+        $this->assertStringNotContainsString(sys_get_temp_dir(), $permanentPath);
+
+        // MongoDB references the permanent file ID.
+        $mongoRepo = $container->get(AnalysisRepository::class);
+        $mongoAnalysis = $mongoRepo->findByAnalysisIdAndStudentId($analysisId, (string) $this->student1Id);
+        $this->assertSame($fileId, $mongoAnalysis->getDocuments()->getAnswerSheet()->getFileId());
+    }
+
+    public function testUploadDoesNotStartProcessing(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        $file = $this->createTestFile('no_processing.pdf', 'application/pdf', 'no processing on upload');
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'file' => $file,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Uploading files must NOT start AI processing: the analysis stays in
+        // DRAFT and processing never enters PROCESSING/ANALYZING/EXTRACTING_PDF.
+        $container = $this->client->getContainer();
+        $mongoRepo = $container->get(AnalysisRepository::class);
+        $mongoAnalysis = $mongoRepo->findByAnalysisIdAndStudentId($analysisId, (string) $this->student1Id);
+        $this->assertNotNull($mongoAnalysis);
+        $this->assertSame('DRAFT', $mongoAnalysis->getStatus());
+        $this->assertSame('PENDING', $mongoAnalysis->getProcessing()->getStatus());
+        $this->assertNotSame('PROCESSING', $mongoAnalysis->getProcessing()->getStage());
+        $this->assertNotSame('ANALYZING', $mongoAnalysis->getProcessing()->getStage());
+        $this->assertNotSame('EXTRACTING_PDF', $mongoAnalysis->getProcessing()->getStage());
     }
 
     public function testStudentCannotUploadToAnotherStudentsAnalysis(): void
@@ -232,7 +351,7 @@ class AnalysisUploadControllerTest extends WebTestCase
 
         $data = json_decode($response->getContent(), true);
         $this->assertFalse($data['success']);
-        $this->assertArrayHasKey('file', $data['errors'] ?? []);
+        $this->assertArrayHasKey('files', $data['errors'] ?? []);
     }
 
     public function testInvalidDocumentTypeIsRejected(): void
@@ -292,7 +411,8 @@ class AnalysisUploadControllerTest extends WebTestCase
 
         $data = json_decode($response->getContent(), true);
         $this->assertFalse($data['success']);
-        $this->assertArrayHasKey('file', $data['errors'] ?? []);
+        $this->assertArrayHasKey('files[0]', $data['errors'] ?? []);
+        $this->assertStringContainsString('Invalid file type', $data['errors']['files[0]'][0]);
     }
 
     public function testFileAtMaxSizeIsAccepted(): void
@@ -364,8 +484,8 @@ class AnalysisUploadControllerTest extends WebTestCase
 
         $data = json_decode($response->getContent(), true);
         $this->assertFalse($data['success']);
-        $this->assertArrayHasKey('file', $data['errors'] ?? []);
-        $this->assertStringContainsString('too large', strtolower($data['errors']['file'][0]));
+        $this->assertArrayHasKey('files[0]', $data['errors'] ?? []);
+        $this->assertStringContainsString('too large', strtolower($data['errors']['files[0]'][0]));
 
         @unlink($tempFile);
     }
@@ -419,7 +539,7 @@ class AnalysisUploadControllerTest extends WebTestCase
 
         $data = json_decode($response->getContent(), true);
         $this->assertFalse($data['success']);
-        $this->assertArrayHasKey('file', $data['errors'] ?? []);
+        $this->assertArrayHasKey('files[0]', $data['errors'] ?? []);
 
         @unlink($tempFile);
     }
@@ -474,9 +594,266 @@ class AnalysisUploadControllerTest extends WebTestCase
         $this->assertNotNull($mongoAnalysis->getExam());
         $this->assertNotNull($mongoAnalysis->getProcessing());
         
-        // Answer sheet should still be NOT_UPLOADED
-        $this->assertNull($mongoAnalysis->getDocuments()->getAnswerSheet()->getFileId());
-        $this->assertSame('NOT_UPLOADED', $mongoAnalysis->getDocuments()->getAnswerSheet()->getStatus());
+        // Answer sheets should still be empty (only a question paper was uploaded)
+        $this->assertSame(0, $mongoAnalysis->getDocuments()->getAnswerSheetCount());
+        $this->assertEmpty($mongoAnalysis->getDocuments()->getAnswerSheets());
+    }
+
+    // ========== PAGE LIMIT TESTS ==========
+
+    public function testUploadAtPageLimitAllowed(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // Upload exactly 50 pages (50 images = 50 pages)
+        $files = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $files[] = $this->createTestFile("page_{$i}.jpg", 'image/jpeg', "page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertCount(50, $data['data']['files']);
+    }
+
+    public function testUploadExceedsPageLimitRejected(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // Upload 51 pages (exceeds 50 page limit)
+        $files = [];
+        for ($i = 1; $i <= 51; $i++) {
+            $files[] = $this->createTestFile("page_{$i}.jpg", 'image/jpeg', "page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(422, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+        $this->assertSame('VALIDATION_ERROR', $data['code'] ?? '');
+        $this->assertArrayHasKey('code', $data['errors'] ?? []);
+        $this->assertSame('ANALYSIS_PAGE_LIMIT_EXCEEDED', $data['errors']['code'] ?? '');
+        $this->assertSame(50, $data['errors']['maxPages'] ?? null);
+        $this->assertSame(0, $data['errors']['existingPages'] ?? null);
+        $this->assertSame(51, $data['errors']['requestedPages'] ?? null);
+        $this->assertSame(51, $data['errors']['totalPages'] ?? null);
+    }
+
+    public function testMultipleUploadsRespectCumulativePageLimit(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // First upload: 30 pages
+        $files1 = [];
+        for ($i = 1; $i <= 30; $i++) {
+            $files1[] = $this->createTestFile("page1_{$i}.jpg", 'image/jpeg', "page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files1,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Second upload: 20 pages (total = 50, exactly at limit)
+        $files2 = [];
+        for ($i = 1; $i <= 20; $i++) {
+            $files2[] = $this->createTestFile("page2_{$i}.jpg", 'image/jpeg', "page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files2,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Third upload: 1 page (would exceed limit to 51)
+        $file3 = $this->createTestFile('page3_1.jpg', 'image/jpeg', 'page 51');
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'file' => $file3,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(422, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+        $this->assertSame('VALIDATION_ERROR', $data['code'] ?? '');
+        $this->assertSame('ANALYSIS_PAGE_LIMIT_EXCEEDED', $data['errors']['code'] ?? '');
+        $this->assertSame(50, $data['errors']['maxPages'] ?? null);
+        $this->assertSame(50, $data['errors']['existingPages'] ?? null);
+        $this->assertSame(1, $data['errors']['requestedPages'] ?? null);
+        $this->assertSame(51, $data['errors']['totalPages'] ?? null);
+    }
+
+    public function testQuestionPaperAndAnswerSheetsCombinedRespectPageLimit(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // Upload 10-page question paper (PDF) - note: test PDF is 1 page
+        $qpFile = $this->createTestFile('question_paper.pdf', 'application/pdf', 'question paper content');
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'QUESTION_PAPER',
+        ], [
+            'file' => $qpFile,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Upload 40 answer sheets (total = 41, under limit of 50)
+        $files = [];
+        for ($i = 1; $i <= 40; $i++) {
+            $files[] = $this->createTestFile("answer_{$i}.jpg", 'image/jpeg', "answer {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Upload 10 more answer sheets (total = 51, exceeds limit)
+        $files2 = [];
+        for ($i = 1; $i <= 10; $i++) {
+            $files2[] = $this->createTestFile("answer_extra_{$i}.jpg", 'image/jpeg', "extra {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files2,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(422, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+        $this->assertSame('VALIDATION_ERROR', $data['code'] ?? '');
+        $this->assertSame('ANALYSIS_PAGE_LIMIT_EXCEEDED', $data['errors']['code'] ?? '');
+        $this->assertSame(50, $data['errors']['maxPages'] ?? null);
+        $this->assertSame(41, $data['errors']['existingPages'] ?? null); // 1 QP + 40 answers = 41
+    }
+
+    public function testRejectedUploadDoesNotPersistFile(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // First upload 50 pages
+        $files = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $files[] = $this->createTestFile("page_{$i}.jpg", 'image/jpeg', "page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Try to upload 1 more page (rejected)
+        $extraFile = $this->createTestFile('extra.jpg', 'image/jpeg', 'extra');
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'file' => $extraFile,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(422, $response->getStatusCode(), $response->getContent());
+
+        // Verify no extra file was persisted
+        $container = $this->client->getContainer();
+        $mongoRepo = $container->get(AnalysisRepository::class);
+        $mongoAnalysis = $mongoRepo->findByAnalysisIdAndStudentId($analysisId, (string) $this->student1Id);
+        $this->assertNotNull($mongoAnalysis);
+        $this->assertSame(50, count($mongoAnalysis->getDocuments()->getAnswerSheets()));
+    }
+
+    public function testRejectedUploadDoesNotDispatchMessenger(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // First upload 50 pages
+        $files = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $files[] = $this->createTestFile("page_{$i}.jpg", 'image/jpeg', "page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Try to upload 1 more page (rejected)
+        $extraFile = $this->createTestFile('extra.jpg', 'image/jpeg', 'extra');
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'file' => $extraFile,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(422, $response->getStatusCode(), $response->getContent());
+
+        // The analysis should still be in DRAFT status (no processing started)
+        $container = $this->client->getContainer();
+        $mongoRepo = $container->get(AnalysisRepository::class);
+        $mongoAnalysis = $mongoRepo->findByAnalysisIdAndStudentId($analysisId, (string) $this->student1Id);
+        $this->assertNotNull($mongoAnalysis);
+        $this->assertSame('DRAFT', $mongoAnalysis->getStatus());
+        $this->assertSame('PENDING', $mongoAnalysis->getProcessing()->getStatus());
     }
 
     public function testExistingEndpointsStillWork(): void
@@ -546,7 +923,9 @@ class AnalysisUploadControllerTest extends WebTestCase
 
     private function createTestFile(string $filename, string $mimeType, string $content): UploadedFile
     {
-        $tempFile = sys_get_temp_dir() . '/' . $filename;
+        // Use tempnam exactly like the working test
+        $extension = pathinfo($filename, PATHINFO_EXTENSION);
+        $tempFile = tempnam(sys_get_temp_dir(), 'doc_') . '.' . $extension;
         
         // Use proper file content for mime type detection
         if ($mimeType === 'application/pdf') {
@@ -559,7 +938,21 @@ class AnalysisUploadControllerTest extends WebTestCase
             $content = hex2bin('89504E470D0A1A0A0000000D4948445200000001000000010802000000907753DE0000000C4944415408D763F8FFFF030000060005E100160000000049454E44AE426082');
         }
         
-        file_put_contents($tempFile, $content);
+        $result = file_put_contents($tempFile, $content);
+        if ($result === false) {
+            throw new \RuntimeException("Failed to create test file: $tempFile");
+        }
+        
+        if (!file_exists($tempFile)) {
+            throw new \RuntimeException("Test file was not created: $tempFile");
+        }
+        
+        if (!is_readable($tempFile)) {
+            throw new \RuntimeException("Test file is not readable: $tempFile");
+        }
+        
+        // Debug: output file info
+        fwrite(STDERR, "CREATE TEST FILE: $tempFile (size: " . filesize($tempFile) . ")\n");
         
         return new UploadedFile(
             $tempFile,
@@ -568,6 +961,209 @@ class AnalysisUploadControllerTest extends WebTestCase
             null,
             true
         );
+    }
+
+    // ========== LIMITS TESTS ==========
+
+    public function testGetAnalysisIncludesLimits(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // Get analysis - should include limits
+        $this->client->request('GET', '/api/v1/student/analyses/' . $analysisId, [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('limits', $data['data']);
+
+        $limits = $data['data']['limits'];
+        $this->assertSame(50, $limits['maxTotalPages']);
+        $this->assertSame(26214400, $limits['maxFileSize']);
+        $this->assertSame(100, $limits['maxFiles']);
+        $this->assertSame(0, $limits['pagesUsed']);
+        $this->assertSame(50, $limits['pagesRemaining']);
+    }
+
+    public function testGetAnalysisLimitsWithUploadedPages(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // Upload 10 pages (images = 1 page each)
+        $files = [];
+        for ($i = 1; $i <= 10; $i++) {
+            $files[] = $this->createTestFile("page_{$i}.jpg", 'image/jpeg', "page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Get analysis - should include limits with pagesUsed = 10
+        $this->client->request('GET', '/api/v1/student/analyses/' . $analysisId, [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('limits', $data['data']);
+
+        $limits = $data['data']['limits'];
+        $this->assertSame(50, $limits['maxTotalPages']);
+        $this->assertSame(26214400, $limits['maxFileSize']);
+        $this->assertSame(100, $limits['maxFiles']);
+        $this->assertSame(10, $limits['pagesUsed']);
+        $this->assertSame(40, $limits['pagesRemaining']);
+    }
+
+    public function testGetAnalysisLimitsPagesRemainingNeverNegative(): void
+    {
+        $analysisId = $this->createAnalysisAndGetId();
+
+        // Upload 50 pages (at limit)
+        $files = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $files[] = $this->createTestFile("page_{$i}.jpg", 'image/jpeg', "page {$i}");
+        }
+
+        $this->client->request('POST', '/api/v1/student/analyses/upload', [
+            'analysisId' => $analysisId,
+            'documentType' => 'ANSWER_SHEET',
+        ], [
+            'files' => $files,
+        ], $this->authHeaders($this->student1Token));
+
+        $response = $this->client->getResponse();
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
+
+        // Get analysis - pagesRemaining should be 0, not negative
+        $this->client->request('GET', '/api/v1/student/analyses/' . $analysisId, [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('limits', $data['data']);
+
+        $limits = $data['data']['limits'];
+        $this->assertSame(50, $limits['pagesUsed']);
+        $this->assertSame(0, $limits['pagesRemaining']);
+    }
+
+    // ========== UPLOAD-REQUIREMENTS TESTS ==========
+
+    public function testUploadRequirementsEndpointReturns200(): void
+    {
+        $this->client->request('GET', '/api/v1/student/analyses/upload-requirements', [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+    }
+
+    public function testUploadRequirementsMaxTotalPagesMatchesAnalysisSettings(): void
+    {
+        $settings = $this->getAnalysisSettings();
+        $this->client->request('GET', '/api/v1/student/analyses/upload-requirements', [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame($settings->getUploadMaxTotalPages(), $data['data']['maxTotalPages']);
+    }
+
+    public function testUploadRequirementsMaxFileSizeMatchesAnalysisSettings(): void
+    {
+        $settings = $this->getAnalysisSettings();
+        $this->client->request('GET', '/api/v1/student/analyses/upload-requirements', [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame($settings->getUploadMaxFileSize(), $data['data']['maxFileSize']);
+    }
+
+    public function testUploadRequirementsMaxFilesMatchesAnalysisSettings(): void
+    {
+        $settings = $this->getAnalysisSettings();
+        $this->client->request('GET', '/api/v1/student/analyses/upload-requirements', [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertSame($settings->getUploadMaxFiles(), $data['data']['maxFiles']);
+    }
+
+    public function testUploadRequirementsResponseFollowsApiFormat(): void
+    {
+        $this->client->request('GET', '/api/v1/student/analyses/upload-requirements', [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertIsString($data['message']);
+        $this->assertNotEmpty($data['message']);
+        $this->assertIsArray($data['data']);
+        $this->assertArrayHasKey('maxTotalPages', $data['data']);
+        $this->assertArrayHasKey('maxFileSize', $data['data']);
+        $this->assertArrayHasKey('maxFiles', $data['data']);
+        $this->assertArrayHasKey('version', $data['meta']);
+        $this->assertSame('v1', $data['meta']['version']);
+
+        // Session-dependent fields must not be exposed on the requirements endpoint.
+        $this->assertArrayNotHasKey('pagesUsed', $data['data']);
+        $this->assertArrayNotHasKey('pagesRemaining', $data['data']);
+    }
+
+    public function testUploadRequirementsContainsNoHardcodedLimitValues(): void
+    {
+        $settings = $this->getAnalysisSettings();
+        $this->client->request('GET', '/api/v1/student/analyses/upload-requirements', [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+
+        // The response must equal the configured AnalysisSettings values exactly,
+        // proving the endpoint reads from AnalysisSettings rather than literal constants.
+        $this->assertSame(
+            [
+                'maxTotalPages' => $settings->getUploadMaxTotalPages(),
+                'maxFileSize' => $settings->getUploadMaxFileSize(),
+                'maxFiles' => $settings->getUploadMaxFiles(),
+            ],
+            $data['data']
+        );
+    }
+
+    public function testUploadRequirementsAndUploadValidationShareSameSettings(): void
+    {
+        $settings = $this->getAnalysisSettings();
+        $this->client->request('GET', '/api/v1/student/analyses/upload-requirements', [], [], $this->authHeaders($this->student1Token));
+        $response = $this->client->getResponse();
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+
+        $data = json_decode($response->getContent(), true);
+
+        // The requirements endpoint and the upload validation path must share the
+        // same source of truth (AnalysisSettings), so a config change stays in sync.
+        $this->assertSame($settings->getUploadMaxFileSize(), $data['data']['maxFileSize']);
+        $this->assertSame($settings->getUploadMaxFiles(), $data['data']['maxFiles']);
+        $this->assertSame($settings->getUploadMaxTotalPages(), $data['data']['maxTotalPages']);
+    }
+
+    private function getAnalysisSettings(): \App\Service\Analysis\Settings\AnalysisSettings
+    {
+        return $this->client->getContainer()->get(\App\Service\Analysis\Settings\AnalysisSettings::class);
     }
 
     protected function tearDown(): void

@@ -10,6 +10,7 @@ readonly class ReviewAnalysisResponseDTO
         public string $status,
         public ExamReviewDTO $exam,
         public int $questionCount,
+        public ?MetadataConfirmationDTO $metadataConfirmation = null,
     ) {
     }
 }

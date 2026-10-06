@@ -49,7 +49,7 @@ class AnalysisProcessingServiceOcrTest extends TestCase
         $answerSheet = new DocumentFile();
         $answerSheet->setFileId($fileId);
         $answerSheet->setStatus('UPLOADED');
-        $documents->setAnswerSheet($answerSheet);
+        $documents->addAnswerSheet($answerSheet);
 
         $questionPaper = new DocumentFile();
         $documents->setQuestionPaper($questionPaper);

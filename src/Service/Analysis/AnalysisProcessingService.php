@@ -67,10 +67,27 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
             throw new AnalysisNotFoundException('Analysis not found.');
         }
 
-        // Check if answer sheet is uploaded (required)
-        $answerSheet = $mongoAnalysis->getDocuments()->getAnswerSheet();
-        if ($answerSheet->getStatus() !== 'UPLOADED') {
+        // Check if answer sheet is uploaded (required) - supports multiple files/pages
+        $answerSheets = array_values(array_filter(
+            $mongoAnalysis->getDocuments()->getAnswerSheets(),
+            fn($as) => $as->getStatus() === 'UPLOADED'
+        ));
+        if (empty($answerSheets)) {
             throw new \RuntimeException('Answer sheet must be uploaded before processing.');
+        }
+
+        $this->logger->info('Answer sheet files for processing', [
+            'analysis_id' => $analysisId,
+            'answer_sheet_count' => count($answerSheets),
+        ]);
+        foreach ($answerSheets as $fileIndex => $answerSheet) {
+            $this->logger->info('Answer sheet file for processing', [
+                'analysis_id' => $analysisId,
+                'file_index' => $fileIndex + 1,
+                'file_count' => count($answerSheets),
+                'file_id' => $answerSheet->getFileId(),
+                'original_filename' => $answerSheet->getOriginalFilename(),
+            ]);
         }
 
         // Question paper is optional - process if available
@@ -133,26 +150,28 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
         // Get file paths
         $this->logger->debug('Resolving file paths', [
             'analysis_id' => $analysisId,
-            'answer_sheet_file_id' => $answerSheet->getFileId(),
+            'answer_sheet_file_ids' => array_map(fn($as): ?string => $as->getFileId(), $answerSheets),
             'question_paper_file_id' => $questionPaper->getFileId(),
             'has_question_paper' => $hasQuestionPaper,
         ]);
         
-        $answerSheetPath = $this->getFilePath($answerSheet->getFileId(), $analysisId);
+        $answerSheetPaths = [];
+        foreach ($answerSheets as $answerSheet) {
+            $answerSheetPaths[] = $this->getFilePath($answerSheet->getFileId(), $analysisId);
+        }
         $questionPaperPath = $hasQuestionPaper ? $this->getFilePath($questionPaper->getFileId(), $analysisId) : null;
         
         $this->logger->debug('File paths resolved', [
             'analysis_id' => $analysisId,
-            'answer_sheet_path' => $answerSheetPath,
-            'answer_sheet_exists' => file_exists($answerSheetPath),
-            'answer_sheet_size' => file_exists($answerSheetPath) ? filesize($answerSheetPath) : 0,
+            'answer_sheet_count' => count($answerSheetPaths),
+            'answer_sheet_paths' => $answerSheetPaths,
             'question_paper_path' => $questionPaperPath,
             'question_paper_exists' => $questionPaperPath ? file_exists($questionPaperPath) : false,
             'question_paper_size' => $questionPaperPath && file_exists($questionPaperPath) ? filesize($questionPaperPath) : 0,
         ]);
 
-        // Compute file hash for caching/idempotency
-        $fileHash = $this->computeFileHash($answerSheetPath);
+        // Compute combined file hash for caching/idempotency (covers all answer-sheet files)
+        $fileHash = $this->computeCombinedFileHash($answerSheetPaths);
         $this->logger->debug('Computed file hash', [
             'analysis_id' => $analysisId,
             'file_hash' => $fileHash,
@@ -170,22 +189,20 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
         ]);
 
         try {
-            // Step 1: Extract text with SetaPDF
+            // Step 1: Extract text from all answer-sheet files (in order)
             $this->logger->debug('Starting answer sheet text extraction', [
                 'analysis_id' => $analysisId,
-                'file_path' => $answerSheetPath,
+                'file_count' => count($answerSheetPaths),
+                'file_paths' => $answerSheetPaths,
             ]);
 
             $processing->setStage('EXTRACTING_PDF');
             $this->mongoAnalysisRepository->save($mongoAnalysis);
 
-            $answerSheetData = $this->documentTextExtractor->extract(
-                $answerSheetPath,
-                $this->getMimeTypeFromExtension($answerSheetPath)
-            );
+            $answerSheetData = $this->extractAnswerSheetData($answerSheetPaths);
 
-            $this->logger->debug('Answer sheet text extraction completed', [
-                'analysis_id' => $analysisId,
+            $this->logger->info('[PDF-EXTRACTION]', [
+                'analysisId' => $analysisId,
                 'has_extractable_text' => $answerSheetData['hasExtractableText'],
                 'page_count' => $answerSheetData['pageCount'],
                 'text_length' => strlen($answerSheetData['text']),
@@ -238,16 +255,16 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
                 
                 $answerSheetExtraction = $this->answerSheetExtractor->extractFromAnswerSheet($answerSheetData['pages']);
                 
-                // Validate if extraction is meaningful using the quality validator
-                $qualityValidation = $this->extractionQualityValidator->validate($answerSheetExtraction, $answerSheetData['pages']);
-                
-                $this->logger->debug('Extraction quality validation', [
-                    'analysis_id' => $analysisId,
-                    'usable' => $qualityValidation['usable'],
-                    'reason' => $qualityValidation['reason'],
-                    'meaningful_answers' => $qualityValidation['meaningfulAnswerCount'],
-                    'metadata_fields' => $qualityValidation['metadataCount'],
+                $this->logger->info('[PDF-EXTRACTION]', [
+                    'analysisId' => $analysisId,
+                    'extractedAnswersCount' => count($answerSheetExtraction['answers'] ?? []),
+                    'extractedMetadataCount' => $this->answerSheetExtractor->countMetadataFields($answerSheetExtraction['metadata'] ?? new \App\DTO\Analysis\ExtractedAnswerSheetMetadata()),
+                    'extractionResult' => $answerSheetExtraction['extractionResult'] ?? 'unknown',
+                    'extractionConfidence' => $answerSheetExtraction['extractionConfidence'] ?? 0.0,
                 ]);
+                
+                // Validate extraction quality
+                $qualityValidation = $this->extractionQualityValidator->validate($answerSheetExtraction, $answerSheetData['pages']);
                 
                 // If extraction not usable and we haven't tried OCR yet, run OCR fallback
                 if (!$qualityValidation['usable']) {
@@ -264,8 +281,8 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
                         // For PDF documents, verify that a PDF renderer is available BEFORE
                         // calling the paid Vision OCR provider. If the renderer is not
                         // available, fail with a controlled infrastructure error.
-                        $mimeType = $this->getMimeTypeFromExtension($answerSheetPath);
-                        if ($mimeType === 'application/pdf') {
+                        $hasPdfAnswerSheet = $this->answerSheetsContainPdf($answerSheetPaths);
+                        if ($hasPdfAnswerSheet) {
                             if (!$this->pdfPageRenderer || !$this->pdfPageRenderer->isAvailable()) {
                                 $this->logger->error('PDF renderer not available for handwriting OCR', [
                                     'analysis_id' => $analysisId,
@@ -293,7 +310,7 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
                         $pagesNeedingOcr = $this->determinePagesNeedingOcr($qualityValidation['pageAnalysis']);
                         
                         try {
-                            $answerSheetData = $this->runOcrFallback($answerSheetPath, $mongoAnalysis, $fileHash, $pagesNeedingOcr);
+                            $answerSheetData = $this->runOcrFallbackForAnswerSheets($answerSheetPaths, $mongoAnalysis, $fileHash, $pagesNeedingOcr);
                         } catch (PdfRendererUnavailableException $e) {
                             $this->logger->error('PDF renderer unavailable during OCR processing', [
                                 'analysis_id' => $analysisId,
@@ -344,8 +361,8 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
             'analysis_id' => $analysisId,
         ]);
         
-        $mimeType = $this->getMimeTypeFromExtension($answerSheetPath);
-        if ($mimeType === 'application/pdf') {
+        $hasPdfAnswerSheet = $this->answerSheetsContainPdf($answerSheetPaths);
+        if ($hasPdfAnswerSheet) {
             if (!$this->pdfPageRenderer || !$this->pdfPageRenderer->isAvailable()) {
                 $this->logger->error('PDF renderer not available for handwriting OCR', [
                     'analysis_id' => $analysisId,
@@ -375,7 +392,7 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
         // Use combined visual extraction if question paper is available
         if ($hasQuestionPaper && $questionPaperPath !== null) {
             $answerSheetData = $this->runCombinedVisualExtraction(
-                $answerSheetPath,
+                $answerSheetPaths,
                 $questionPaperPath,
                 $mongoAnalysis,
                 $fileHash
@@ -385,7 +402,7 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
             $pagesNeedingOcr = range(1, $answerSheetData['pageCount']);
             
             try {
-                $answerSheetData = $this->runOcrFallback($answerSheetPath, $mongoAnalysis, $fileHash, $pagesNeedingOcr);
+                $answerSheetData = $this->runOcrFallbackForAnswerSheets($answerSheetPaths, $mongoAnalysis, $fileHash, $pagesNeedingOcr);
             } catch (PdfRendererUnavailableException $e) {
                 $this->logger->error('PDF renderer unavailable during OCR processing', [
                     'analysis_id' => $analysisId,
@@ -731,8 +748,24 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
             'pdf' => 'application/pdf',
             'jpg', 'jpeg' => 'image/jpeg',
             'png' => 'image/png',
+            'txt' => 'text/plain',
             default => 'application/octet-stream',
         };
+    }
+
+    /**
+     * Determine whether any answer-sheet file in the ordered set is a PDF.
+     *
+     * @param array<string> $answerSheetPaths
+     */
+    private function answerSheetsContainPdf(array $answerSheetPaths): bool
+    {
+        foreach ($answerSheetPaths as $answerSheetPath) {
+            if ($this->getMimeTypeFromExtension($answerSheetPath) === 'application/pdf') {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function syncPostgresStatus(string $analysisId, string $status): void
@@ -859,6 +892,155 @@ public function processAnalysis(string $analysisId, string $studentId, bool $isR
             'ocrMetrics' => $ocrResult['ocrMetrics'] ?? null,
         ];
     }
+
+    /**
+     * Extract text from all ordered answer-sheet files and merge into one
+     * ordered page collection with continuous page numbering.
+     * Each page carries its source file index for provenance.
+     *
+     * @param array<string> $answerSheetPaths
+     * @return array{
+     *     text: string,
+     *     pages: array<array{page: int, text: string, sourceFile: int}>,
+     *     pageCount: int,
+     *     hasExtractableText: bool,
+     *     extractionMethod: string,
+     * }
+     */
+    private function extractAnswerSheetData(array $answerSheetPaths): array
+    {
+        $allPages = [];
+        $fullText = '';
+        $pageOffset = 0;
+        $extractionMethods = [];
+
+        foreach ($answerSheetPaths as $fileIndex => $answerSheetPath) {
+            $mimeType = $this->getMimeTypeFromExtension($answerSheetPath);
+
+            $this->logger->debug('Extracting text from answer-sheet file', [
+                'file_index' => $fileIndex + 1,
+                'file_count' => count($answerSheetPaths),
+                'file' => basename($answerSheetPath),
+                'mime_type' => $mimeType,
+            ]);
+
+            $data = $this->documentTextExtractor->extract($answerSheetPath, $mimeType);
+
+            foreach ($data['pages'] as $page) {
+                $pageOffset++;
+                $allPages[] = [
+                    'page' => $pageOffset,
+                    'text' => $page['text'],
+                    'sourceFile' => $fileIndex + 1,
+                ];
+            }
+
+            $fullText .= ($fullText !== '' ? "\n" : '') . $data['text'];
+            $extractionMethods[] = $data['extractionMethod'];
+        }
+
+        $this->logger->info('Answer-sheet text extraction merged across files', [
+            'file_count' => count($answerSheetPaths),
+            'merged_page_count' => count($allPages),
+            'has_extractable_text' => strlen(trim($fullText)) > 50,
+        ]);
+
+        return [
+            'text' => $fullText,
+            'pages' => $allPages,
+            'pageCount' => count($allPages),
+            'hasExtractableText' => strlen(trim($fullText)) > 50,
+            'extractionMethod' => $extractionMethods[0] ?? 'pdf_text',
+        ];
+    }
+
+    /**
+     * Run OCR fallback for one or more answer-sheet files.
+     * Single file: preserves per-page OCR targeting.
+     * Multiple files: processes all pages of every file in order.
+     *
+     * @param array<string> $answerSheetPaths
+     */
+    private function runOcrFallbackForAnswerSheets(
+        array $answerSheetPaths,
+        Analysis $mongoAnalysis,
+        string $fileHash,
+        ?array $pagesToProcess = null,
+        bool $skipOpenAi = false
+    ): array {
+        if (count($answerSheetPaths) === 1) {
+            return $this->runOcrFallback($answerSheetPaths[0], $mongoAnalysis, $fileHash, $pagesToProcess, $skipOpenAi);
+        }
+
+        return $this->runOcrFallbackMulti($answerSheetPaths, $mongoAnalysis, $skipOpenAi);
+    }
+
+    /**
+     * Run OCR fallback across multiple answer-sheet files.
+     * Each file is processed through the full OpenAI Vision -> Tasknode chain
+     * with its own file hash (OCR cache keys are fileHash:pageNumber based,
+     * so per-file hashes prevent cross-file cache collisions).
+     * Pages are merged in file order with continuous page numbering.
+     *
+     * @param array<string> $answerSheetPaths
+     */
+    private function runOcrFallbackMulti(array $answerSheetPaths, Analysis $mongoAnalysis, bool $skipOpenAi = false): array
+    {
+        $mergedPages = [];
+        $pageOffset = 0;
+        $ocrMetrics = null;
+        $extractionMethod = 'VISION_OCR';
+
+        foreach ($answerSheetPaths as $answerSheetPath) {
+            $perFileHash = $this->computeFileHash($answerSheetPath);
+
+            $this->logger->info('Running OCR fallback for answer-sheet file', [
+                'analysis_id' => $mongoAnalysis->getAnalysisId(),
+                'file' => basename($answerSheetPath),
+                'file_hash' => $perFileHash,
+            ]);
+
+            $result = $this->runOcrFallback($answerSheetPath, $mongoAnalysis, $perFileHash, null, $skipOpenAi);
+
+            foreach ($result['pages'] as $page) {
+                $pageOffset++;
+                $mergedPages[] = [
+                    'page' => $pageOffset,
+                    'text' => $page['text'],
+                    'questions' => $page['questions'] ?? [],
+                ];
+            }
+
+            $ocrMetrics = $result['ocrMetrics'] ?? $ocrMetrics;
+            $extractionMethod = $result['extractionMethod'] ?? $extractionMethod;
+        }
+
+        $this->logger->info('OCR fallback merged across answer-sheet files', [
+            'analysis_id' => $mongoAnalysis->getAnalysisId(),
+            'file_count' => count($answerSheetPaths),
+            'merged_page_count' => count($mergedPages),
+        ]);
+
+        return [
+            'text' => implode("\n", array_column($mergedPages, 'text')),
+            'pages' => $mergedPages,
+            'pageCount' => count($mergedPages),
+            'hasExtractableText' => !empty(trim(implode("\n", array_column($mergedPages, 'text')))),
+            'extractionMethod' => $extractionMethod,
+            'ocrMetrics' => $ocrMetrics,
+        ];
+    }
+
+    /**
+     * Compute a deterministic combined hash for an ordered set of files.
+     *
+     * @param array<string> $filePaths
+     */
+    private function computeCombinedFileHash(array $filePaths): string
+    {
+        $hashes = array_map(fn(string $filePath): string => $this->computeFileHash($filePath), $filePaths);
+        return hash('sha256', implode('|', $hashes));
+    }
     
     private function tryOpenAiVision(string $filePath, string $fileHash, ?array $pagesToProcess): ?array
     {
@@ -920,10 +1102,13 @@ private function tryTasknodeVision(string $filePath, string $fileHash, ?array $p
     /**
      * Run combined visual extraction with both answer sheet and question paper.
      * Uses OpenAI Vision for simultaneous extraction + evaluation.
+     * Supports multiple answer-sheet files (pages of ONE answer sheet).
+     *
+     * @param array<string> $answerSheetPaths
      */
     private function runCombinedVisualExtraction(
-        string $answerSheetPath,
-        string $questionPaperPath,
+        array $answerSheetPaths,
+        ?string $questionPaperPath,
         Analysis $mongoAnalysis,
         string $fileHash
     ): array {
@@ -936,7 +1121,8 @@ private function tryTasknodeVision(string $filePath, string $fileHash, ?array $p
         
         $this->logger->info('Preparing pages for combined visual extraction', [
             'analysis_id' => $mongoAnalysis->getAnalysisId(),
-            'answer_sheet' => $answerSheetPath,
+            'answer_sheet_count' => count($answerSheetPaths),
+            'answer_sheets' => array_map(fn(string $p): string => basename($p), $answerSheetPaths),
             'question_paper' => $questionPaperPath,
             'file_hash' => $fileHash,
         ]);
@@ -950,11 +1136,7 @@ private function tryTasknodeVision(string $filePath, string $fileHash, ?array $p
         ]);
         
         try {
-            $combinedResult = $this->openAiVisionProvider->processCombined(
-                $answerSheetPath,
-                $fileHash,
-                $questionPaperPath
-            );
+            $combinedResult = $this->processCombinedForAnswerSheets($answerSheetPaths, $questionPaperPath, $fileHash);
             
             $this->logger->info('OpenAI Vision combined extraction completed', [
                 'analysis_id' => $mongoAnalysis->getAnalysisId(),
@@ -995,7 +1177,7 @@ private function tryTasknodeVision(string $filePath, string $fileHash, ?array $p
             ]);
 
             $pagesNeedingOcr = range(1, $mongoAnalysis->getExam()->getPagesDetected() ?? 1);
-            return $this->runOcrFallback($answerSheetPath, $mongoAnalysis, $fileHash, $pagesNeedingOcr, $skipOpenAi);
+            return $this->runOcrFallbackForAnswerSheets($answerSheetPaths, $mongoAnalysis, $fileHash, $pagesNeedingOcr, $skipOpenAi);
         } catch (\Throwable $e) {
             $this->logger->error('OpenAI Vision combined extraction failed, falling back to standard OCR', [
                 'analysis_id' => $mongoAnalysis->getAnalysisId(),
@@ -1003,8 +1185,83 @@ private function tryTasknodeVision(string $filePath, string $fileHash, ?array $p
             ]);
 
             $pagesNeedingOcr = range(1, $mongoAnalysis->getExam()->getPagesDetected() ?? 1);
-            return $this->runOcrFallback($answerSheetPath, $mongoAnalysis, $fileHash, $pagesNeedingOcr);
+            return $this->runOcrFallbackForAnswerSheets($answerSheetPaths, $mongoAnalysis, $fileHash, $pagesNeedingOcr);
         }
+    }
+
+    /**
+     * Run OpenAI Vision combined extraction for one or more answer-sheet files.
+     * Multiple files are processed in upload order and their pages merged with
+     * continuous page numbering. Each file uses its own hash so OCR cache
+     * keys never collide across files.
+     *
+     * @param array<string> $answerSheetPaths
+     * @return array{pages: array<array{pageNumber: int, text: string, questions: array}>, ocrMetrics: array|null, currentExamAnalysis: array|null, confidence: float}
+     */
+    private function processCombinedForAnswerSheets(array $answerSheetPaths, ?string $questionPaperPath, string $fileHash): array
+    {
+        if (count($answerSheetPaths) === 1) {
+            $combinedResult = $this->openAiVisionProvider->processCombined(
+                $answerSheetPaths[0],
+                $fileHash,
+                $questionPaperPath
+            );
+
+            return [
+                'pages' => $combinedResult['pages'] ?? [],
+                'ocrMetrics' => $combinedResult['ocrMetrics'] ?? null,
+                'currentExamAnalysis' => $combinedResult['currentExamAnalysis'] ?? null,
+                'confidence' => $combinedResult['confidence'] ?? 0.0,
+            ];
+        }
+
+        $mergedPages = [];
+        $pageOffset = 0;
+        $ocrMetrics = null;
+        $currentExamAnalysis = null;
+        $confidence = 0.0;
+
+        foreach ($answerSheetPaths as $answerSheetPath) {
+            $perFileHash = $this->computeFileHash($answerSheetPath);
+
+            $this->logger->info('Processing answer-sheet file with OpenAI Vision combined', [
+                'file' => basename($answerSheetPath),
+                'file_hash' => $perFileHash,
+            ]);
+
+            $combinedResult = $this->openAiVisionProvider->processCombined(
+                $answerSheetPath,
+                $perFileHash,
+                $questionPaperPath
+            );
+
+            foreach ($combinedResult['pages'] ?? [] as $page) {
+                $pageOffset++;
+                $mergedPages[] = [
+                    'pageNumber' => $pageOffset,
+                    'text' => $page['text'] ?? '',
+                    'questions' => $page['questions'] ?? [],
+                ];
+            }
+
+            $ocrMetrics = $combinedResult['ocrMetrics'] ?? $ocrMetrics;
+            $confidence = $combinedResult['confidence'] ?? $confidence;
+            if ($currentExamAnalysis === null && !empty($combinedResult['currentExamAnalysis'])) {
+                $currentExamAnalysis = $combinedResult['currentExamAnalysis'];
+            }
+        }
+
+        $this->logger->info('Combined visual extraction merged across answer-sheet files', [
+            'file_count' => count($answerSheetPaths),
+            'merged_page_count' => count($mergedPages),
+        ]);
+
+        return [
+            'pages' => $mergedPages,
+            'ocrMetrics' => $ocrMetrics,
+            'currentExamAnalysis' => $currentExamAnalysis,
+            'confidence' => $confidence,
+        ];
     }
     
     /**

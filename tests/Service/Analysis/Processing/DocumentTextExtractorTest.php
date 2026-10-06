@@ -22,7 +22,7 @@ class DocumentTextExtractorTest extends KernelTestCase
         );
     }
 
-public function testExtractFromValidPdf(): void
+    public function testExtractFromValidPdf(): void
     {
         $projectDir = static::getContainer()->getParameter('kernel.project_dir');
         $fixturePath = realpath($projectDir . '/tests/fixtures/analysis/answer-sheet.pdf');
@@ -66,9 +66,83 @@ public function testExtractFromValidPdf(): void
         }
     }
 
+    public function testExtractFromValidTextFile(): void
+    {
+        $tempFile = sys_get_temp_dir() . '/test_text_' . Uuid::v7() . '.txt';
+        $content = "This is a test text file.\nIt has multiple lines.\nAnd some numbers: 123.";
+        file_put_contents($tempFile, $content);
+
+        try {
+            $result = $this->extractor->extractFromText($tempFile);
+
+            $this->assertArrayHasKey('text', $result);
+            $this->assertArrayHasKey('pages', $result);
+            $this->assertArrayHasKey('pageCount', $result);
+            $this->assertArrayHasKey('hasExtractableText', $result);
+            $this->assertArrayHasKey('extractionMethod', $result);
+            $this->assertSame('text_plain', $result['extractionMethod']);
+            $this->assertTrue($result['hasExtractableText']);
+            $this->assertSame($content, $result['text']);
+            $this->assertCount(1, $result['pages']);
+            $this->assertSame($content, $result['pages'][0]['text']);
+        } finally {
+            if (file_exists($tempFile)) {
+                unlink($tempFile);
+            }
+        }
+    }
+
+    public function testExtractFromTextFileWithHindiUnicode(): void
+    {
+        $tempFile = sys_get_temp_dir() . '/test_hindi_' . Uuid::v7() . '.txt';
+        $content = "भारत का राष्ट्रीय पशु बाघ है।\nThis is mixed Hindi and English.\nप्रकाश संश्लेषण में plants सूर्य के प्रकाश का उपयोग करते हैं।";
+        file_put_contents($tempFile, $content);
+
+        try {
+            $result = $this->extractor->extractFromText($tempFile);
+
+            $this->assertArrayHasKey('text', $result);
+            $this->assertSame('text_plain', $result['extractionMethod']);
+            $this->assertTrue($result['hasExtractableText']);
+            $this->assertSame($content, $result['text']);
+            $this->assertStringContainsString('भारत', $result['text']);
+            $this->assertStringContainsString('plants', $result['text']);
+            $this->assertStringContainsString('प्रकाश', $result['text']);
+        } finally {
+            if (file_exists($tempFile)) {
+                unlink($tempFile);
+            }
+        }
+    }
+
+    public function testExtractFromEmptyTextFile(): void
+    {
+        $tempFile = sys_get_temp_dir() . '/test_empty_' . Uuid::v7() . '.txt';
+        file_put_contents($tempFile, '');
+
+        try {
+            $result = $this->extractor->extractFromText($tempFile);
+
+            $this->assertArrayHasKey('text', $result);
+            $this->assertArrayHasKey('pages', $result);
+            $this->assertArrayHasKey('pageCount', $result);
+            $this->assertArrayHasKey('hasExtractableText', $result);
+            $this->assertArrayHasKey('extractionMethod', $result);
+            $this->assertSame('text_plain', $result['extractionMethod']);
+            $this->assertFalse($result['hasExtractableText']);
+            $this->assertSame('', $result['text']);
+            $this->assertCount(1, $result['pages']);
+            $this->assertSame('', $result['pages'][0]['text']);
+        } finally {
+            if (file_exists($tempFile)) {
+                unlink($tempFile);
+            }
+        }
+    }
+
     public function testExtractThrowsOnUnsupportedType(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->extractor->extract('/fake/path.txt', 'text/plain');
+        $this->extractor->extract('/fake/path.xyz', 'application/unsupported');
     }
 }
