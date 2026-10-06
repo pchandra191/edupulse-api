@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Document;
 
 use Doctrine\ODM\MongoDB\Mapping\Annotations as ODM;
+use Doctrine\ODM\MongoDB\PersistentCollection;
 
 #[ODM\EmbeddedDocument]
 class Documents
@@ -12,17 +13,20 @@ class Documents
     #[ODM\EmbedOne(targetDocument: DocumentFile::class)]
     private DocumentFile $questionPaper;
 
-    #[ODM\EmbedOne(targetDocument: DocumentFile::class)]
-    private DocumentFile $answerSheet;
+    /** @var DocumentFile[] */
+    #[ODM\EmbedMany(targetDocument: DocumentFile::class)]
+    private array|PersistentCollection $answerSheets = [];
 
     public function __construct()
     {
         $this->questionPaper = new DocumentFile();
-        $this->answerSheet = new DocumentFile();
     }
 
     public function getQuestionPaper(): DocumentFile
     {
+        if ($this->questionPaper === null) {
+            $this->questionPaper = new DocumentFile();
+        }
         return $this->questionPaper;
     }
 
@@ -32,14 +36,68 @@ class Documents
         return $this;
     }
 
-    public function getAnswerSheet(): DocumentFile
+    /** @return DocumentFile[] */
+    public function getAnswerSheets(): array
     {
-        return $this->answerSheet;
+        if ($this->answerSheets instanceof PersistentCollection) {
+            return $this->answerSheets->toArray();
+        }
+        return $this->answerSheets;
     }
 
-    public function setAnswerSheet(DocumentFile $answerSheet): self
+    public function setAnswerSheets(array|PersistentCollection $answerSheets): self
     {
-        $this->answerSheet = $answerSheet;
+        if ($answerSheets instanceof PersistentCollection) {
+            $this->answerSheets = $answerSheets;
+        } else {
+            $this->answerSheets = $answerSheets;
+        }
+        return $this;
+    }
+
+    public function addAnswerSheet(DocumentFile $answerSheet): self
+    {
+        if ($this->answerSheets instanceof PersistentCollection) {
+            $this->answerSheets->add($answerSheet);
+        } else {
+            $this->answerSheets[] = $answerSheet;
+        }
+        return $this;
+    }
+
+    public function setAnswerSheetsArray(array $answerSheets): self
+    {
+        $this->answerSheets = $answerSheets;
+        return $this;
+    }
+
+    public function getAnswerSheetCount(): int
+    {
+        if ($this->answerSheets instanceof PersistentCollection) {
+            return $this->answerSheets->count();
+        }
+        return count($this->answerSheets);
+    }
+
+    /**
+     * Get the first answer sheet (for backward compatibility)
+     */
+    public function getAnswerSheet(): ?DocumentFile
+    {
+        $sheets = $this->getAnswerSheets();
+        return $sheets[0] ?? null;
+    }
+
+    /**
+     * Remove an answer sheet by index
+     */
+    public function removeAnswerSheet(int $index): self
+    {
+        $sheets = $this->getAnswerSheets();
+        if (isset($sheets[$index])) {
+            unset($sheets[$index]);
+            $this->answerSheets = array_values($sheets);
+        }
         return $this;
     }
 }

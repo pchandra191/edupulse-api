@@ -18,6 +18,7 @@ use App\DTO\Analysis\DocumentsDTO;
 use App\DTO\Analysis\DocumentFileDTO;
 use App\DTO\Analysis\ExamDTO;
 use App\DTO\Analysis\ExamReviewDTO;
+use App\DTO\Analysis\MetadataConfirmationDTO;
 use App\DTO\Analysis\PaginationDTO;
 use App\DTO\Analysis\ProcessingDTO;
 use App\DTO\Analysis\QuestionReviewDTO;
@@ -25,15 +26,17 @@ use App\DTO\Analysis\ReviewAnalysisRequestDTO;
 use App\DTO\Analysis\ReviewAnalysisResponseDTO;
 use App\Entity\User;
 use App\Entity\Analysis as PgAnalysis;
-use App\Entity\ExamSet;
 use App\Enum\AnalysisSource;
 use App\Enum\AnalysisStatus;
+use App\Enum\MetadataConfirmationStatus;
 use App\Exception\AnalysisNotFoundException;
+use App\Message\Analysis\ProcessAnalysisMessage;
 use App\Repository\AnalysisRepository;
 use App\Repository\ExamSetRepository;
 use App\Repository\MongoDB\AnalysisRepository as MongoAnalysisRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Uid\Uuid;
 
 readonly class AnalysisService
@@ -44,6 +47,7 @@ readonly class AnalysisService
         private ExamSetRepository $examSetRepository,
         private MongoAnalysisRepository $mongoAnalysisRepository,
         private LoggerInterface $logger,
+        private MessageBusInterface $messageBus,
     ) {
     }
 
@@ -196,7 +200,18 @@ readonly class AnalysisService
         // Also fetch PostgreSQL entity for new metadata fields
         $pgAnalysis = $this->pgAnalysisRepository->findByAnalysisIdAndStudent($analysisId, $student);
         
-        return $this->mapToDetail($mongoAnalysis, $pgAnalysis);
+        try {
+            return $this->mapToDetail($mongoAnalysis, $pgAnalysis);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to map analysis to detail', [
+                'analysis_id' => $analysisId,
+                'student_id' => $student->getId(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            fwrite(STDERR, "MAP TO DETAIL ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n");
+            throw $e;
+        }
     }
 
     private function mapToSummary(MongoAnalysis $analysis, ?PgAnalysis $pgAnalysis = null): AnalysisSummaryDTO
@@ -295,6 +310,9 @@ readonly class AnalysisService
             ];
         }
 
+        $questionPaperFile = $documents->getQuestionPaper();
+        $answerSheetFile = $documents->getAnswerSheet();
+
         return new AnalysisDetailDTO(
             analysisId: $mongoAnalysis->getAnalysisId(),
             studentId: $mongoAnalysis->getStudentId(),
@@ -302,13 +320,20 @@ readonly class AnalysisService
             status: $mongoAnalysis->getStatus(),
             documents: new DocumentsDTO(
                 questionPaper: new DocumentFileDTO(
-                    fileId: $documents->getQuestionPaper()->getFileId(),
-                    status: $documents->getQuestionPaper()->getStatus(),
+                    fileId: $questionPaperFile->getFileId(),
+                    status: $questionPaperFile->getStatus(),
+                    originalFilename: $questionPaperFile->getOriginalFilename(),
+                    mimeType: $questionPaperFile->getMimeType(),
+                    fileSize: $questionPaperFile->getFileSize(),
                 ),
-                answerSheet: new DocumentFileDTO(
-                    fileId: $documents->getAnswerSheet()->getFileId(),
-                    status: $documents->getAnswerSheet()->getStatus(),
-                ),
+                answerSheets: array_map(fn(DocumentFile $as) => new DocumentFileDTO(
+                    fileId: $as->getFileId(),
+                    status: $as->getStatus(),
+                    originalFilename: $as->getOriginalFilename(),
+                    mimeType: $as->getMimeType(),
+                    fileSize: $as->getFileSize(),
+                    page: $as->getPage(),
+                ), $documents->getAnswerSheets()),
             ),
             exam: new ExamDTO(
                 title: $exam->getTitle(),
@@ -341,10 +366,16 @@ readonly class AnalysisService
             studentName: $studentName,
             rollNumber: $rollNumber,
             metadataReady: $pgAnalysis?->getSubject() !== null || $pgAnalysis?->getSubjectName() !== null,
-            answerSheetUploaded: $documents->getAnswerSheet()->getStatus() === 'UPLOADED',
+            answerSheetUploaded: $documents->getAnswerSheet()?->getStatus() === 'UPLOADED',
             createdAt: $mongoAnalysis->getCreatedAt()->format(\DateTimeInterface::ATOM),
             updatedAt: $mongoAnalysis->getUpdatedAt()->format(\DateTimeInterface::ATOM),
             documentClassification: $mongoAnalysis->getDocumentClassification(),
+            metadataConfirmation: $mongoAnalysis->getMetadataConfirmationStatus() ? new MetadataConfirmationDTO(
+                status: $mongoAnalysis->getMetadataConfirmationStatus(),
+                confirmedAt: $mongoAnalysis->getMetadataConfirmedAt()?->format(\DateTimeInterface::ATOM),
+                confirmedBy: $mongoAnalysis->getMetadataConfirmedBy() ?? '',
+                source: 'USER',
+            ) : null,
         );
     }
 
@@ -359,13 +390,19 @@ readonly class AnalysisService
         }
 
         // Check if already confirmed - idempotent
-        if ($mongoAnalysis->getStatus() === AnalysisStatus::Confirmed->value) {
+        if ($mongoAnalysis->getStatus() === AnalysisStatus::Confirmed->value || $mongoAnalysis->getMetadataConfirmationStatus() === MetadataConfirmationStatus::Confirmed->value) {
             $this->logger->info('Analysis already confirmed, returning current state', [
                 'analysis_id' => $analysisId,
             ]);
             return new ReviewAnalysisResponseDTO(
                 analysisId: $analysisId,
                 status: AnalysisStatus::Confirmed->value,
+                metadataConfirmation: new MetadataConfirmationDTO(
+                    status: MetadataConfirmationStatus::Confirmed->value,
+                    confirmedAt: $mongoAnalysis->getMetadataConfirmedAt()?->format(\DateTimeInterface::ATOM),
+                    confirmedBy: $mongoAnalysis->getMetadataConfirmedBy() ?? $studentId,
+                    source: 'USER',
+                ),
                 exam: new ExamReviewDTO(
                     title: $mongoAnalysis->getExam()->getTitle() ?? '',
                     subject: $mongoAnalysis->getExam()->getSubject() ?? '',
@@ -400,10 +437,13 @@ readonly class AnalysisService
         // Validate total marks match
         $this->validateTotalMarks($request->exam, $request->questions);
 
-        $this->entityManager->beginTransaction();
         try {
-            // Update PostgreSQL status
+            // Update PostgreSQL status and metadata confirmation
+            $now = new \DateTimeImmutable();
             $pgAnalysis->setStatus(AnalysisStatus::Confirmed->value);
+            $pgAnalysis->setMetadataConfirmationStatus(MetadataConfirmationStatus::Confirmed->value);
+            $pgAnalysis->setMetadataConfirmedAt($now);
+            $pgAnalysis->setMetadataConfirmedBy((string) $student->getId());
             $this->entityManager->flush();
             $this->entityManager->commit();
         } catch (\Throwable $e) {
@@ -421,6 +461,12 @@ readonly class AnalysisService
             // Update MongoDB document
             $this->updateMongoAnalysis($mongoAnalysis, $request);
             
+            // Update MongoDB metadata confirmation
+            $mongoAnalysis->setMetadataConfirmationStatus(MetadataConfirmationStatus::Confirmed->value);
+            $mongoAnalysis->setMetadataConfirmedAt(new \DateTimeImmutable());
+            $mongoAnalysis->setMetadataConfirmedBy((string) $student->getId());
+            $this->mongoAnalysisRepository->save($mongoAnalysis);
+            
             $this->logger->info('Analysis review confirmed successfully', [
                 'analysis_id' => $analysisId,
                 'student_id' => $studentId,
@@ -434,9 +480,31 @@ readonly class AnalysisService
             throw $e;
         }
 
+        // Auto-dispatch Direct AI analysis after metadata confirmation
+        $this->messageBus->dispatch(new ProcessAnalysisMessage(
+            $analysisId,
+            (string) $student->getId(),
+            'analyze',
+            false,
+            0
+        ));
+
+        $this->logger->info('Automatically starting AI analysis after metadata confirmation', [
+            'analysis_id' => $analysisId,
+            'action' => 'analyze',
+        ]);
+
+        $confirmationTime = new \DateTimeImmutable();
+
         return new ReviewAnalysisResponseDTO(
             analysisId: $analysisId,
             status: AnalysisStatus::Confirmed->value,
+            metadataConfirmation: new MetadataConfirmationDTO(
+                status: MetadataConfirmationStatus::Confirmed->value,
+                confirmedAt: $confirmationTime->format(\DateTimeInterface::ATOM),
+                confirmedBy: (string) $student->getId(),
+                source: 'USER',
+            ),
             exam: new ExamReviewDTO(
                 title: $request->exam->title,
                 subject: $request->exam->subject,

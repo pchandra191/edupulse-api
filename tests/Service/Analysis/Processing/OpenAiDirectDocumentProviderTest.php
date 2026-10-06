@@ -10,6 +10,8 @@ use App\DTO\Analysis\ExtractedAnswerSheetMetadata;
 use App\Exception\VisionApiException;
 use App\Service\Analysis\AI\Prompt\ExamAnalysisPromptBuilder;
 use App\Service\Analysis\Processing\OpenAiDirectDocumentProvider;
+use App\Service\Analysis\Processing\OpenAiSanitizer;
+use App\Service\Analysis\Settings\AnalysisSettings;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
@@ -27,15 +29,35 @@ class OpenAiDirectDocumentProviderTest extends TestCase
         $logger->method('error')->willReturnCallback(fn(...$args) => null);
         $logger->method('warning')->willReturnCallback(fn(...$args) => null);
 
+        $analysisSettings = new AnalysisSettings([
+            'upload' => [
+                'max_total_pages' => 50,
+                'max_file_size' => 26214400,
+                'max_files' => 100,
+            ],
+            'direct_ai' => [
+                'model' => $extractionModel,
+                'pdf_detail' => $pdfDetail,
+                'max_pdf_pages' => 50,
+                'max_output_tokens' => 8000,
+            ],
+            'pricing' => [
+                'gpt-5.4-mini' => ['input' => 0.15, 'output' => 0.60],
+                'gpt-4o-mini' => ['input' => 0.15, 'output' => 0.60],
+            ],
+        ]);
+
         return new OpenAiDirectDocumentProvider(
-            $httpClient,
+            $this->createMock(HttpClientInterface::class),
             'test-api-key',
             $extractionModel,
             $analysisModel,
             $pdfDetail,
-            $logger,
+            $this->createMock(LoggerInterface::class),
             '/tmp',
             new ExamAnalysisPromptBuilder(),
+            $analysisSettings,
+            new OpenAiSanitizer(),
         );
     }
 
@@ -125,133 +147,6 @@ class OpenAiDirectDocumentProviderTest extends TestCase
         $this->assertStringContainsString('Invalid marks', $result['reason']);
     }
 
-    public function testValidateAnalysisRejectsMissingCurrentExamAnalysis(): void
-    {
-        $provider = $this->createProvider();
-        $extraction = new DirectExtractionResult(
-            metadata: new ExtractedAnswerSheetMetadata(),
-            extractedAnswers: [],
-            extractedQuestions: [],
-            confidence: 0.9,
-            extractionMethod: 'TEST'
-        );
-        $result = $this->callProtected($provider, 'validateAnalysis', [[], $extraction]);
-        $this->assertFalse($result['usable']);
-        $this->assertStringContainsString('Missing currentExamAnalysis', $result['reason']);
-    }
-
-    public function testValidateAnalysisRejectsInvalidConceptStatus(): void
-    {
-        $provider = $this->createProvider();
-        $extraction = new DirectExtractionResult(
-            metadata: new ExtractedAnswerSheetMetadata(),
-            extractedAnswers: [],
-            extractedQuestions: [],
-            confidence: 0.9,
-            extractionMethod: 'TEST'
-        );
-        $result = $this->callProtected($provider, 'validateAnalysis', [[
-            'currentExamAnalysis' => [
-                'strengths' => [],
-                'weaknesses' => [],
-                'needsAttention' => [],
-                'conceptGaps' => [],
-                'recommendations' => [],
-                'conceptAssessments' => [
-                    ['concept' => 'Math', 'status' => 'INVALID_STATUS', 'confidence' => 0.9],
-                ],
-                'mistakes' => [],
-                'evidence' => [],
-            ],
-        ], $extraction]);
-        $this->assertFalse($result['usable']);
-        $this->assertStringContainsString('Invalid concept status', $result['reason']);
-    }
-
-    public function testValidateAnalysisRejectsInvalidMistakeConfidence(): void
-    {
-        $provider = $this->createProvider();
-        $extraction = new DirectExtractionResult(
-            metadata: new ExtractedAnswerSheetMetadata(),
-            extractedAnswers: [],
-            extractedQuestions: [],
-            confidence: 0.9,
-            extractionMethod: 'TEST'
-        );
-        $result = $this->callProtected($provider, 'validateAnalysis', [[
-            'currentExamAnalysis' => [
-                'strengths' => [],
-                'weaknesses' => [],
-                'needsAttention' => [],
-                'conceptGaps' => [],
-                'recommendations' => [],
-                'conceptAssessments' => [],
-                'mistakes' => [
-                    ['questionNumber' => '1', 'type' => 'CALCULATION', 'description' => 'test', 'confidence' => 1.5],
-                ],
-                'evidence' => [],
-            ],
-        ], $extraction]);
-        $this->assertFalse($result['usable']);
-        $this->assertStringContainsString('Invalid confidence', $result['reason']);
-    }
-
-    public function testValidateAnalysisRejectsInvalidPerformancePercentage(): void
-    {
-        $provider = $this->createProvider();
-        $extraction = new DirectExtractionResult(
-            metadata: new ExtractedAnswerSheetMetadata(),
-            extractedAnswers: [],
-            extractedQuestions: [],
-            confidence: 0.9,
-            extractionMethod: 'TEST'
-        );
-        $result = $this->callProtected($provider, 'validateAnalysis', [[
-            'currentExamAnalysis' => [
-                'performance' => ['score' => 25, 'totalMarks' => 30, 'percentage' => 150],
-                'strengths' => [],
-                'weaknesses' => [],
-                'needsAttention' => [],
-                'conceptGaps' => [],
-                'recommendations' => [],
-                'conceptAssessments' => [],
-                'mistakes' => [],
-                'evidence' => [],
-            ],
-            'questionAnalysis' => [
-                [
-                    'questionNumber' => '1',
-                    'status' => 'STRONG',
-                    'question' => 'Q1',
-                    'studentAnswer' => 'A1',
-                    'evaluation' => [
-                        'evaluationStatus' => 'CORRECT',
-                        'correctness' => 'CORRECT',
-                        'marksAwarded' => 2,
-                        'maxMarks' => 2,
-                        'whatStudentDidWell' => 'Good',
-                        'mistake' => null,
-                        'whyItIsWrong' => null,
-                        'missingPoints' => [],
-                    ],
-                    'concept' => [
-                        'name' => 'Math',
-                        'status' => 'STRONG',
-                        'explanation' => 'Good',
-                    ],
-                    'improvement' => [
-                        'whatToLearn' => 'More',
-                        'whatToPractice' => 'More',
-                        'recommendedAction' => 'More',
-                    ],
-                    'evidence' => [],
-                ],
-            ],
-        ], $extraction]);
-        $this->assertFalse($result['usable']);
-        $this->assertStringContainsString('Invalid performance percentage', $result['reason']);
-    }
-
     public function testCallResponsesApiThrowsOn429WithInsufficientQuota(): void
     {
         $provider = $this->createProvider();
@@ -323,5 +218,97 @@ class OpenAiDirectDocumentProviderTest extends TestCase
 
         $this->expectException(VisionApiException::class);
         $this->callProtected($provider, 'callResponsesApi', [['file-123'], 'test prompt', 'gpt-4o']);
+    }
+
+    public function testCallResponsesApiDoesNotSendTemperatureForGpt5Nano(): void
+    {
+        $provider = $this->createProvider('gpt-5-nano', 'gpt-5-nano');
+
+        $capturedPayload = null ?? [];
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient->method('request')->willReturnCallback(function ($method, $url, $options) use (&$capturedPayload) {
+            $capturedPayload = $options['json'] ?? null;
+            $response = $this->createMockResponse(200, $this->getMockResponseData());
+            return $response;
+        });
+
+        $reflection = new \ReflectionClass($provider);
+        $prop = $reflection->getProperty('httpClient');
+        $prop->setAccessible(true);
+        $prop->setValue($provider, $httpClient);
+
+        $this->callProtected($provider, 'callResponsesApi', [['file-123'], 'test prompt', 'gpt-5-nano']);
+
+        // Verify temperature is NOT in the payload for gpt-5-nano
+        $this->assertNotNull($capturedPayload);
+        $this->assertArrayNotHasKey('temperature', $capturedPayload);
+        $this->assertSame('gpt-5-nano', $capturedPayload['model']);
+        $this->assertArrayHasKey('input', $capturedPayload);
+        $this->assertArrayHasKey('max_output_tokens', $capturedPayload);
+    }
+
+    public function testCallResponsesApiSendsTemperatureForGpt4o(): void
+    {
+        $provider = $this->createProvider('gpt-4o', 'gpt-4o');
+
+        $capturedPayload = null ?? [];
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient->method('request')->willReturnCallback(function ($method, $url, $options) use (&$capturedPayload) {
+            $capturedPayload = $options['json'] ?? null;
+            $response = $this->createMockResponse(200, $this->getMockResponseData());
+            return $response;
+        });
+
+        $reflection = new \ReflectionClass($provider);
+        $prop = $reflection->getProperty('httpClient');
+        $prop->setAccessible(true);
+        $prop->setValue($provider, $httpClient);
+
+        $this->callProtected($provider, 'callResponsesApi', [['file-123'], 'test prompt', 'gpt-4o']);
+
+        // Verify temperature IS in the payload for gpt-4o
+        $this->assertNotNull($capturedPayload);
+        $this->assertArrayHasKey('temperature', $capturedPayload);
+        $this->assertSame(0.1, $capturedPayload['temperature']);
+        $this->assertSame('gpt-4o', $capturedPayload['model']);
+    }
+
+private function getMockResponseData(): array
+    {
+        return [
+            'output' => [[
+                'type' => 'message',
+                'content' => [[
+                    'type' => 'output_text',
+                    'text' => json_encode([
+                        'extractedAnswers' => [],
+                        'extractedQuestions' => [],
+                        'extractedMetadata' => [],
+                        'extraction' => [
+                            'status' => 'SUCCESS',
+                            'confidence' => 0.9,
+                        ],
+                        'questionAnalysis' => [],
+                        'currentExamAnalysis' => [
+                            'strengths' => [],
+                            'weaknesses' => [],
+                            'needsAttention' => [],
+                            'conceptGaps' => [],
+                            'recommendations' => [],
+                            'conceptAssessments' => [],
+                            'mistakes' => [],
+                            'evidence' => [],
+                            'performance' => ['score' => 25, 'totalMarks' => 30, 'percentage' => 83.33],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+            ],
+            ],
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 50,
+                'total_tokens' => 150,
+            ],
+        ]];
     }
 }

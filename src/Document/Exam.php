@@ -37,7 +37,7 @@ class Exam
     /** @var array<array{
      *     questionNumber: string,
      *     answerText: string,
-     *     source: array{page: int|null, bbox: array|null}
+     *     source: array{fileId: string|null, filename: string|null, page: int|null, bbox: array|null}
      * }> */
     #[ODM\Field(type: 'raw')]
     private array $extractedAnswers = [];
@@ -182,7 +182,7 @@ class Exam
     /** @return array<array{
      *     questionNumber: string,
      *     answerText: string,
-     *     source: array{page: int|null, bbox: array|null}
+     *     source: array{fileId: string|null, filename: string|null, page: int|null, bbox: array|null}
      * }> */
     public function getExtractedAnswers(): array
     {
@@ -192,7 +192,7 @@ class Exam
     /** @param array<array{
      *     questionNumber: string,
      *     answerText: string,
-     *     source: array{page: int|null, bbox: array|null}
+     *     source: array{fileId: string|null, filename: string|null, page: int|null, bbox: array|null}
      * }> $extractedAnswers */
     public function setExtractedAnswers(array $extractedAnswers): self
     {

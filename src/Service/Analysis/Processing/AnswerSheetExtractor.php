@@ -309,14 +309,28 @@ readonly class AnswerSheetExtractor
         $answerPattern2 = '/(?:^|\n)\s*Answer\s*[:\-]\s*([\s\S]*?)(?=\n\s*(?:Question\s*\d+|Q\d+|$))/im';
         
         $answerMatches = [];
+        $seenAnswerOffsets = [];
+
         foreach ([$answerPattern, $answerPattern2] as $pattern) {
-            if (preg_match_all($pattern, $fullText, $matches, PREG_SET_ORDER)) {
+            if (preg_match_all($pattern, $fullText, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
                 foreach ($matches as $match) {
-                    if (isset($match[1])) {
-                        $answerText = trim($match[1]);
-                        if (strlen($answerText) > 0) {
-                            $answerMatches[] = $answerText;
-                        }
+                    if (!isset($match[1][1])) {
+                        continue;
+                    }
+
+                    // The two patterns overlap on plain "Answer:" blocks, which
+                    // would count the same answer twice. Track the capture
+                    // offset so each distinct answer is only collected once.
+                    $offset = $match[1][1];
+
+                    if (isset($seenAnswerOffsets[$offset])) {
+                        continue;
+                    }
+                    $seenAnswerOffsets[$offset] = true;
+
+                    $answerText = trim($match[1][0]);
+                    if (strlen($answerText) > 0) {
+                        $answerMatches[] = $answerText;
                     }
                 }
             }

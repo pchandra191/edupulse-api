@@ -35,6 +35,15 @@ readonly class DocumentTextExtractor implements DocumentTextExtractorInterface
             
             $extractedPages = [];
             $fullText = '';
+            $fileSize = filesize($filePath);
+            $fileId = basename($filePath);
+            
+            $this->logger->info('[PDF-EXTRACTION]', [
+                'fileId' => $fileId,
+                'path' => $filePath,
+                'mimeType' => 'application/pdf',
+                'fileSize' => $fileSize,
+            ]);
             
             foreach ($pages as $index => $page) {
                 $pageText = $page->getText();
@@ -48,7 +57,21 @@ readonly class DocumentTextExtractor implements DocumentTextExtractorInterface
                 $fullText .= "\n--- PAGE {$pageNumber} ---\n" . $pageText;
             }
             
-            $hasExtractableText = strlen(trim($fullText)) > 50;
+            $extractedTextLength = strlen(trim($fullText));
+            $pageCount = count($pages);
+            $hasExtractableText = $extractedTextLength > 50;
+            
+            $this->logger->info('[PDF-EXTRACTION]', [
+                'fileId' => $fileId,
+                'path' => $filePath,
+                'mimeType' => 'application/pdf',
+                'fileSize' => $fileSize,
+                'pageCount' => $pageCount,
+                'extractedTextLength' => $extractedTextLength,
+                'extractionStatus' => $extractedTextLength > 0 ? 'success' : 'empty',
+            ]);
+            
+            $hasExtractableText = $extractedTextLength > 50;
             
             return [
                 'text' => $fullText,
@@ -62,7 +85,79 @@ readonly class DocumentTextExtractor implements DocumentTextExtractorInterface
                 'file' => $filePath,
                 'error' => $e->getMessage(),
             ]);
+            $this->logger->error('[PDF-EXTRACTION]', [
+                'fileId' => basename($filePath),
+                'path' => $filePath,
+                'mimeType' => 'application/pdf',
+                'fileSize' => filesize($filePath),
+                'extractionStatus' => 'failed',
+                'error' => $e->getMessage(),
+            ]);
             throw new \RuntimeException('Failed to extract text from PDF: ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * @return array{
+     *     text: string,
+     *     pages: array<array{page: int, text: string}>,
+     *     pageCount: int,
+     *     hasExtractableText: bool,
+     *     extractionMethod: string,
+     * }
+     */
+    public function extractFromText(string $filePath): array
+    {
+        $this->logger->info('[TEXT-EXTRACTION]', [
+            'fileId' => basename($filePath),
+            'mimeType' => 'text/plain',
+            'bytes' => filesize($filePath),
+        ]);
+
+        try {
+            $text = file_get_contents($filePath);
+            if ($text === false) {
+                throw new \RuntimeException('Failed to read text file');
+            }
+
+            $textLength = strlen($text);
+            
+            $this->logger->info('[TEXT-EXTRACTION]', [
+                'fileId' => basename($filePath),
+                'mimeType' => 'text/plain',
+                'bytes' => filesize($filePath),
+                'textLength' => $textLength,
+                'status' => $textLength > 0 ? 'success' : 'empty',
+            ]);
+
+            if ($textLength === 0) {
+                $this->logger->warning('[TEXT-EXTRACTION]', [
+                    'fileId' => basename($filePath),
+                    'mimeType' => 'text/plain',
+                    'bytes' => 0,
+                    'textLength' => 0,
+                    'status' => 'empty',
+                ]);
+            }
+
+            return [
+                'text' => $text,
+                'pages' => [
+                    [
+                        'page' => 1,
+                        'text' => $text,
+                    ],
+                ],
+                'pageCount' => 1,
+                'hasExtractableText' => $textLength > 0,
+                'extractionMethod' => 'text_plain',
+            ];
+        } catch (\Throwable $e) {
+            $this->logger->error('Text file extraction failed', [
+                'file' => $filePath,
+                'error' => $e->getMessage(),
+            ]);
+            throw new \RuntimeException('Failed to extract text from text file: ' . $e->getMessage(), 0, $e);
         }
     }
 
@@ -102,6 +197,7 @@ readonly class DocumentTextExtractor implements DocumentTextExtractorInterface
     {
         return match ($mimeType) {
             'application/pdf' => $this->extractFromPdf($filePath),
+            'text/plain' => $this->extractFromText($filePath),
             'image/jpeg', 'image/png' => $this->extractFromImage($filePath, $mimeType),
             default => throw new \InvalidArgumentException('Unsupported file type for text extraction: ' . $mimeType),
         };
@@ -109,6 +205,6 @@ readonly class DocumentTextExtractor implements DocumentTextExtractorInterface
 
     public function supportsMimeType(string $mimeType): bool
     {
-        return in_array($mimeType, ['application/pdf', 'image/jpeg', 'image/png'], true);
+        return in_array($mimeType, ['application/pdf', 'text/plain', 'image/jpeg', 'image/png'], true);
     }
 }

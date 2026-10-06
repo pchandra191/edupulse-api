@@ -11,18 +11,27 @@ use App\Document\Processing;
 use App\DTO\Analysis\Direct\DirectExtractionResult;
 use App\DTO\Analysis\Direct\CurrentExamAnalysis;
 use App\Exception\AnalysisNotFoundException;
+use App\Exception\AnalysisLifecycleException;
 use App\Exception\PdfRendererUnavailableException;
 use App\Repository\AnalysisRepository;
 use App\Repository\MongoDB\AnalysisRepository as MongoAnalysisRepository;
 use App\Repository\MongoDB\OcrCacheRepository;
 use App\Service\Analysis\Processing\OpenAiDirectDocumentProvider;
+use App\Service\Analysis\Processing\DocumentTextExtractorInterface;
+use App\Service\Analysis\Processing\AnswerSheetExtractor;
+use App\Service\Analysis\Processing\OpenAiSanitizer;
+use App\Service\Analysis\Processing\ProvenanceValue;
+use App\Service\Analysis\Processing\QuestionExtractor;
 use App\Service\Analysis\AnalysisStorageResolver;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 readonly class DirectAiAnalysisService
 {
+    private const EXTRACTION_PROVIDER = 'OPENAI_DIRECT_DOCUMENT';
+
     public function __construct(
         private EntityManagerInterface $entityManager,
         private AnalysisRepository $pgAnalysisRepository,
@@ -30,14 +39,20 @@ readonly class DirectAiAnalysisService
         private OcrCacheRepository $ocrCacheRepository,
         private OpenAiDirectDocumentProvider $directDocumentProvider,
         private AnalysisStorageResolver $storageResolver,
+        private DocumentTextExtractorInterface $documentTextExtractor,
+        private AnswerSheetExtractor $answerSheetExtractor,
         private LoggerInterface $logger,
         private MessageBusInterface $messageBus,
+        private OpenAiSanitizer $sanitizer,
+        private HttpClientInterface $httpClient,
+        private string $apiKey,
     ) {
     }
 
     /**
      * Direct mode document preparation (no OpenAI call).
-     * Validates documents are uploaded and transitions to NEEDS_REVIEW for metadata confirmation.
+     * Extracts text from PDFs using SetaPDF, extracts structured data,
+     * and transitions to NEEDS_REVIEW for metadata confirmation.
      */
     public function runDirectExtraction(string $analysisId, string $studentId, bool $isRetry = false, int $attemptId = 0): void
     {
@@ -91,6 +106,106 @@ readonly class DirectAiAnalysisService
 
         $processing->setAttemptId($attemptId);
         $processing->setStartedAt(new \DateTimeImmutable());
+
+        // Collect all answer sheet paths (supports multiple answer sheets)
+        $answerSheets = $mongoAnalysis->getDocuments()->getAnswerSheets();
+        $answerSheetPaths = [];
+        foreach ($mongoAnalysis->getDocuments()->getAnswerSheets() as $sheet) {
+            if ($sheet->getStatus() === 'UPLOADED') {
+                $answerSheetPaths[] = $this->getFilePath($sheet->getFileId(), $analysisId);
+            }
+        }
+
+        if (empty($answerSheetPaths)) {
+            throw new \RuntimeException('At least one answer sheet must be uploaded before processing.');
+        }
+
+        $questionPaperPath = $hasQuestionPaper ? $this->getFilePath($questionPaper->getFileId(), $analysisId) : null;
+
+        // Step 1: Extract text from all answer sheets using DocumentTextExtractor (SetaPDF)
+        $this->logger->info('[PDF-EXTRACTION-START]', [
+            'analysisId' => $analysisId,
+            'fileCount' => count($answerSheetPaths),
+            'fileIds' => array_map(fn($sheet) => $sheet->getFileId(), $mongoAnalysis->getDocuments()->getAnswerSheets()),
+            'mimeType' => 'application/pdf',
+        ]);
+
+        $answerSheetData = [];
+        $fullText = '';
+        $totalPages = 0;
+        $pageToFileId = [];
+
+        foreach ($mongoAnalysis->getDocuments()->getAnswerSheets() as $index => $sheet) {
+            if ($sheet->getStatus() !== 'UPLOADED') {
+                continue;
+            }
+            $sheetPath = $this->getFilePath($sheet->getFileId(), $analysisId);
+
+            $this->logger->debug('[PDF-EXTRACTION-START]', [
+                'analysisId' => $analysisId,
+                'fileId' => $sheet->getFileId(),
+                'path' => $sheetPath,
+                'mimeType' => 'application/pdf',
+                'fileSize' => filesize($sheetPath),
+            ]);
+
+            $data = $this->documentTextExtractor->extract($sheetPath, 'application/pdf');
+
+            $this->logger->info('[PDF-EXTRACTION-RESULT]', [
+                'analysisId' => $analysisId,
+                'fileId' => $sheet->getFileId(),
+                'textLength' => strlen($data['text']),
+                'pageCount' => $data['pageCount'],
+                'hasText' => $data['hasExtractableText'],
+            ]);
+
+            foreach ($data['pages'] as $page) {
+                $pageNumber = $page['page'] + $totalPages;
+                $answerSheetData[] = [
+                    'page' => $pageNumber,
+                    'text' => $page['text'],
+                ];
+                $pageToFileId[$pageNumber] = $sheet->getFileId();
+            }
+            $fullText .= "\n" . $data['text'];
+            $totalPages += $data['pageCount'];
+        }
+
+        // Step 2: Extract structured data using AnswerSheetExtractor
+        $answerSheetExtraction = $this->answerSheetExtractor->extractFromAnswerSheet($answerSheetData);
+
+        $this->logger->info('[ANSWER-EXTRACTION-RESULT]', [
+            'analysisId' => $analysisId,
+            'questionCount' => count($answerSheetExtraction['questions'] ?? []),
+            'answerCount' => count($answerSheetExtraction['answers'] ?? []),
+            'metadataCount' => $this->answerSheetExtractor->countMetadataFields($answerSheetExtraction['metadata'] ?? new \App\DTO\Analysis\ExtractedAnswerSheetMetadata()),
+            'status' => $answerSheetExtraction['extractionResult'] ?? 'unknown',
+        ]);
+
+        // Step 3: Persist extracted data
+        $exam = $mongoAnalysis->getExam();
+        $this->saveExtractedAnswerSheetMetadata($mongoAnalysis, $answerSheetExtraction['metadata']);
+        $this->saveExtractedAnswers($mongoAnalysis, $answerSheetExtraction['answers'], $pageToFileId);
+        $this->saveExtractedQuestions($mongoAnalysis, $answerSheetExtraction['questions'] ?? []);
+
+        // Update exam with extraction info
+        $exam = $mongoAnalysis->getExam();
+        $exam->setExtractionMethod('SETA_PDF');
+        $exam->setExtractionConfidence($answerSheetExtraction['extractionConfidence']);
+        $exam->setExtractionResult($answerSheetExtraction['extractionResult'] ?? 'SUCCESS');
+        $exam->setExtractedAt(new \DateTimeImmutable());
+        $exam->setExtractionVersion('1.0');
+
+        $this->logger->info('[EXTRACTION-PERSISTED]', [
+            'analysisId' => $analysisId,
+            'extractedQuestions' => count($answerSheetExtraction['questions'] ?? []),
+            'extractedAnswers' => count($answerSheetExtraction['answers'] ?? []),
+            'extractedMetadata' => $this->answerSheetExtractor->countMetadataFields($answerSheetExtraction['metadata'] ?? new \App\DTO\Analysis\ExtractedAnswerSheetMetadata()),
+            'extractionResult' => $answerSheetExtraction['extractionResult'] ?? 'SUCCESS',
+        ]);
+
+        // Update status to NEEDS_REVIEW
+        $processing = $mongoAnalysis->getProcessing();
         $processing->setStage('READY_FOR_REVIEW');
         $processing->setStatus('NEEDS_REVIEW');
 
@@ -125,14 +240,16 @@ readonly class DirectAiAnalysisService
         }
 
         $currentStatus = $mongoAnalysis->getStatus();
-        if (!in_array($currentStatus, ['CONFIRMED', 'NEEDS_REVIEW', 'PUBLISHED', 'FAILED'], true)) {
-            throw new \LogicException("Cannot start AI analysis in status: {$currentStatus}");
+        // Allow PROCESSING because metadata confirmation sets status to PROCESSING before dispatching analyze.
+        // Also allow NEEDS_REVIEW for cases where prepare phase left it in NEEDS_REVIEW without metadata confirmation.
+        if (!in_array($currentStatus, ['CONFIRMED', 'NEEDS_REVIEW', 'PUBLISHED', 'FAILED', 'PROCESSING'], true)) {
+            throw new AnalysisLifecycleException("Cannot start AI analysis in status: {$currentStatus}");
         }
 
         $exam = $mongoAnalysis->getExam();
         $extractedMetadata = $exam->getExtractedMetadata();
         if (empty($extractedMetadata)) {
-            throw new \LogicException('No extracted metadata found. Metadata must be confirmed first.');
+            throw new AnalysisLifecycleException('No extracted metadata found. Metadata must be confirmed first.');
         }
 
         $answerSheet = $mongoAnalysis->getDocuments()->getAnswerSheet();
@@ -345,20 +462,24 @@ readonly class DirectAiAnalysisService
         $this->mongoAnalysisRepository->save($mongoAnalysis);
     }
 
-    private function saveExtractedAnswers(Analysis $mongoAnalysis, array $answers): void
+    private function saveExtractedAnswers(Analysis $mongoAnalysis, array $answers, array $pageToFileId = []): void
     {
         $exam = $mongoAnalysis->getExam();
 
         $extractedAnswers = [];
         foreach ($answers as $answer) {
+            $page = $answer->page ?? (isset($answer->sourcePage) ? (int)$answer->sourcePage : 1);
+            $fileId = $pageToFileId[$page] ?? null;
+
             $extractedAnswers[] = [
                 'questionNumber' => $answer->questionNumber,
                 'answerText' => $answer->answerText,
                 'confidence' => $answer->confidence,
-                'sourcePage' => $answer->page,
+                'sourcePage' => $answer->page ?? $answer->sourcePage ?? null,
                 'source' => [
-                    'page' => $answer->page,
+                    'page' => $answer->page ?? $answer->sourcePage ?? null,
                     'bbox' => null,
+                    'fileId' => $fileId,
                 ],
             ];
         }

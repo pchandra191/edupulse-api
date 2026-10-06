@@ -22,6 +22,13 @@ Do not overwrite confirmed metadata with information detected in documents.
 
 Read the answer sheet carefully, including handwritten responses.
 
+The answer sheet may be supplied as multiple files (for example page-1.jpg, page-2.jpg, page-3.pdf).
+These files are pages/parts of the SAME student's answer sheet for ONE exam.
+Analyze them together as one answer sheet and preserve page/question continuity.
+Question numbering must remain continuous across files/pages.
+Do not treat the files as separate exams or separate answer sheets.
+Do not fabricate missing content between pages.
+
 If a question paper is supplied, use it to understand the questions and evaluate answers.
 
 Do not invent missing information.

@@ -180,7 +180,7 @@ class PatternAnalysisServiceTest extends TestCase
 
         $documents = new Documents();
         $documents->setQuestionPaper(new DocumentFile());
-        $documents->setAnswerSheet(new DocumentFile());
+        $documents->addAnswerSheet(new DocumentFile());
         $analysis->setDocuments($documents);
 
         $exam = new Exam();

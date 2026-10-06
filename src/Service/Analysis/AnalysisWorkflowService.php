@@ -9,8 +9,9 @@ use App\Entity\ExamSet;
 use App\Entity\User;
 use App\Enum\AnalysisSource;
 use App\Enum\AnalysisStatus;
+use App\Enum\MetadataConfirmationStatus;
 use App\Exception\AnalysisNotFoundException;
-use App\Message\ProcessAnalysisAIMessage;
+use App\Message\Analysis\ProcessAnalysisMessage;
 use App\Repository\AnalysisRepository;
 use App\Repository\ExamSetRepository;
 use App\Repository\MongoDB\AnalysisRepository as MongoAnalysisRepository;
@@ -97,7 +98,7 @@ readonly class AnalysisWorkflowService
         }
 
         $answerSheet = $mongoAnalysis->getDocuments()->getAnswerSheet();
-        if (!$answerSheet->getFileId()) {
+        if (!$answerSheet || !$answerSheet->getFileId()) {
             throw new \LogicException('Answer sheet is required to publish');
         }
 
@@ -186,7 +187,119 @@ readonly class AnalysisWorkflowService
             $this->logger->info('Analysis metadata completed, transitioning to CONFIRMED', [
                 'analysis_id' => $analysis->getAnalysisId(),
             ]);
+
+            // Confirmation is the single trigger for AI analysis: mark the
+            // analysis as processing immediately and dispatch exactly one
+            // analyze message. Metadata persistence above is unchanged.
+            $this->startAiAnalysisAfterConfirmation($analysis, $student);
         }
+    }
+
+    /**
+     * Start AI analysis after the first successful metadata confirmation.
+     *
+     * Sets the existing PROCESSING representation (both in PostgreSQL and in
+     * the Mongo processing document) and dispatches a single
+     * ProcessAnalysisMessage(action="analyze"). Repeated confirmations, or an
+     * analysis already processing/completed, must not dispatch again.
+     */
+    private function startAiAnalysisAfterConfirmation(Analysis $analysis, User $student): void
+    {
+        $analysisId = $analysis->getAnalysisId();
+        $studentId = (string) $student->getId();
+
+        $processingBefore = null;
+        $shouldDispatch = false;
+        $reason = '';
+
+        try {
+            $mongoAnalysis = $this->mongoAnalysisRepository->findByAnalysisIdAndStudentId($analysisId, $studentId);
+            if (!$mongoAnalysis) {
+                $this->logger->warning('Cannot start AI analysis: MongoDB document missing', [
+                    'analysis_id' => $analysisId,
+                ]);
+                return;
+            }
+
+            $processing = $mongoAnalysis->getProcessing();
+            $processingBefore = $processing?->getStatus();
+            $pgStatus = $analysis->getStatus();
+
+            // Idempotency: only the FIRST confirmation starts analysis.
+            $inProgress = in_array($processingBefore, ['PROCESSING'], true)
+                || in_array($pgStatus, [AnalysisStatus::Processing->value, AnalysisStatus::Done->value], true);
+            $alreadyAnalyzed = $mongoAnalysis->getAiAnalysis() !== null;
+
+            if ($inProgress || $alreadyAnalyzed) {
+                $reason = $alreadyAnalyzed ? 'ai_analysis_already_present' : 'already_processing_or_done';
+            } else {
+                $now = new \DateTimeImmutable();
+
+                // Persist the confirmation on both stores so the analyze
+                // handler sees a confirmed-metadata analysis regardless of
+                // which store it reads.
+                $analysis->setMetadataConfirmationStatus(MetadataConfirmationStatus::Confirmed->value);
+                $analysis->setMetadataConfirmedAt($now);
+                $analysis->setMetadataConfirmedBy($studentId);
+
+                $analysis->setStatus(AnalysisStatus::Processing->value);
+                $this->entityManager->flush();
+
+                $mongoAnalysis->setMetadataConfirmationStatus(MetadataConfirmationStatus::Confirmed->value);
+                $mongoAnalysis->setMetadataConfirmedAt($now);
+                $mongoAnalysis->setMetadataConfirmedBy($studentId);
+
+                $processing->setStage('ANALYZING');
+                $processing->setStatus('PROCESSING');
+                $processing->setStartedAt($now);
+                $processing->setCompletedAt(null);
+                $mongoAnalysis->setStatus(AnalysisStatus::Processing->value);
+                $mongoAnalysis->setUpdatedAt($now);
+                $this->mongoAnalysisRepository->save($mongoAnalysis);
+
+                $shouldDispatch = true;
+                $reason = 'first_confirmation';
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to mark analysis as PROCESSING after confirmation', [
+                'analysis_id' => $analysisId,
+                'error' => $e->getMessage(),
+            ]);
+
+            $this->logger->info(sprintf(
+                '[AI-TRIGGER] analysisId=%s metadataConfirmationStatus=%s processingBefore=%s dispatchAnalyze=NO',
+                $analysisId,
+                'CONFIRMED',
+                $processingBefore ?? 'UNKNOWN'
+            ));
+
+            return;
+        }
+
+        $this->logger->info(sprintf(
+            '[AI-TRIGGER] analysisId=%s metadataConfirmationStatus=%s processingBefore=%s dispatchAnalyze=%s',
+            $analysisId,
+            'CONFIRMED',
+            $processingBefore ?? 'UNKNOWN',
+            $shouldDispatch ? 'YES' : 'NO'
+        ));
+
+        if (!$shouldDispatch) {
+            $this->logger->info('AI analysis not dispatched after confirmation', [
+                'analysis_id' => $analysisId,
+                'reason' => $reason,
+                'processing_status' => $processingBefore,
+            ]);
+
+            return;
+        }
+
+        $this->messageBus->dispatch(ProcessAnalysisMessage::createAnalyze($analysisId, $studentId));
+
+        $this->logger->info('AI analysis dispatched after metadata confirmation', [
+            'analysis_id' => $analysisId,
+            'action' => 'analyze',
+        ]);
     }
 
     private function syncMongoExamTitle(Analysis $analysis): void
@@ -232,9 +345,12 @@ readonly class AnalysisWorkflowService
 
         $this->transitionStatus($analysis, AnalysisStatus::Processing);
 
-        $this->messageBus->dispatch(new ProcessAnalysisAIMessage(
+        $this->messageBus->dispatch(new ProcessAnalysisMessage(
             $analysis->getAnalysisId(),
-            (string) $analysis->getStudent()->getId()
+            (string) $analysis->getStudent()->getId(),
+            'analyze',
+            false,
+            0
         ));
 
         $this->logger->info('AI analysis started', ['analysis_id' => $analysis->getAnalysisId()]);
@@ -265,9 +381,26 @@ readonly class AnalysisWorkflowService
 
         $this->transitionStatus($analysis, AnalysisStatus::Processing);
 
-        $this->messageBus->dispatch(new ProcessAnalysisAIMessage(
+        $mongoAnalysis = $this->mongoAnalysisRepository->findByAnalysisIdAndStudentId(
             $analysis->getAnalysisId(),
             (string) $analysis->getStudent()->getId()
+        );
+
+        $attemptId = 0;
+        if ($mongoAnalysis) {
+            $processing = $mongoAnalysis->getProcessing();
+            if ($processing) {
+                $attemptId = ($processing->getAttemptId() ?? 0);
+                if ($attemptId === 0) {
+                    $attemptId = ($processing->getRetryCount() ?? 0) + 1;
+                }
+            }
+        }
+
+        $this->messageBus->dispatch(ProcessAnalysisMessage::createRetry(
+            $analysis->getAnalysisId(),
+            (string) $analysis->getStudent()->getId(),
+            $attemptId
         ));
 
         $this->logger->info('AI analysis retry started', ['analysis_id' => $analysis->getAnalysisId()]);
@@ -283,9 +416,12 @@ readonly class AnalysisWorkflowService
         // Clear previous AI analysis
         $this->clearMongoAiAnalysis($analysis);
 
-        $this->messageBus->dispatch(new ProcessAnalysisAIMessage(
+        $this->messageBus->dispatch(new ProcessAnalysisMessage(
             $analysis->getAnalysisId(),
-            (string) $analysis->getStudent()->getId()
+            (string) $analysis->getStudent()->getId(),
+            'analyze',
+            false,
+            0
         ));
 
         $this->logger->info('AI analysis regeneration started', ['analysis_id' => $analysis->getAnalysisId()]);

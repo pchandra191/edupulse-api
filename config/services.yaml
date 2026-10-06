@@ -7,12 +7,59 @@ parameters:
     app.mailer_from_name: 'EduPulse AI'
     app.openai_api_key: '%env(OPENAI_API_KEY)%'
     app.openai_model: '%env(OPENAI_MODEL)%'
+    app.analysis_direct_model: '%env(ANALYSIS_DIRECT_MODEL)%'
+    app.analysis_ai_mode: '%env(ANALYSIS_AI_MODE)%'
+    app.analysis_pdf_detail: '%env(ANALYSIS_PDF_DETAIL)%'
     app.student_portal_url: '%env(STUDENT_PORTAL_URL)%'
     app.handwriting_ocr_base_url: '%env(HANDWRITING_OCR_BASE_URL)%'
     app.handwriting_ocr_api_key: '%env(HANDWRITING_OCR_API_KEY)%'
     app.handwriting_ocr_model: '%env(HANDWRITING_OCR_MODEL)%'
     app.pdf_renderer_binary: '%env(PDF_RENDERER_BINARY)%'
     app.max_analysis_document_size: 26214400
+    app.analysis_max_pdf_pages: '%env(int:ANALYSIS_MAX_PDF_PAGES)%'
+    app.analysis_max_file_size: '%env(int:ANALYSIS_MAX_FILE_SIZE)%'
+    app.analysis_max_output_tokens: '%env(ANALYSIS_MAX_OUTPUT_TOKENS)%'
+    app.analysis_max_total_pages: '%env(int:ANALYSIS_MAX_TOTAL_PAGES)%'
+    app.analysis_max_files: '%env(int:ANALYSIS_MAX_FILES)%'
+    # OpenAI model pricing (per 1M tokens) - update as pricing changes
+    app.openai_model_pricing:
+        gpt-5.4-mini:
+            input: 0.15
+            output: 0.60
+        gpt-4o-mini:
+            input: 0.15
+            output: 0.60
+        gpt-4o:
+            input: 2.50
+            output: 10.00
+        gpt-4-turbo:
+            input: 10.00
+            output: 30.00
+
+    # Centralized Analysis Settings
+    analysis:
+        upload:
+            max_total_pages: '%app.analysis_max_total_pages%'
+            max_file_size: '%app.analysis_max_file_size%'
+            max_files: '%app.analysis_max_files%'
+        direct_ai:
+            model: '%app.analysis_direct_model%'
+            pdf_detail: '%app.analysis_pdf_detail%'
+            max_pdf_pages: '%app.analysis_max_pdf_pages%'
+            max_output_tokens: '%app.analysis_max_output_tokens%'
+        pricing:
+            gpt-5.4-mini:
+                input: 0.15
+                output: 0.60
+            gpt-4o-mini:
+                input: 0.15
+                output: 0.60
+            gpt-4o:
+                input: 2.50
+                output: 10.00
+            gpt-4-turbo:
+                input: 10.00
+                output: 30.00
 
 services:
     _defaults:
@@ -108,11 +155,17 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    App\Service\Analysis\Settings\AnalysisSettings:
+        arguments:
+            $settings: '%analysis%'
+
     App\Service\Analysis\AnalysisDocumentService:
         arguments:
             $analysisWorkflowService: '@App\Service\Analysis\AnalysisWorkflowService'
             $messageBus: '@messenger.bus.default'
             $storageResolver: '@App\Service\Analysis\AnalysisStorageResolver'
+            $pdfRenderer: '@App\Service\Analysis\Processing\PdfPageRendererInterface'
+            $analysisSettings: '@App\Service\Analysis\Settings\AnalysisSettings'
 
     App\Service\Analysis\AnalysisProcessingService:
         public: true
@@ -196,6 +249,23 @@ services:
     App\Workflow\EnumMarkingStore:
         abstract: true
 
+    App\Service\Analysis\Processing\OpenAiDirectDocumentProvider:
+        arguments:
+            $httpClient: '@Symfony\Contracts\HttpClient\HttpClientInterface'
+            $apiKey: '%app.openai_api_key%'
+            $extractionModel: '%app.analysis_direct_model%'
+            $analysisModel: '%app.analysis_direct_model%'
+            $pdfDetail: '%app.analysis_pdf_detail%'
+            $logger: '@monolog.logger'
+            $projectDir: '%kernel.project_dir%'
+            $promptBuilder: '@App\Service\Analysis\AI\Prompt\ExamAnalysisPromptBuilder'
+            $analysisSettings: '@App\Service\Analysis\Settings\AnalysisSettings'
+            $sanitizer: '@App\Service\Analysis\Processing\OpenAiSanitizer'
+
+    App\Service\Analysis\AnalysisModeResolver:
+        arguments:
+            $mode: '%app.analysis_ai_mode%'
+
     app.workflow.marking_store.examination:
         parent: App\Workflow\EnumMarkingStore
         arguments:
@@ -227,6 +297,20 @@ services:
             $enumClass: App\Enum\AnalysisStatus
 
     App\Service\Analysis\ExamSetService: ~
+
+    App\Messenger\Retry\VisionApiRetryStrategy:
+        arguments:
+            $maxRetries: 3
+            $multiplier: 2
+            $delay: 1000
+
+    App\Command\OpenAiAuthDiagnosticCommand:
+        arguments:
+            $apiKey: '%app.openai_api_key%'
+
+    App\Service\Analysis\DirectAiAnalysisService:
+        arguments:
+            $apiKey: '%app.openai_api_key%'
 
 when@test:
     services:
