@@ -108,4 +108,15 @@ class AnalysisRepository extends DocumentRepository
             ->getQuery()
             ->getSingleResult();
     }
+
+    public function findCompletedByStudentId(string $studentId): array
+    {
+        return $this->createQueryBuilder()
+            ->field('studentId')->equals($studentId)
+            ->field('status')->equals('DONE')
+            ->sort('createdAt', 'asc')
+            ->getQuery()
+            ->execute()
+            ->toArray();
+    }
 }
