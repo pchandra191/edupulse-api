@@ -104,6 +104,7 @@
             margin-bottom: 6px;
             border: 1px solid #ccc;
             page-break-inside: avoid;
+            break-inside: avoid;
         }
 
         .question-header {
@@ -281,14 +282,18 @@
 
         .footer {
             position: fixed;
-            bottom: -15px;
+            bottom: 0;
             left: 0;
             right: 0;
             text-align: center;
             font-size: 8px;
             color: #999;
             border-top: 1px solid #eee;
-            padding-top: 5px;
+            padding: 5px 0;
+        }
+
+        @page {
+            margin-bottom: 25mm;
         }
     </style>
 </head>
@@ -374,15 +379,31 @@
                 Question {{ question.number }}{% if question.subQuestion %}({{ question.subQuestion }}){% endif %}
                 &nbsp;&nbsp;
                 {% if question.evaluationStatus == 'CORRECT' %}
-                    <span class="marks-badge marks-correct">{{ question.marksAwarded }}/{{ question.maxMarks }} Fully Correct</span>
+                    {% if question.marksAwarded is not null and question.maxMarks is not null %}
+                        <span class="marks-badge marks-correct">{{ question.marksAwarded }}/{{ question.maxMarks }} Fully Correct</span>
+                    {% else %}
+                        <span class="marks-badge marks-correct">Fully Correct</span>
+                    {% endif %}
                 {% elseif question.evaluationStatus == 'PARTIALLY_CORRECT' %}
-                    <span class="marks-badge marks-partial">{{ question.marksAwarded }}/{{ question.maxMarks }} Partially Correct</span>
+                    {% if question.marksAwarded is not null and question.maxMarks is not null %}
+                        <span class="marks-badge marks-partial">{{ question.marksAwarded }}/{{ question.maxMarks }} Partially Correct</span>
+                    {% else %}
+                        <span class="marks-badge marks-partial">Partially Correct</span>
+                    {% endif %}
                 {% elseif question.evaluationStatus == 'INCORRECT' %}
-                    <span class="marks-badge marks-incorrect">{{ question.marksAwarded }}/{{ question.maxMarks }} Incorrect</span>
+                    {% if question.marksAwarded is not null and question.maxMarks is not null %}
+                        <span class="marks-badge marks-incorrect">{{ question.marksAwarded }}/{{ question.maxMarks }} Incorrect</span>
+                    {% else %}
+                        <span class="marks-badge marks-incorrect">Incorrect</span>
+                    {% endif %}
                 {% elseif question.evaluationStatus == 'UNANSWERED' %}
                     <span class="marks-badge marks-unanswered">Unanswered</span>
                 {% else %}
-                    <span class="marks-badge marks-unanswered">{{ question.marksAwarded }}/{{ question.maxMarks }}</span>
+                    {% if question.marksAwarded is not null and question.maxMarks is not null %}
+                        <span class="marks-badge marks-unanswered">{{ question.marksAwarded }}/{{ question.maxMarks }}</span>
+                    {% else %}
+                        <span class="marks-badge marks-unanswered">{{ question.evaluationStatus }}</span>
+                    {% endif %}
                 {% endif %}
             </div>
             <div class="question-body">
@@ -556,7 +577,7 @@
     <div class="footer">
         Analyzed by EduPulse AI &nbsp;|&nbsp; Page {PAGENO} of {nbpg}
         <br>
-        "Your marks tell the result. EduPulse tells you what to do next."
+        "KNOW. PLAN. IMPROVE."
     </div>
 
 </body>

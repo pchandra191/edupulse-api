@@ -113,7 +113,7 @@ readonly class AiAnswerSheetReportService
 
         $studentData = $this->buildStudentData($student, $mongoAnalysis, $extractedMetadata);
         $examData = $this->buildExamData($exam, $extractedMetadata);
-        $resultData = $this->buildResultSummary($aiAnalysis, $mongoAnalysis);
+        $resultData = $this->buildResultSummary($aiAnalysis, $mongoAnalysis, $student);
         $questions = $this->buildQuestions($aiAnalysis['questionAnalysis'] ?? []);
         $conceptMastery = $this->buildConceptMastery($currentExamAnalysis);
 
@@ -227,13 +227,23 @@ readonly class AiAnswerSheetReportService
         return null;
     }
 
-    private function buildResultSummary(array $aiAnalysis, \App\Document\Analysis $mongoAnalysis): ResultSummaryReportData
+    private function buildResultSummary(array $aiAnalysis, \App\Document\Analysis $mongoAnalysis, User $student): ResultSummaryReportData
     {
         $currentExamAnalysis = $aiAnalysis['currentExamAnalysis'] ?? [];
         $performance = $currentExamAnalysis['performance'] ?? [];
 
-        $score = $performance['score'] ?? null;
-        $percentage = $performance['percentage'] ?? null;
+        // Use confirmed metadata from PostgreSQL as authoritative score
+        $pgAnalysis = $this->analysisService->getAnalysisEntity($student, $mongoAnalysis->getAnalysisId());
+        $scoredMarks = $pgAnalysis?->getScoredMarks();
+        $totalMarks = $pgAnalysis?->getTotalMarks();
+
+        $score = $scoredMarks !== null ? (int) $scoredMarks : ($performance['score'] ?? null);
+        $percentage = null;
+        if ($score !== null && $totalMarks !== null && $totalMarks > 0) {
+            $percentage = round(($score / $totalMarks) * 100, 2);
+        } elseif ($performance['percentage'] !== null) {
+            $percentage = (float) $performance['percentage'];
+        }
 
         $questionAnalysis = $aiAnalysis['questionAnalysis'] ?? [];
         $totalQuestions = count($questionAnalysis);
@@ -278,8 +288,15 @@ readonly class AiAnswerSheetReportService
         foreach ($questionAnalysis as $q) {
             $eval = $q['evaluation'] ?? [];
             $evaluationStatus = strtoupper((string) ($eval['evaluationStatus'] ?? 'UNKNOWN'));
-            $marksAwarded = (int) ($eval['marksAwarded'] ?? 0);
-            $maxMarks = (int) ($eval['maxMarks'] ?? 0);
+            $marksAwarded = $eval['marksAwarded'] ?? null;
+            $maxMarks = $eval['maxMarks'] ?? null;
+
+            if ($marksAwarded !== null) {
+                $marksAwarded = (int) $marksAwarded;
+            }
+            if ($maxMarks !== null) {
+                $maxMarks = (int) $maxMarks;
+            }
 
             $conceptData = null;
             $concept = $q['concept'] ?? null;
