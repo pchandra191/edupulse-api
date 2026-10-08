@@ -101,7 +101,7 @@ class OpenAiDirectDocumentProviderTest extends TestCase
             'extraction' => ['status' => 'FAILED', 'confidence' => 0.9],
         ]]);
         $this->assertFalse($result['usable']);
-        $this->assertStringContainsString('not SUCCESS', $result['reason']);
+        $this->assertStringContainsString('Extraction status not usable', $result['reason']);
     }
 
     public function testValidateExtractionRejectsInvalidConfidence(): void
@@ -145,6 +145,122 @@ class OpenAiDirectDocumentProviderTest extends TestCase
         ]]);
         $this->assertFalse($result['usable']);
         $this->assertStringContainsString('Invalid marks', $result['reason']);
+    }
+
+    public function testValidateExtractionAcceptsPartialWithValidAnalysis(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateExtraction', [[
+            'extractedAnswers' => [
+                ['questionNumber' => '1', 'answerText' => 'test', 'confidence' => 0.9],
+            ],
+            'extractedQuestions' => [
+                ['questionNumber' => '1', 'questionText' => 'test', 'confidence' => 0.9],
+            ],
+            'extractedMetadata' => [],
+            'extraction' => ['status' => 'PARTIAL', 'confidence' => 0.8],
+            'currentExamAnalysis' => [
+                'strengths' => [],
+                'weaknesses' => [],
+                'needsAttention' => [],
+                'conceptGaps' => [],
+                'recommendations' => [],
+                'conceptAssessments' => [],
+                'mistakes' => [],
+                'evidence' => [],
+            ],
+        ]]);
+        $this->assertTrue($result['usable']);
+        $this->assertStringContainsString('Valid extraction', $result['reason']);
+    }
+
+    public function testValidateExtractionAcceptsPartialWithValidAnswersOnly(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateExtraction', [[
+            'extractedAnswers' => [
+                ['questionNumber' => '1', 'answerText' => 'test', 'confidence' => 0.9],
+            ],
+            'extractedQuestions' => [],
+            'extractedMetadata' => [],
+            'extraction' => ['status' => 'PARTIAL', 'confidence' => 0.8],
+            'currentExamAnalysis' => [
+                'strengths' => [],
+                'weaknesses' => [],
+                'needsAttention' => [],
+                'conceptGaps' => [],
+                'recommendations' => [],
+                'conceptAssessments' => [],
+                'mistakes' => [],
+                'evidence' => [],
+            ],
+        ]]);
+        $this->assertTrue($result['usable']);
+        $this->assertStringContainsString('Valid extraction', $result['reason']);
+    }
+
+    public function testValidateExtractionRejectsPartialWithoutAnalysis(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateExtraction', [[
+            'extractedAnswers' => [],
+            'extractedQuestions' => [],
+            'extractedMetadata' => [],
+            'extraction' => ['status' => 'PARTIAL', 'confidence' => 0.8],
+            'currentExamAnalysis' => [
+                'strengths' => [],
+                'weaknesses' => [],
+                'needsAttention' => [],
+                'conceptGaps' => [],
+                'recommendations' => [],
+                'conceptAssessments' => [],
+                'mistakes' => [],
+                'evidence' => [],
+            ],
+        ]]);
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('PARTIAL extraction requires at least one valid answer', $result['reason']);
+    }
+
+    public function testValidateExtractionRejectsPartialWithoutCurrentExamAnalysis(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateExtraction', [[
+            'extractedAnswers' => [
+                ['questionNumber' => '1', 'answerText' => 'test', 'confidence' => 0.9],
+            ],
+            'extractedQuestions' => [],
+            'extractedMetadata' => [],
+            'extraction' => ['status' => 'PARTIAL', 'confidence' => 0.8],
+        ]]);
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('PARTIAL extraction requires at least one valid answer', $result['reason']);
+    }
+
+    public function testValidateExtractionRejectsNoTextDetected(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateExtraction', [[
+            'extractedAnswers' => [],
+            'extractedQuestions' => [],
+            'extractedMetadata' => [],
+            'extraction' => ['status' => 'NO_TEXT_DETECTED', 'confidence' => 0.0],
+        ]]);
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Extraction status not usable', $result['reason']);
+    }
+
+    public function testValidateExtractionRejectsOcrRequired(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateExtraction', [[
+            'extractedAnswers' => [],
+            'extractedQuestions' => [],
+            'extractedMetadata' => [],
+            'extraction' => ['status' => 'OCR_REQUIRED', 'confidence' => 0.0],
+        ]]);
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Extraction status not usable', $result['reason']);
     }
 
     public function testCallResponsesApiThrowsOn429WithInsufficientQuota(): void
@@ -273,7 +389,774 @@ class OpenAiDirectDocumentProviderTest extends TestCase
         $this->assertSame('gpt-4o', $capturedPayload['model']);
     }
 
-private function getMockResponseData(): array
+    public function testValidateAnalysisAcceptsNullableImprovementFields(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [[
+            'currentExamAnalysis' => [
+                'strengths' => [],
+                'weaknesses' => [],
+                'needsAttention' => [],
+                'conceptGaps' => [],
+                'recommendations' => [],
+                'conceptAssessments' => [],
+                'mistakes' => [],
+                'evidence' => [],
+            ],
+            'questionAnalysis' => [
+                [
+                    'questionNumber' => '1',
+                    'status' => 'DEVELOPING',
+                    'evaluation' => [
+                        'evaluationStatus' => 'CORRECT',
+                        'correctness' => 'CORRECT',
+                    ],
+                    'concept' => [
+                        'name' => 'Algebra',
+                        'status' => 'STRONG',
+                    ],
+                    'improvement' => [
+                        'whatToLearn' => null,
+                        'whatToPractice' => null,
+                        'recommendedAction' => 'Review more formal definitions.',
+                    ],
+                ],
+            ],
+        ], new DirectExtractionResult(
+            metadata: new ExtractedAnswerSheetMetadata(),
+            extractedAnswers: [],
+            extractedQuestions: [],
+            confidence: 0.9,
+            extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+        )]);
+
+        $this->assertTrue($result['usable']);
+        $this->assertStringContainsString('Valid analysis', $result['reason']);
+    }
+
+    public function testValidateAnalysisRejectsMissingImprovementFields(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [[
+            'currentExamAnalysis' => [
+                'strengths' => [],
+                'weaknesses' => [],
+                'needsAttention' => [],
+                'conceptGaps' => [],
+                'recommendations' => [],
+                'conceptAssessments' => [],
+                'mistakes' => [],
+                'evidence' => [],
+            ],
+            'questionAnalysis' => [
+                [
+                    'questionNumber' => '1',
+                    'status' => 'DEVELOPING',
+                    'evaluation' => [
+                        'evaluationStatus' => 'CORRECT',
+                        'correctness' => 'CORRECT',
+                    ],
+                    'concept' => [
+                        'name' => 'Algebra',
+                        'status' => 'STRONG',
+                    ],
+                    'improvement' => [
+                        'whatToLearn' => null,
+                        'recommendedAction' => 'Review.',
+                    ],
+                ],
+            ],
+        ], new DirectExtractionResult(
+            metadata: new ExtractedAnswerSheetMetadata(),
+            extractedAnswers: [],
+            extractedQuestions: [],
+            confidence: 0.9,
+            extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+        )]);
+
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Invalid improvement', $result['reason']);
+    }
+
+    public function testValidateAnalysisAcceptsNullEvaluationStatusAndCorrectness(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [[
+            'currentExamAnalysis' => [
+                'strengths' => [],
+                'weaknesses' => [],
+                'needsAttention' => [],
+                'conceptGaps' => [],
+                'recommendations' => [],
+                'conceptAssessments' => [],
+                'mistakes' => [],
+                'evidence' => [],
+            ],
+            'questionAnalysis' => [
+                [
+                    'questionNumber' => null,
+                    'subQuestion' => null,
+                    'question' => null,
+                    'studentAnswer' => null,
+                    'status' => null,
+                    'evaluation' => [
+                        'evaluationStatus' => null,
+                        'correctness' => null,
+                        'marksAwarded' => null,
+                        'maxMarks' => null,
+                        'whatStudentDidWell' => null,
+                        'mistake' => null,
+                        'whyItIsWrong' => null,
+                        'missingPoints' => null,
+                    ],
+                    'concept' => [
+                        'name' => null,
+                        'status' => null,
+                        'explanation' => null,
+                    ],
+                    'improvement' => [
+                        'whatToLearn' => null,
+                        'whatToPractice' => null,
+                        'recommendedAction' => null,
+                    ],
+                ],
+            ],
+        ], new DirectExtractionResult(
+            metadata: new ExtractedAnswerSheetMetadata(),
+            extractedAnswers: [],
+            extractedQuestions: [],
+            confidence: 0.9,
+            extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+        )]);
+
+        $this->assertTrue($result['usable']);
+        $this->assertStringContainsString('Valid analysis', $result['reason']);
+    }
+
+    public function testValidateAnalysisRejectsInvalidEnumWhenValueExists(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [[
+            'currentExamAnalysis' => [
+                'strengths' => [],
+                'weaknesses' => [],
+                'needsAttention' => [],
+                'conceptGaps' => [],
+                'recommendations' => [],
+                'conceptAssessments' => [],
+                'mistakes' => [],
+                'evidence' => [],
+            ],
+            'questionAnalysis' => [
+                [
+                    'questionNumber' => '1',
+                    'status' => 'DEVELOPING',
+'evaluation' => [
+                        'evaluationStatus' => 'INVALID_STATUS',
+                        'correctness' => 'CORRECT',
+                    ],
+                    'concept' => [
+                        'name' => 'Algebra',
+                        'status' => 'STRONG',
+                    ],
+                    'improvement' => [
+                        'whatToLearn' => null,
+                        'whatToPractice' => null,
+                        'recommendedAction' => null,
+                    ],
+                ],
+            ],
+        ], new DirectExtractionResult(
+            metadata: new ExtractedAnswerSheetMetadata(),
+            extractedAnswers: [],
+            extractedQuestions: [],
+            confidence: 0.9,
+            extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+        )]);
+
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Invalid evaluationStatus', $result['reason']);
+    }
+
+    public function testValidateAnalysisRejectsWrongTypeWhenValueExists(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [[
+            'currentExamAnalysis' => [
+                'strengths' => [],
+                'weaknesses' => [],
+                'needsAttention' => [],
+                'conceptGaps' => [],
+                'recommendations' => [],
+                'conceptAssessments' => [],
+                'mistakes' => [],
+                'evidence' => [],
+            ],
+            'questionAnalysis' => [
+                [
+                    'questionNumber' => '1',
+                    'status' => 'DEVELOPING',
+                    'evaluation' => [
+                        'evaluationStatus' => 'CORRECT',
+                        'correctness' => 'CORRECT',
+                        'marksAwarded' => 'not-a-number',
+                    ],
+                    'concept' => [
+                        'name' => 'Algebra',
+                        'status' => 'STRONG',
+                    ],
+                    'improvement' => [
+                        'whatToLearn' => null,
+                        'whatToPractice' => null,
+                        'recommendedAction' => null,
+                    ],
+                ],
+            ],
+        ], new DirectExtractionResult(
+            metadata: new ExtractedAnswerSheetMetadata(),
+            extractedAnswers: [],
+            extractedQuestions: [],
+            confidence: 0.9,
+            extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+        )]);
+
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Invalid marksAwarded', $result['reason']);
+    }
+
+    public function testValidateExtractionAcceptsNullAnswerAndQuestionFields(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateExtraction', [[
+            'extractedAnswers' => [
+                ['questionNumber' => null, 'answerText' => null, 'confidence' => null],
+            ],
+            'extractedQuestions' => [
+                ['questionNumber' => null, 'questionText' => null, 'marks' => null, 'confidence' => null],
+            ],
+            'extractedMetadata' => [],
+            'extraction' => ['status' => 'SUCCESS', 'confidence' => 0.9],
+        ]]);
+
+        $this->assertTrue($result['usable']);
+        $this->assertStringContainsString('Valid extraction', $result['reason']);
+    }
+
+    public function testValidateExtractionRejectsInvalidConfidenceWhenPresent(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateExtraction', [[
+            'extractedAnswers' => [
+                ['questionNumber' => '1', 'answerText' => 'test', 'confidence' => 1.5],
+            ],
+            'extractedQuestions' => [],
+            'extractedMetadata' => [],
+            'extraction' => ['status' => 'SUCCESS', 'confidence' => 0.9],
+        ]]);
+
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Invalid confidence', $result['reason']);
+    }
+
+    public function testValidateAnalysisAcceptsRealLunaCorrectnessValues(): void
+    {
+        $provider = $this->createProvider();
+        
+        // Test all legitimate correctness values from real Luna production response
+        foreach (['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT', 'UNDETERMINED'] as $correctness) {
+            $result = $this->callProtected($provider, 'validateAnalysis', [[
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'DEVELOPING',
+'evaluation' => [
+                        'evaluationStatus' => 'CORRECT',
+                        'correctness' => 'CORRECT',
+                    ],
+                        'concept' => [
+                            'name' => 'Algebra',
+                            'status' => 'STRONG',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ], new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            )]);
+            
+            $this->assertTrue($result['usable'], "correctness='$correctness' should be accepted");
+            $this->assertStringContainsString('Valid analysis', $result['reason']);
+        }
+    }
+
+    public function testValidateAnalysisAcceptsRealLunaEvaluationStatusValues(): void
+    {
+        $provider = $this->createProvider();
+        
+        // Test all legitimate evaluationStatus values from real Luna production response
+        foreach (['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT', 'UNDETERMINED'] as $evalStatus) {
+            $result = $this->callProtected($provider, 'validateAnalysis', [[
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'DEVELOPING',
+                        'evaluation' => [
+                            'evaluationStatus' => $evalStatus,
+                            'correctness' => 'CORRECT',
+                        ],
+                        'concept' => [
+                            'name' => 'Algebra',
+                            'status' => 'STRONG',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ], new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            )]);
+            
+            $this->assertTrue($result['usable'], "evaluationStatus='$evalStatus' should be accepted");
+            $this->assertStringContainsString('Valid analysis', $result['reason']);
+        }
+    }
+
+    public function testValidateAnalysisRejectsInvalidCorrectnessValue(): void
+    {
+        $provider = $this->createProvider();
+        
+        // Exact real Luna structure for questions without answer key
+        $result = $this->callProtected($provider, 'validateAnalysis', [
+            [
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'DEVELOPING',
+                        'evaluation' => [
+                            'evaluationStatus' => 'NOT_DETERMINABLE',
+                            'correctness' => 'NOT_DETERMINABLE',
+                            'marksAwarded' => null,
+                            'maxMarks' => null,
+                            'whatStudentDidWell' => null,
+                            'mistake' => null,
+                            'whyItIsWrong' => null,
+                            'missingPoints' => null,
+                        ],
+                        'concept' => [
+                            'name' => 'Physics - Optics',
+                            'status' => 'INSUFFICIENT_EVIDENCE',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ],
+            new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            ),
+        ]);
+        
+        $this->assertTrue($result['usable'], "NOT_DETERMINABLE correctness should be accepted");
+        $this->assertStringContainsString('Valid analysis', $result['reason']);
+    }
+
+    public function testValidateAnalysisAcceptsRealLunaNotDeterminable(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [
+            [
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'DEVELOPING',
+                        'evaluation' => [
+                            'evaluationStatus' => 'CORRECT',
+                            'correctness' => 'INVALID_CORRECTNESS',
+                        ],
+                        'concept' => [
+                            'name' => 'Algebra',
+                            'status' => 'STRONG',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ],
+            new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            ),
+        ]);
+
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Invalid correctness', $result['reason']);
+    }
+
+    public function testValidateAnalysisAcceptsAllQuestionAnalysisStatusValues(): void
+    {
+        $provider = $this->createProvider();
+        
+        // Test all legitimate questionAnalysis.status values from real Luna production response
+        foreach (['INSUFFICIENT_EVIDENCE', 'DEVELOPING', 'STRONG', 'NEEDS_ATTENTION'] as $status) {
+            $result = $this->callProtected($provider, 'validateAnalysis', [
+                [
+                    'currentExamAnalysis' => [
+                        'strengths' => [],
+                        'weaknesses' => [],
+                        'needsAttention' => [],
+                        'conceptGaps' => [],
+                        'recommendations' => [],
+                        'conceptAssessments' => [],
+                        'mistakes' => [],
+                        'evidence' => [],
+                    ],
+                    'questionAnalysis' => [
+                        [
+                            'questionNumber' => '1',
+                            'status' => $status,
+                            'evaluation' => [
+                                'evaluationStatus' => 'CORRECT',
+                                'correctness' => 'CORRECT',
+                            ],
+                            'concept' => [
+                                'name' => 'Test Concept',
+                                'status' => 'STRONG',
+                            ],
+                            'improvement' => [
+                                'whatToLearn' => null,
+                                'whatToPractice' => null,
+                                'recommendedAction' => null,
+                            ],
+                        ],
+                    ],
+                ],
+                new DirectExtractionResult(
+                    metadata: new ExtractedAnswerSheetMetadata(),
+                    extractedAnswers: [],
+                    extractedQuestions: [],
+                    confidence: 0.9,
+                    extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+                ),
+            ]);
+            
+            $this->assertTrue($result['usable'], "questionAnalysis.status='$status' should be accepted");
+            $this->assertStringContainsString('Valid analysis', $result['reason']);
+        }
+    }
+
+    public function testValidateAnalysisAcceptsAllConceptStatusValues(): void
+    {
+        $provider = $this->createProvider();
+        
+        // Test all legitimate concept.status values from real Luna production response
+        foreach (['INSUFFICIENT_EVIDENCE', 'DEVELOPING', 'STRONG', 'NEEDS_ATTENTION'] as $conceptStatus) {
+            $result = $this->callProtected($provider, 'validateAnalysis', [
+                [
+                    'currentExamAnalysis' => [
+                        'strengths' => [],
+                        'weaknesses' => [],
+                        'needsAttention' => [],
+                        'conceptGaps' => [],
+                        'recommendations' => [],
+                        'conceptAssessments' => [],
+                        'mistakes' => [],
+                        'evidence' => [],
+                    ],
+                    'questionAnalysis' => [
+                        [
+                            'questionNumber' => '1',
+                            'status' => 'DEVELOPING',
+                            'evaluation' => [
+                                'evaluationStatus' => 'CORRECT',
+                                'correctness' => 'CORRECT',
+                            ],
+                            'concept' => [
+                                'name' => 'Test Concept',
+                                'status' => $conceptStatus,
+                            ],
+                            'improvement' => [
+                                'whatToLearn' => null,
+                                'whatToPractice' => null,
+                                'recommendedAction' => null,
+                            ],
+                        ],
+                    ],
+                ],
+                new DirectExtractionResult(
+                    metadata: new ExtractedAnswerSheetMetadata(),
+                    extractedAnswers: [],
+                    extractedQuestions: [],
+                    confidence: 0.9,
+                    extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+                ),
+            ]);
+            
+            $this->assertTrue($result['usable'], "concept.status='$conceptStatus' should be accepted");
+            $this->assertStringContainsString('Valid analysis', $result['reason']);
+        }
+    }
+
+    public function testValidateAnalysisRejectsInvalidQuestionAnalysisStatus(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [
+            [
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'INVALID_STATUS',
+                        'evaluation' => [
+                            'evaluationStatus' => 'CORRECT',
+                            'correctness' => 'CORRECT',
+                        ],
+                        'concept' => [
+                            'name' => 'Test',
+                            'status' => 'STRONG',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ],
+            new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            ),
+        ]);
+
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Invalid questionAnalysis status', $result['reason']);
+    }
+
+    public function testValidateAnalysisRejectsInvalidConceptStatus(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [
+            [
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'DEVELOPING',
+                        'evaluation' => [
+                            'evaluationStatus' => 'CORRECT',
+                            'correctness' => 'CORRECT',
+                        ],
+                        'concept' => [
+                            'name' => 'Test',
+                            'status' => 'INVALID_CONCEPT_STATUS',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ],
+            new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            ),
+        ]);
+
+        $this->assertFalse($result['usable']);
+        $this->assertStringContainsString('Invalid concept status', $result['reason']);
+    }
+
+    public function testValidateAnalysisAcceptsMarkedCorrectEvaluationStatus(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [
+            [
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'STRONG',
+                        'evaluation' => [
+                            'evaluationStatus' => 'MARKED_CORRECT',
+                            'correctness' => 'CORRECT',
+                        ],
+                        'concept' => [
+                            'name' => 'Test',
+                            'status' => 'STRONG',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ],
+            new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            ),
+        ]);
+
+        $this->assertTrue($result['usable']);
+        $this->assertStringContainsString('Valid analysis', $result['reason']);
+    }
+
+    public function testValidateAnalysisAcceptsInsufficientEvidenceCorrectness(): void
+    {
+        $provider = $this->createProvider();
+        $result = $this->callProtected($provider, 'validateAnalysis', [
+            [
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'NEEDS_ATTENTION',
+                        'evaluation' => [
+                            'evaluationStatus' => 'NOT_DETERMINABLE',
+                            'correctness' => 'INSUFFICIENT_EVIDENCE',
+                        ],
+                        'concept' => [
+                            'name' => 'Test',
+                            'status' => 'INSUFFICIENT_EVIDENCE',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ],
+            new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            ),
+        ]);
+
+        $this->assertTrue($result['usable']);
+        $this->assertStringContainsString('Valid analysis', $result['reason']);
+    }
+
+    private function getMockResponseData(): array
     {
         return [
             'output' => [[

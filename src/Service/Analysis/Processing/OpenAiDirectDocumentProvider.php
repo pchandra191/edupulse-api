@@ -30,6 +30,7 @@ class OpenAiDirectDocumentProvider
         'gpt-5-nano',
         'gpt-5-mini',
         'gpt-5',
+        'gpt-6-luna',
     ];
 
     private HttpClientInterface $httpClient;
@@ -842,8 +843,13 @@ PROMPT;
         }
 
         $extraction = $data['extraction'] ?? [];
-        if (!isset($extraction['status']) || $extraction['status'] !== 'SUCCESS') {
-            return ['usable' => false, 'reason' => 'Extraction status not SUCCESS'];
+        $extractionStatus = $extraction['status'] ?? '';
+
+        $isSuccess = $extractionStatus === 'SUCCESS';
+        $isPartial = $extractionStatus === 'PARTIAL';
+
+        if (!$isSuccess && !$isPartial) {
+            return ['usable' => false, 'reason' => "Extraction status not usable: {$extractionStatus}"];
         }
 
         $confidence = $extraction['confidence'] ?? 0;
@@ -855,27 +861,62 @@ PROMPT;
             return ['usable' => false, 'reason' => 'extractedAnswers and extractedQuestions must be arrays'];
         }
 
+        $hasValidAnswer = false;
         foreach ($data['extractedAnswers'] ?? [] as $idx => $answer) {
-            if (!is_array($answer) || !isset($answer['answerText']) || !isset($answer['questionNumber'])) {
+            if (!is_array($answer) || !array_key_exists('questionNumber', $answer) || !array_key_exists('answerText', $answer)) {
                 return ['usable' => false, 'reason' => "Invalid extractedAnswer at index {$idx}"];
             }
-            $conf = $answer['confidence'] ?? 0;
-            if (!is_numeric($conf) || $conf < 0 || $conf > 1) {
+            if ($answer['questionNumber'] !== null && !is_string($answer['questionNumber']) && !is_int($answer['questionNumber']) && !is_float($answer['questionNumber'])) {
+                return ['usable' => false, 'reason' => "Invalid questionNumber in extractedAnswer at index {$idx}"];
+            }
+            if ($answer['answerText'] !== null && !is_string($answer['answerText'])) {
+                return ['usable' => false, 'reason' => "Invalid answerText in extractedAnswer at index {$idx}"];
+            }
+            foreach (['page', 'sourcePage'] as $field) {
+                if (array_key_exists($field, $answer) && $answer[$field] !== null && !is_numeric($answer[$field])) {
+                    return ['usable' => false, 'reason' => "Invalid {$field} in extractedAnswer at index {$idx}"];
+                }
+            }
+            $conf = $answer['confidence'] ?? null;
+            if ($conf !== null && (!is_numeric($conf) || $conf < 0 || $conf > 1)) {
                 return ['usable' => false, 'reason' => "Invalid confidence in extractedAnswer at index {$idx}"];
             }
+            $hasValidAnswer = true;
         }
 
+        $hasValidQuestion = false;
         foreach ($data['extractedQuestions'] ?? [] as $idx => $question) {
-            if (!is_array($question) || !isset($question['questionNumber']) || !isset($question['questionText'])) {
+            if (!is_array($question) || !array_key_exists('questionNumber', $question) || !array_key_exists('questionText', $question)) {
                 return ['usable' => false, 'reason' => "Invalid extractedQuestion at index {$idx}"];
             }
-            $conf = $question['confidence'] ?? 0;
-            if (!is_numeric($conf) || $conf < 0 || $conf > 1) {
+            if ($question['questionNumber'] !== null && !is_string($question['questionNumber']) && !is_int($question['questionNumber']) && !is_float($question['questionNumber'])) {
+                return ['usable' => false, 'reason' => "Invalid questionNumber in extractedQuestion at index {$idx}"];
+            }
+            if ($question['questionText'] !== null && !is_string($question['questionText'])) {
+                return ['usable' => false, 'reason' => "Invalid questionText in extractedQuestion at index {$idx}"];
+            }
+            foreach (['subQuestion', 'rawText', 'language'] as $field) {
+                if (array_key_exists($field, $question) && $question[$field] !== null && !is_string($question[$field])) {
+                    return ['usable' => false, 'reason' => "Invalid {$field} in extractedQuestion at index {$idx}"];
+                }
+            }
+            $conf = $question['confidence'] ?? null;
+            if ($conf !== null && (!is_numeric($conf) || $conf < 0 || $conf > 1)) {
                 return ['usable' => false, 'reason' => "Invalid confidence in extractedQuestion at index {$idx}"];
             }
             $marks = $question['marks'] ?? null;
             if ($marks !== null && (!is_numeric($marks) || $marks < 0)) {
                 return ['usable' => false, 'reason' => "Invalid marks in extractedQuestion at index {$idx}"];
+            }
+            $hasValidQuestion = true;
+        }
+
+        if ($isPartial) {
+            $hasAnswersOrQuestions = $hasValidAnswer || $hasValidQuestion;
+            $hasCurrentExamAnalysis = isset($data['currentExamAnalysis']) && is_array($data['currentExamAnalysis']);
+
+            if (!$hasAnswersOrQuestions || !$hasCurrentExamAnalysis) {
+                return ['usable' => false, 'reason' => 'PARTIAL extraction requires at least one valid answer/question AND currentExamAnalysis'];
             }
         }
 
@@ -901,57 +942,98 @@ PROMPT;
         }
 
         $allowedStatuses = ['STRONG', 'DEVELOPING', 'NEEDS_ATTENTION', 'INSUFFICIENT_EVIDENCE'];
+        $allowedEvaluationStatuses = [
+            'CORRECT', 'PARTIALLY_CORRECT', 'INCORRECT', 'UNANSWERED',
+            'INSUFFICIENT_EVIDENCE', 'NOT_DETERMINABLE', 'UNDETERMINED',
+            'ASSESSED_BY_VISIBLE_MARKING_ONLY', 'MARKED_CORRECT',
+        ];
+        $allowedCorrectness = ['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT', 'UNDETERMINED', 'NOT_DETERMINABLE', 'INSUFFICIENT_EVIDENCE'];
         foreach ($analysis['conceptAssessments'] ?? [] as $idx => $concept) {
-            if (!is_array($concept) || !isset($concept['status']) || !isset($concept['concept'])) {
+            if (!is_array($concept) || !array_key_exists('status', $concept) || !array_key_exists('concept', $concept)) {
                 return ['usable' => false, 'reason' => "Invalid conceptAssessment at index {$idx}"];
             }
-            if (!in_array($concept['status'] ?? '', $allowedStatuses, true)) {
+            $status = $concept['status'] ?? null;
+            if ($status !== null && !in_array($status, $allowedStatuses, true)) {
                 return ['usable' => false, 'reason' => "Invalid concept status '{$concept['status']}' at index {$idx}"];
             }
-            $conf = $concept['confidence'] ?? 0;
-            if (!is_numeric($conf) || $conf < 0 || $conf > 1) {
+            $conf = $concept['confidence'] ?? null;
+            if ($conf !== null && (!is_numeric($conf) || $conf < 0 || $conf > 1)) {
                 return ['usable' => false, 'reason' => "Invalid confidence in conceptAssessment at index {$idx}"];
             }
         }
 
         foreach ($analysis['mistakes'] ?? [] as $idx => $mistake) {
-            if (!is_array($mistake) || !isset($mistake['questionNumber']) || !isset($mistake['type']) || !isset($mistake['description'])) {
+            if (!is_array($mistake) || !array_key_exists('questionNumber', $mistake) || !array_key_exists('type', $mistake) || !array_key_exists('description', $mistake)) {
                 return ['usable' => false, 'reason' => "Invalid mistake at index {$idx}"];
             }
-            $conf = $mistake['confidence'] ?? 0;
-            if (!is_numeric($conf) || $conf < 0 || $conf > 1) {
+            $conf = $mistake['confidence'] ?? null;
+            if ($conf !== null && (!is_numeric($conf) || $conf < 0 || $conf > 1)) {
                 return ['usable' => false, 'reason' => "Invalid confidence in mistake at index {$idx}"];
             }
         }
 
         foreach ($analysis['evidence'] ?? [] as $idx => $evidence) {
-            if (!is_array($evidence) || !isset($evidence['type']) || !isset($evidence['questionNumber']) || !isset($evidence['reason'])) {
+            if (!is_array($evidence) || !array_key_exists('type', $evidence) || !array_key_exists('questionNumber', $evidence) || !array_key_exists('reason', $evidence)) {
                 return ['usable' => false, 'reason' => "Invalid evidence reference at index {$idx}"];
             }
         }
 
         if (isset($data['questionAnalysis']) && is_array($data['questionAnalysis'])) {
             foreach ($data['questionAnalysis'] as $idx => $qa) {
-                if (!is_array($qa) || !isset($qa['questionNumber']) || !isset($qa['status']) || !isset($qa['evaluation']) || !isset($qa['concept']) || !isset($qa['improvement'])) {
+                if (!is_array($qa) || !array_key_exists('questionNumber', $qa) || !array_key_exists('status', $qa) || !array_key_exists('evaluation', $qa) || !array_key_exists('concept', $qa) || !array_key_exists('improvement', $qa)) {
                     return ['usable' => false, 'reason' => "Invalid questionAnalysis at index {$idx}"];
+                }
+                $qaStatus = $qa['status'] ?? null;
+                if ($qaStatus !== null && !in_array($qaStatus, $allowedStatuses, true)) {
+                    return ['usable' => false, 'reason' => "Invalid questionAnalysis status '{$qaStatus}' at index {$idx}"];
                 }
 
                 $evaluation = $qa['evaluation'] ?? [];
-                if (!is_array($evaluation) || !isset($evaluation['evaluationStatus']) || !isset($evaluation['correctness'])) {
+                if (!is_array($evaluation) || !array_key_exists('evaluationStatus', $evaluation) || !array_key_exists('correctness', $evaluation)) {
                     return ['usable' => false, 'reason' => "Invalid evaluation in questionAnalysis at index {$idx}"];
+                }
+                $evalStatus = $evaluation['evaluationStatus'] ?? null;
+                if ($evalStatus !== null && !in_array($evalStatus, $allowedEvaluationStatuses, true)) {
+                    return ['usable' => false, 'reason' => "Invalid evaluationStatus '{$evalStatus}' in questionAnalysis at index {$idx}"];
+                }
+                $correctness = $evaluation['correctness'] ?? null;
+                if ($correctness !== null && !is_string($correctness)) {
+                    return ['usable' => false, 'reason' => "Invalid correctness type in questionAnalysis at index {$idx}"];
+                }
+                if ($correctness !== null && !in_array($correctness, $allowedCorrectness, true)) {
+                    return ['usable' => false, 'reason' => "Invalid correctness '{$correctness}' in questionAnalysis at index {$idx}"];
+                }
+                foreach (['studentAnswer', 'questionText', 'feedback', 'reason'] as $field) {
+                    if (array_key_exists($field, $evaluation) && $evaluation[$field] !== null && !is_string($evaluation[$field])) {
+                        return ['usable' => false, 'reason' => "Invalid {$field} in evaluation at index {$idx}"];
+                    }
+                }
+                $marksAwarded = $evaluation['marksAwarded'] ?? null;
+                if ($marksAwarded !== null && (!is_numeric($marksAwarded) || $marksAwarded < 0)) {
+                    return ['usable' => false, 'reason' => "Invalid marksAwarded in questionAnalysis at index {$idx}"];
+                }
+                $maxMarks = $evaluation['maxMarks'] ?? null;
+                if ($maxMarks !== null && (!is_numeric($maxMarks) || $maxMarks < 0)) {
+                    return ['usable' => false, 'reason' => "Invalid maxMarks in questionAnalysis at index {$idx}"];
                 }
 
                 $concept = $qa['concept'] ?? [];
-                if (!is_array($concept) || !isset($concept['name']) || !isset($concept['status'])) {
+                if (!is_array($concept) || !array_key_exists('name', $concept) || !array_key_exists('status', $concept)) {
                     return ['usable' => false, 'reason' => "Invalid concept in questionAnalysis at index {$idx}"];
                 }
-                if (!in_array($concept['status'] ?? '', $allowedStatuses, true)) {
-                    return ['usable' => false, 'reason' => "Invalid concept status in questionAnalysis at index {$idx}"];
+                $conceptStatus = $concept['status'] ?? null;
+                if ($conceptStatus !== null && !in_array($conceptStatus, $allowedStatuses, true)) {
+                    return ['usable' => false, 'reason' => "Invalid concept status '{$conceptStatus}' in questionAnalysis at index {$idx}"];
                 }
 
                 $improvement = $qa['improvement'] ?? [];
-                if (!is_array($improvement) || !isset($improvement['whatToLearn']) || !isset($improvement['whatToPractice']) || !isset($improvement['recommendedAction'])) {
+                if (!is_array($improvement) || !array_key_exists('whatToLearn', $improvement) || !array_key_exists('whatToPractice', $improvement) || !array_key_exists('recommendedAction', $improvement)) {
                     return ['usable' => false, 'reason' => "Invalid improvement in questionAnalysis at index {$idx}"];
+                }
+                foreach (['whatToLearn', 'whatToPractice', 'recommendedAction'] as $field) {
+                    if ($improvement[$field] !== null && !is_string($improvement[$field])) {
+                        return ['usable' => false, 'reason' => "Invalid {$field} in improvement at index {$idx}"];
+                    }
                 }
             }
         } else {
@@ -986,10 +1068,10 @@ PROMPT;
         $extractedAnswers = [];
         foreach ($data['extractedAnswers'] ?? [] as $ans) {
             $extractedAnswers[] = new ExtractedAnswer(
-                questionNumber: $ans['questionNumber'] ?? '',
-                answerText: $ans['answerText'] ?? '',
+                questionNumber: $ans['questionNumber'] ?? null,
+                answerText: $ans['answerText'] ?? null,
                 page: $ans['page'] ?? null,
-                confidence: $ans['confidence'] ?? 0.5,
+                confidence: $ans['confidence'] ?? null,
                 sourcePage: $ans['sourcePage'] ?? null,
             );
         }
@@ -997,14 +1079,14 @@ PROMPT;
         $extractedQuestions = [];
         foreach ($data['extractedQuestions'] ?? [] as $q) {
             $extractedQuestions[] = [
-                'questionNumber' => $q['questionNumber'] ?? '',
+                'questionNumber' => $q['questionNumber'] ?? null,
                 'subQuestion' => $q['subQuestion'] ?? null,
-                'questionText' => $q['questionText'] ?? '',
+                'questionText' => $q['questionText'] ?? null,
                 'marks' => $q['marks'] ?? null,
-                'rawText' => $q['rawText'] ?? '',
-                'language' => $q['language'] ?? 'en',
-                'confidence' => $q['confidence'] ?? 0.5,
-                'questionKnownFromPaper' => $q['questionKnownFromPaper'] ?? false,
+                'rawText' => $q['rawText'] ?? null,
+                'language' => $q['language'] ?? null,
+                'confidence' => $q['confidence'] ?? null,
+                'questionKnownFromPaper' => $q['questionKnownFromPaper'] ?? null,
             ];
         }
 

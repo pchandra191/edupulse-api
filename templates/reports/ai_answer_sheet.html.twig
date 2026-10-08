@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: dejavusans, Arial, sans-serif;
+            font-size: 10px;
+            color: #1a1a2e;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            text-align: center;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+        }
+
+        .header .brand {
+            font-size: 20px;
+            font-weight: bold;
+            color: #007bff;
+            letter-spacing: 3px;
+        }
+
+        .header .subtitle {
+            font-size: 13px;
+            font-weight: bold;
+            color: #333;
+            margin-top: 3px;
+        }
+
+        .header .tagline {
+            font-size: 9px;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .info-section {
+            margin-bottom: 10px;
+        }
+
+        .info-section h3 {
+            font-size: 10px;
+            color: #007bff;
+            border-bottom: 1px solid #007bff;
+            padding-bottom: 2px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-grid {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .info-grid td {
+            padding: 3px 6px;
+            border: 1px solid #ddd;
+            font-size: 9.5px;
+        }
+
+        .info-grid td.label {
+            width: 35%;
+            background: #f8f9fa;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .result-box {
+            background: #f0f7ff;
+            border: 1px solid #007bff;
+            border-radius: 3px;
+            padding: 6px 10px;
+            margin-bottom: 10px;
+        }
+
+        .result-box table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .result-box td {
+            padding: 4px 8px;
+            text-align: center;
+            font-size: 10px;
+        }
+
+        .result-box .score-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .result-box .score-label {
+            font-size: 8px;
+            color: #666;
+        }
+
+        .question-section {
+            margin-bottom: 6px;
+            border: 1px solid #ccc;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .question-header {
+            background: #007bff;
+            color: white;
+            padding: 5px 8px;
+            font-weight: bold;
+            font-size: 10px;
+        }
+
+        .question-body {
+            padding: 6px 8px;
+        }
+
+        .question-row {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .question-row td {
+            vertical-align: top;
+            padding: 3px;
+            font-size: 9px;
+        }
+
+        .question-row .col-answer {
+            width: 42%;
+        }
+
+        .question-row .col-feedback {
+            width: 58%;
+        }
+
+        .field-label {
+            font-weight: bold;
+            color: #555;
+            font-size: 8px;
+            text-transform: uppercase;
+            margin-bottom: 1px;
+        }
+
+        .field-value {
+            margin-bottom: 5px;
+            line-height: 1.35;
+            word-wrap: break-word;
+        }
+
+        .marks-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 9px;
+        }
+
+        .marks-correct {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .marks-partial {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        .marks-incorrect {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .marks-unanswered {
+            background: #e2e3e5;
+            color: #383d41;
+            border: 1px solid #d6d8db;
+        }
+
+        .feedback-section {
+            margin-bottom: 6px;
+        }
+
+        .feedback-section h4 {
+            font-size: 9px;
+            color: #007bff;
+            margin: 4px 0 2px 0;
+            text-transform: uppercase;
+        }
+
+        .feedback-list {
+            margin: 0;
+            padding-left: 12px;
+        }
+
+        .feedback-list li {
+            margin-bottom: 1px;
+            line-height: 1.35;
+        }
+
+        .overall-section {
+            margin-top: 10px;
+            border-top: 2px solid #007bff;
+            padding-top: 8px;
+        }
+
+        .overall-section h3 {
+            font-size: 11px;
+            color: #007bff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+        }
+
+        .subsection {
+            margin-bottom: 6px;
+        }
+
+        .subsection h4 {
+            font-size: 9px;
+            color: #333;
+            background: #e9ecef;
+            padding: 3px 6px;
+            margin-bottom: 3px;
+        }
+
+        .subsection ul {
+            margin: 0;
+            padding-left: 14px;
+        }
+
+        .subsection li {
+            margin-bottom: 1px;
+            line-height: 1.35;
+        }
+
+        .concept-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+
+        .concept-table th {
+            background: #007bff;
+            color: white;
+            padding: 4px 6px;
+            font-size: 9px;
+            text-align: left;
+        }
+
+        .concept-table td {
+            padding: 4px 6px;
+            border: 1px solid #ddd;
+            font-size: 9px;
+        }
+
+        .concept-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .status-strong {
+            color: #155724;
+            font-weight: bold;
+        }
+
+        .status-developing {
+            color: #856404;
+            font-weight: bold;
+        }
+
+        .status-needs-attention {
+            color: #721c24;
+            font-weight: bold;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 8px;
+            color: #999;
+            border-top: 1px solid #eee;
+            padding: 5px 0;
+        }
+
+        @page {
+            margin-bottom: 25mm;
+        }
+    </style>
+</head>
+<body>
+
+    {# Header #}
+    <div class="header">
+        <div class="brand">EDUPULSE</div>
+        <div class="subtitle">AI EXAM ANALYSIS</div>
+        <div class="tagline">Complete Answer Sheet with Detailed Feedback</div>
+    </div>
+
+    {# Student/Exam Info #}
+    <div class="info-section">
+        <h3>Student & Exam Information</h3>
+        <table class="info-grid">
+            <tr>
+                <td class="label">Student Name</td>
+                <td>{{ report.student.name ?: 'N/A' }}</td>
+                <td class="label">Roll Number</td>
+                <td>{{ report.student.rollNumber ?: 'N/A' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Class</td>
+                <td>{{ report.student.class ?: 'N/A' }}</td>
+                <td class="label">Section</td>
+                <td>{{ report.student.section ?: 'N/A' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Subject</td>
+                <td>{{ report.exam.subject ?: 'N/A' }}</td>
+                <td class="label">Exam</td>
+                <td>{{ report.exam.title ?: 'N/A' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Total Marks</td>
+                <td>{{ report.exam.totalMarks !== null ? report.exam.totalMarks : 'N/A' }}</td>
+                <td class="label">Date</td>
+                <td>{{ report.exam.date ?: 'N/A' }}</td>
+            </tr>
+        </table>
+    </div>
+
+    {# Result Summary #}
+    <div class="result-box">
+        <table>
+            <tr>
+                <td>
+                    <div class="score-value">{{ report.result.score !== null ? report.result.score : 'N/A' }}</div>
+                    <div class="score-label">Score</div>
+                </td>
+                <td>
+                    <div class="score-value">{{ report.result.percentage !== null ? report.result.percentage|number_format(2) ~ '%' : 'N/A' }}</div>
+                    <div class="score-label">Percentage</div>
+                </td>
+                <td>
+                    <div class="score-value">{{ report.result.totalQuestions }}</div>
+                    <div class="score-label">Total Questions</div>
+                </td>
+                <td>
+                    <div class="score-value" style="color:#155724;">{{ report.result.correct }}</div>
+                    <div class="score-label">Correct</div>
+                </td>
+                <td>
+                    <div class="score-value" style="color:#856404;">{{ report.result.partiallyCorrect }}</div>
+                    <div class="score-label">Partially Correct</div>
+                </td>
+                <td>
+                    <div class="score-value" style="color:#721c24;">{{ report.result.incorrect }}</div>
+                    <div class="score-label">Incorrect</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {# Questions #}
+    <div class="questions-section">
+        <h3>Answer Sheet Evaluation</h3>
+
+        {% for question in report.questions %}
+        <div class="question-section">
+            <div class="question-header">
+                Question {{ question.number }}{% if question.subQuestion %}({{ question.subQuestion }}){% endif %}
+                &nbsp;&nbsp;
+                {% if question.evaluationStatus == 'CORRECT' %}
+                    {% if question.marksAwarded is not null and question.maxMarks is not null %}
+                        <span class="marks-badge marks-correct">{{ question.marksAwarded }}/{{ question.maxMarks }} Fully Correct</span>
+                    {% else %}
+                        <span class="marks-badge marks-correct">Fully Correct</span>
+                    {% endif %}
+                {% elseif question.evaluationStatus == 'PARTIALLY_CORRECT' %}
+                    {% if question.marksAwarded is not null and question.maxMarks is not null %}
+                        <span class="marks-badge marks-partial">{{ question.marksAwarded }}/{{ question.maxMarks }} Partially Correct</span>
+                    {% else %}
+                        <span class="marks-badge marks-partial">Partially Correct</span>
+                    {% endif %}
+                {% elseif question.evaluationStatus == 'INCORRECT' %}
+                    {% if question.marksAwarded is not null and question.maxMarks is not null %}
+                        <span class="marks-badge marks-incorrect">{{ question.marksAwarded }}/{{ question.maxMarks }} Incorrect</span>
+                    {% else %}
+                        <span class="marks-badge marks-incorrect">Incorrect</span>
+                    {% endif %}
+                {% elseif question.evaluationStatus == 'UNANSWERED' %}
+                    <span class="marks-badge marks-unanswered">Unanswered</span>
+                {% else %}
+                    {% if question.marksAwarded is not null and question.maxMarks is not null %}
+                        <span class="marks-badge marks-unanswered">{{ question.marksAwarded }}/{{ question.maxMarks }}</span>
+                    {% else %}
+                        <span class="marks-badge marks-unanswered">{{ question.evaluationStatus }}</span>
+                    {% endif %}
+                {% endif %}
+            </div>
+            <div class="question-body">
+                <table class="question-row">
+                    <tr>
+                        <td class="col-answer">
+                            <div class="field-label">Question</div>
+                            <div class="field-value">{{ question.question|nl2br }}</div>
+
+                            <div class="field-label">Your Answer</div>
+                            <div class="field-value">{{ question.studentAnswer|nl2br }}</div>
+                        </td>
+                        <td class="col-feedback">
+                            {% if question.whatStudentDidWell %}
+                            <div class="feedback-section">
+                                <h4>What You Did Well</h4>
+                                <div class="field-value">{{ question.whatStudentDidWell|nl2br }}</div>
+                            </div>
+                            {% endif %}
+
+                            {% if question.mistake %}
+                            <div class="feedback-section">
+                                <h4>Mistake</h4>
+                                <div class="field-value">{{ question.mistake|nl2br }}</div>
+                            </div>
+                            {% endif %}
+
+                            {% if question.whyItIsWrong %}
+                            <div class="feedback-section">
+                                <h4>Why It Is Wrong</h4>
+                                <div class="field-value">{{ question.whyItIsWrong|nl2br }}</div>
+                            </div>
+                            {% endif %}
+
+                            {% if question.missingPoints|length > 0 %}
+                            <div class="feedback-section">
+                                <h4>Missing Points</h4>
+                                <ul class="feedback-list">
+                                    {% for point in question.missingPoints %}
+                                    <li>{{ point|nl2br }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+
+                            {% if question.concept %}
+                            <div class="feedback-section">
+                                <h4>Concept: {{ question.concept.name }}</h4>
+                                <div class="field-value">
+                                    Status: <span class="status-{{ question.concept.status|lower }}">{{ question.concept.status }}</span>
+                                    {% if question.concept.explanation %}
+                                    <br>{{ question.concept.explanation|nl2br }}
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            {% if question.improvement %}
+                            <div class="feedback-section">
+                                <h4>Improvement</h4>
+                                {% if question.improvement.whatToLearn %}
+                                <div class="field-label">What to Learn</div>
+                                <div class="field-value">{{ question.improvement.whatToLearn|nl2br }}</div>
+                                {% endif %}
+                                {% if question.improvement.whatToPractice %}
+                                <div class="field-label">What to Practice</div>
+                                <div class="field-value">{{ question.improvement.whatToPractice|nl2br }}</div>
+                                {% endif %}
+                                {% if question.improvement.recommendedAction %}
+                                <div class="field-label">Recommended Action</div>
+                                <div class="field-value">{{ question.improvement.recommendedAction|nl2br }}</div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {# Overall Feedback #}
+    {% if report.strengths|length > 0 or report.weaknesses|length > 0 or report.needsAttention|length > 0 or report.conceptGaps|length > 0 or report.recommendations|length > 0 %}
+    <div class="overall-section">
+        <h3>Overall Feedback from EduPulse AI</h3>
+
+        {% if report.strengths|length > 0 %}
+        <div class="subsection">
+            <h4>Strengths</h4>
+            <ul>
+                {% for strength in report.strengths %}
+                <li>{{ strength|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.weaknesses|length > 0 %}
+        <div class="subsection">
+            <h4>Areas to Improve</h4>
+            <ul>
+                {% for weakness in report.weaknesses %}
+                <li>{{ weakness|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.needsAttention|length > 0 %}
+        <div class="subsection">
+            <h4>Needs Attention</h4>
+            <ul>
+                {% for item in report.needsAttention %}
+                <li>{{ item|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.conceptGaps|length > 0 %}
+        <div class="subsection">
+            <h4>Concept Gaps</h4>
+            <ul>
+                {% for gap in report.conceptGaps %}
+                <li>{{ gap|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.recommendations|length > 0 %}
+        <div class="subsection">
+            <h4>Recommended Next Steps</h4>
+            <ul>
+                {% for rec in report.recommendations %}
+                <li>{{ rec|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# Concept Mastery #}
+    {% if report.conceptMastery|length > 0 %}
+    <div class="overall-section">
+        <h3>Concept Mastery</h3>
+        <table class="concept-table">
+            <thead>
+                <tr>
+                    <th>Concept</th>
+                    <th>Status</th>
+                    <th>Confidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cm in report.conceptMastery %}
+                <tr>
+                    <td>{{ cm.concept }}</td>
+                    <td class="status-{{ cm.status|lower }}">{{ cm.status }}</td>
+                    <td>{{ cm.confidence !== null ? (cm.confidence * 100)|number_format(0) ~ '%' : 'N/A' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {# Footer #}
+    <div class="footer">
+        Analyzed by EduPulse AI &nbsp;|&nbsp; Page {PAGENO} of {nbpg}
+        <br>
+        "KNOW. PLAN. IMPROVE."
+    </div>
+
+</body>
+</html>

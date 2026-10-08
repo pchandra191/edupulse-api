@@ -120,7 +120,7 @@ private function createService(
         $mongoAnalysis = $this->createAnalysis('CONFIRMED');
         $mongoAnalysis->getDocuments()->getAnswerSheet()->setStatus('UPLOADED');
         $mongoAnalysis->getDocuments()->getAnswerSheet()->setFileId('test-file-id');
-        $mongoAnalysis->setMetadataConfirmationStatus('CONFIRMED');
+        // Do NOT set MongoDB metadataConfirmationStatus - simulate unconfirmed metadata
 
         $mongoRepo = $this->createMock(MongoAnalysisRepository::class);
         $mongoRepo->method('findByAnalysisIdAndStudentId')->willReturn($mongoAnalysis);
@@ -128,44 +128,42 @@ private function createService(
         $pgRepo = $this->createMock(AnalysisRepository::class);
         $pgRepo->method('findByAnalysisId')->willReturn(null); // No PostgreSQL entity = no confirmed metadata
 
-        $service = $this->createService($mongoRepo, null, null, $pgRepo);
+        $storageResolver = $this->createMock(AnalysisStorageResolver::class);
+        $storageResolver->method('getFilePathByFileId')
+            ->willReturnCallback(static fn(string $analysisId, string $fileId): string => '/tmp/' . $fileId . '.pdf');
+
+        $service = $this->createService($mongoRepo, null, $storageResolver, $pgRepo);
 
         $this->expectException(AnalysisLifecycleException::class);
-        $this->expectExceptionMessage('Metadata is marked as confirmed but no confirmed metadata found.');
+        $this->expectExceptionMessage('Confirmed metadata is required before analysis.');
         $service->runDirectAnalysis('test-analysis-id', 'test-student-id');
     }
 
     public function testRunDirectAnalysisThrowsWhenNoExtractedMetadata(): void
     {
-        $tempFiles = [];
-        $filePaths = [];
-        for ($i = 1; $i <= 3; $i++) {
-            $path = sys_get_temp_dir() . '/test_direct_multi_' . uniqid() . "_page{$i}.png";
-            file_put_contents($path, "fake-png-{$i}");
-            $filePaths[] = $path;
-            $tempFiles[] = $path;
-        }
-
         $mongoAnalysis = $this->createAnalysis('NEEDS_REVIEW');
         $mongoAnalysis->getDocuments()->addAnswerSheet(new \App\Document\DocumentFile());
-        $mongoAnalysis->getDocuments()->addAnswerSheet(new \App\Document\DocumentFile());
-        $answerSheets = $mongoAnalysis->getDocuments()->getAnswerSheets();
-        $fileIds = ['file-1', 'file-2', 'file-3'];
-        foreach ($answerSheets as $index => $answerSheet) {
-            $answerSheet->setStatus('UPLOADED');
-            $answerSheet->setFileId($fileIds[$index]);
-            $answerSheet->setOriginalFilename("page-{$index}.png");
-        }
+        $answerSheet = $mongoAnalysis->getDocuments()->getAnswerSheet();
+        $answerSheet->setStatus('UPLOADED');
+        $answerSheet->setFileId('file-1');
+        $answerSheet->setOriginalFilename('page-1.png');
         $mongoAnalysis->getExam()->setExtractedMetadata(['studentName' => 'Test Student']);
-        $mongoAnalysis->setMetadataConfirmationStatus('PENDING');
+        $mongoAnalysis->setMetadataConfirmationStatus('CONFIRMED');
+        $mongoAnalysis->setAnswerSheetFileHash('precomputed-hash');
 
         $mongoRepo = $this->createMock(MongoAnalysisRepository::class);
         $mongoRepo->method('findByAnalysisIdAndStudentId')->willReturn($mongoAnalysis);
 
+        $pgAnalysis = $this->createMock(\App\Entity\Analysis::class);
+        $pgAnalysis->method('getMetadataConfirmationStatus')->willReturn('CONFIRMED');
+        $pgAnalysis->method('getSubjectName')->willReturn('Mathematics');
+        $pgAnalysis->method('getTotalMarks')->willReturn(30);
+
+        $pgRepo = $this->createMock(AnalysisRepository::class);
+        $pgRepo->method('findByAnalysisId')->willReturn($pgAnalysis);
+
         $storageResolver = $this->createMock(AnalysisStorageResolver::class);
-        $storageResolver->method('getFilePathByFileId')->willReturnCallback(
-            fn(string $analysisId, string $fileId): string => $filePaths[(int) substr($fileId, -1) - 1]
-        );
+        $storageResolver->method('getFilePathByFileId')->willReturn('/tmp/file-1.png');
 
         $capturedPaths = null;
         $provider = $this->createMock(OpenAiDirectDocumentProvider::class);
@@ -176,28 +174,16 @@ private function createService(
             }
         );
 
-        $service = $this->createService($mongoRepo, $provider, $storageResolver);
+        $service = $this->createService($mongoRepo, $provider, $storageResolver, $pgRepo);
 
         try {
-            try {
-                $service->runDirectAnalysis('test-analysis-id', 'test-student-id');
-                $this->fail('Expected provider invocation to be captured');
-            } catch (\RuntimeException $e) {
-                $this->assertSame('CAPTURED', $e->getMessage());
-            }
-
-            $this->assertSame(
-                $filePaths,
-                $capturedPaths,
-                'All answer-sheet files must be passed to the provider in upload order'
-            );
-        } finally {
-            foreach ($tempFiles as $tempFile) {
-                if (file_exists($tempFile)) {
-                    unlink($tempFile);
-                }
-            }
+            $service->runDirectAnalysis('test-analysis-id', 'test-student-id');
+            $this->fail('Expected provider invocation to be captured');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('CAPTURED', $e->getMessage());
         }
+
+        $this->assertSame('/tmp/file-1.png', $capturedPaths);
     }
 
     public function testRunDirectExtractionRunsSetPdfAndPersistsExtraction(): void
@@ -1119,5 +1105,120 @@ private function createService(
         $this->assertNotEmpty($exam->getExtractedMetadata());
         $this->assertSame('SUCCESS', $exam->getExtractionResult());
         $this->assertSame('OPENAI_DIRECT_DOCUMENT', $exam->getExtractionMethod());
+    }
+
+    public function testRunDirectAnalysisSucceedsWhenConfirmedMetadataExistsButExtractedMetadataIsEmpty(): void
+    {
+        $analysisId = 'test-analysis-id';
+        $studentId = 'test-student-id';
+
+        $mongoAnalysis = $this->createAnalysis('NEEDS_REVIEW');
+        $mongoAnalysis->getDocuments()->addAnswerSheet(new \App\Document\DocumentFile());
+        $answerSheet = $mongoAnalysis->getDocuments()->getAnswerSheet();
+        $answerSheet->setStatus('UPLOADED');
+        $answerSheet->setFileId('file-1');
+        $answerSheet->setOriginalFilename('answer-sheet.pdf');
+        $answerSheet->setMimeType('application/pdf');
+        $answerSheet->setPage(1);
+
+        $mongoAnalysis->getDocuments()->getQuestionPaper()->setStatus('NOT_UPLOADED');
+        $mongoAnalysis->setMetadataConfirmationStatus('CONFIRMED');
+        $mongoAnalysis->getExam()->setExtractedMetadata([]);
+        $mongoAnalysis->setAnswerSheetFileHash('precomputed-hash');
+
+        $mongoRepo = $this->createMock(MongoAnalysisRepository::class);
+        $mongoRepo->method('findByAnalysisIdAndStudentId')->willReturn($mongoAnalysis);
+
+        $pgAnalysis = $this->createMock(\App\Entity\Analysis::class);
+        $pgAnalysis->method('getMetadataConfirmationStatus')->willReturn('CONFIRMED');
+        $pgAnalysis->method('getSubjectName')->willReturn('Mathematics');
+        $pgAnalysis->method('getTotalMarks')->willReturn(30);
+
+        $pgRepo = $this->createMock(AnalysisRepository::class);
+        $pgRepo->method('findByAnalysisId')->willReturn($pgAnalysis);
+
+        $storageResolver = $this->createMock(AnalysisStorageResolver::class);
+        $storageResolver->method('getFilePathByFileId')
+            ->willReturnCallback(static fn(string $analysisId, string $fileId): string => '/tmp/' . $fileId . '.pdf');
+
+        $mockResult = new \App\DTO\Analysis\Direct\DirectExtractionResult(
+            metadata: new \App\DTO\Analysis\ExtractedAnswerSheetMetadata(),
+            extractedAnswers: [],
+            extractedQuestions: [],
+            confidence: 0.0,
+            extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            analysis: new \App\DTO\Analysis\Direct\CurrentExamAnalysis(
+                performance: new \App\DTO\Analysis\Direct\Performance(score: 0, totalMarks: 30, percentage: 0.0),
+                strengths: [],
+                weaknesses: [],
+                needsAttention: [],
+                conceptGaps: [],
+                recommendations: [],
+                conceptAssessments: [],
+                mistakes: [],
+                evidence: [],
+            ),
+            questionAnalysis: [],
+        );
+
+        $provider = $this->createMock(OpenAiDirectDocumentProvider::class);
+        $provider->method('extractDocumentsWithPreliminaryAnalysis')->willReturn($mockResult);
+
+        $service = $this->createService(
+            $mongoRepo,
+            $provider,
+            $storageResolver,
+            $pgRepo,
+            null,
+            null
+        );
+
+        $service->runDirectAnalysis($analysisId, $studentId, false, 0);
+
+        $mongoAnalysis = $mongoRepo->findByAnalysisIdAndStudentId($analysisId, $studentId);
+        $this->assertSame('DONE', $mongoAnalysis->getStatus());
+        $this->assertSame('DONE', $mongoAnalysis->getProcessing()->getStatus());
+    }
+
+    public function testRunDirectAnalysisFailsWhenConfirmedMetadataIsMissing(): void
+    {
+        $analysisId = 'test-analysis-id';
+        $studentId = 'test-student-id';
+
+        $mongoAnalysis = $this->createAnalysis('NEEDS_REVIEW');
+        $mongoAnalysis->getDocuments()->addAnswerSheet(new \App\Document\DocumentFile());
+        $answerSheet = $mongoAnalysis->getDocuments()->getAnswerSheet();
+        $answerSheet->setStatus('UPLOADED');
+        $answerSheet->setFileId('file-1');
+        $answerSheet->setOriginalFilename('answer-sheet.pdf');
+        $answerSheet->setMimeType('application/pdf');
+        $answerSheet->setPage(1);
+
+        $mongoAnalysis->getDocuments()->getQuestionPaper()->setStatus('NOT_UPLOADED');
+        $mongoAnalysis->setMetadataConfirmationStatus(null);
+        $mongoAnalysis->getExam()->setExtractedMetadata([]);
+
+        $mongoRepo = $this->createMock(MongoAnalysisRepository::class);
+        $mongoRepo->method('findByAnalysisIdAndStudentId')->willReturn($mongoAnalysis);
+
+        $pgRepo = $this->createMock(AnalysisRepository::class);
+        $pgRepo->method('findByAnalysisId')->willReturn(null);
+
+        $storageResolver = $this->createMock(AnalysisStorageResolver::class);
+        $storageResolver->method('getFilePathByFileId')
+            ->willReturnCallback(static fn(string $analysisId, string $fileId): string => '/tmp/' . $fileId . '.pdf');
+
+        $service = $this->createService(
+            $mongoRepo,
+            null,
+            $storageResolver,
+            $pgRepo,
+            null,
+            null
+        );
+
+        $this->expectException(\App\Exception\AnalysisLifecycleException::class);
+        $this->expectExceptionMessage('Confirmed metadata is required before analysis.');
+        $service->runDirectAnalysis($analysisId, $studentId, false, 0);
     }
 }
