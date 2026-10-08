@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Handler\Analysis;
 
+use App\Document\Analysis;
 use App\Message\Analysis\ProcessAnalysisMessage;
 use App\Service\Analysis\AnalysisModeResolver;
 use App\Service\Analysis\AnalysisProcessingRecoveryService;
@@ -10,6 +11,8 @@ use App\Service\Analysis\AnalysisProcessingService;
 use App\Service\Analysis\DirectAiAnalysisService;
 use App\Service\Analysis\Processing\OpenAiDirectDocumentProvider;
 use App\Exception\VisionApiException;
+use App\Repository\AnalysisRepository;
+use App\Repository\MongoDB\AnalysisRepository as MongoAnalysisRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -21,6 +24,8 @@ readonly class ProcessAnalysisMessageHandler
         private DirectAiAnalysisService $directAiAnalysisService,
         private AnalysisProcessingRecoveryService $recoveryService,
         private AnalysisModeResolver $modeResolver,
+        private MongoAnalysisRepository $mongoAnalysisRepository,
+        private AnalysisRepository $pgAnalysisRepository,
         private LoggerInterface $logger,
     ) {
     }
@@ -66,6 +71,17 @@ readonly class ProcessAnalysisMessageHandler
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            try {
+                $this->markAnalysisAsFailed($analysisId, $studentId, $e);
+            } catch (\Throwable $markFailedError) {
+                $this->logger->error('Failed to mark analysis as failed', [
+                    'analysis_id' => $analysisId,
+                    'student_id' => $studentId,
+                    'error' => $markFailedError->getMessage(),
+                ]);
+            }
+
             throw $e;
         }
     }
@@ -153,15 +169,12 @@ readonly class ProcessAnalysisMessageHandler
                         $isRetry,
                         $attemptId
                     );
-                    
+
                     $this->logger->info('Legacy fallback completed', [
                         'analysis_id' => $analysisId,
                     ]);
-                    
-                    $this->logger->info('Analysis processing completed successfully', [
-                        'analysis_id' => $analysisId,
-                        'engine' => 'legacy_fallback',
-                    ]);
+
+                    $this->enforceConfirmedMetadataLifecycle($analysisId, $studentId);
                 } catch (\Throwable $legacyError) {
                     $this->logger->error('Legacy fallback also failed', [
                         'analysis_id' => $analysisId,
@@ -228,5 +241,153 @@ readonly class ProcessAnalysisMessageHandler
         }
 
         return false;
+    }
+
+    private function enforceConfirmedMetadataLifecycle(string $analysisId, string $studentId): void
+    {
+        $mongoAnalysis = $this->mongoAnalysisRepository->findByAnalysisIdAndStudentId($analysisId, $studentId);
+        if (!$mongoAnalysis) {
+            return;
+        }
+
+        $processing = $mongoAnalysis->getProcessing();
+        if ($processing === null) {
+            return;
+        }
+
+        $currentStatus = $mongoAnalysis->getStatus();
+        if ($currentStatus !== 'NEEDS_REVIEW') {
+            return;
+        }
+
+        if (!$this->hasConfirmedMetadata($mongoAnalysis)) {
+            return;
+        }
+
+        $aiAnalysis = $mongoAnalysis->getAiAnalysis();
+        $hasAiAnalysis = is_array($aiAnalysis) && (
+            !empty($aiAnalysis['currentExamAnalysis']) ||
+            !empty($aiAnalysis['questionAnalysis']) ||
+            !empty($aiAnalysis['questionEvaluations'])
+        );
+
+        $now = new \DateTimeImmutable();
+
+        if ($hasAiAnalysis) {
+            $processing->setStage('COMPLETED');
+            $processing->setStatus('DONE');
+            $processing->setCompletedAt($now);
+            $mongoAnalysis->setStatus('DONE');
+            $mongoAnalysis->setUpdatedAt($now);
+
+            $this->mongoAnalysisRepository->save($mongoAnalysis);
+
+            $pgAnalysis = $this->pgAnalysisRepository->findByAnalysisId($analysisId);
+            if ($pgAnalysis !== null) {
+                try {
+                    $pgAnalysis->setStatus('DONE');
+                    $this->pgAnalysisRepository->getEntityManager()->flush();
+                } catch (\Throwable $flushError) {
+                    $this->logger->error('Failed to update PostgreSQL status to DONE after confirmed fallback', [
+                        'analysis_id' => $analysisId,
+                        'error' => $flushError->getMessage(),
+                    ]);
+                }
+            }
+
+            $this->logger->info('Confirmed metadata lifecycle enforced: analysis marked DONE after fallback AI analysis', [
+                'analysis_id' => $analysisId,
+            ]);
+        } else {
+            $processing->setStage('FAILED');
+            $processing->setStatus('FAILED');
+            $processing->setError('AI analysis could not be completed. Please try again.');
+            $processing->setCompletedAt($now);
+            $mongoAnalysis->setStatus('FAILED');
+            $mongoAnalysis->setUpdatedAt($now);
+
+            $this->mongoAnalysisRepository->save($mongoAnalysis);
+
+            $pgAnalysis = $this->pgAnalysisRepository->findByAnalysisId($analysisId);
+            if ($pgAnalysis !== null) {
+                try {
+                    $pgAnalysis->setStatus('FAILED');
+                    $this->pgAnalysisRepository->getEntityManager()->flush();
+                } catch (\Throwable $flushError) {
+                    $this->logger->error('Failed to update PostgreSQL status to FAILED after confirmed fallback', [
+                        'analysis_id' => $analysisId,
+                        'error' => $flushError->getMessage(),
+                    ]);
+                }
+            }
+
+            $this->logger->warning('Confirmed metadata lifecycle enforced: analysis marked FAILED - fallback produced no AI analysis', [
+                'analysis_id' => $analysisId,
+            ]);
+        }
+    }
+
+    private function hasConfirmedMetadata(Analysis $mongoAnalysis): bool
+    {
+        $pgAnalysis = $this->pgAnalysisRepository->findByAnalysisId($mongoAnalysis->getAnalysisId());
+        if ($pgAnalysis !== null) {
+            if ($pgAnalysis->getMetadataConfirmationStatus() === \App\Enum\MetadataConfirmationStatus::Confirmed->value) {
+                return true;
+            }
+            if ($pgAnalysis->getSubjectName() !== null || $pgAnalysis->getTotalMarks() !== null) {
+                return true;
+            }
+        }
+
+        if ($mongoAnalysis->getMetadataConfirmationStatus() === 'CONFIRMED') {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function markAnalysisAsFailed(string $analysisId, string $studentId, \Throwable $e): void
+    {
+        $mongoAnalysis = $this->mongoAnalysisRepository->findByAnalysisIdAndStudentId($analysisId, $studentId);
+        if (!$mongoAnalysis) {
+            return;
+        }
+
+        $processing = $mongoAnalysis->getProcessing();
+        if ($processing === null) {
+            return;
+        }
+
+        $safeMessage = 'AI analysis could not be completed. Please try again.';
+        $now = new \DateTimeImmutable();
+
+        $processing->setStage('FAILED');
+        $processing->setStatus('FAILED');
+        $processing->setError($safeMessage);
+        $processing->setCompletedAt($now);
+
+        $mongoAnalysis->setStatus('FAILED');
+        $mongoAnalysis->setUpdatedAt($now);
+
+        $this->mongoAnalysisRepository->save($mongoAnalysis);
+
+        $pgAnalysis = $this->pgAnalysisRepository->findByAnalysisId($analysisId);
+        if ($pgAnalysis !== null) {
+            try {
+                $pgAnalysis->setStatus('FAILED');
+                $this->pgAnalysisRepository->getEntityManager()->flush();
+            } catch (\Throwable $flushError) {
+                $this->logger->error('Failed to update PostgreSQL status on analysis failure', [
+                    'analysis_id' => $analysisId,
+                    'error' => $flushError->getMessage(),
+                ]);
+            }
+        }
+
+        $this->logger->info('Analysis marked as FAILED after processing error', [
+            'analysis_id' => $analysisId,
+            'student_id' => $studentId,
+            'error' => $e->getMessage(),
+        ]);
     }
 }

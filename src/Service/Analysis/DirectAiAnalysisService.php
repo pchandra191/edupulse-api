@@ -247,25 +247,28 @@ readonly class DirectAiAnalysisService
         }
 
         $exam = $mongoAnalysis->getExam();
-        $extractedMetadata = $exam->getExtractedMetadata();
-        if (empty($extractedMetadata)) {
-            throw new AnalysisLifecycleException('No extracted metadata found. Metadata must be confirmed first.');
+        if (!$this->hasConfirmedMetadata($mongoAnalysis)) {
+            throw new AnalysisLifecycleException('Confirmed metadata is required before analysis.');
         }
 
-        $answerSheet = $mongoAnalysis->getDocuments()->getAnswerSheet();
-        if ($answerSheet->getStatus() !== 'UPLOADED') {
-            throw new \RuntimeException('Answer sheet must be uploaded before AI analysis.');
+        $answerSheets = $mongoAnalysis->getDocuments()->getAnswerSheets();
+        $answerSheetPaths = [];
+        foreach ($answerSheets as $sheet) {
+            if ($sheet->getStatus() === 'UPLOADED') {
+                $answerSheetPaths[] = $this->getFilePath($sheet->getFileId(), $analysisId);
+            }
+        }
+        if (empty($answerSheetPaths)) {
+            throw new \RuntimeException('At least one answer sheet must be uploaded before AI analysis.');
         }
 
         $questionPaper = $mongoAnalysis->getDocuments()->getQuestionPaper();
         $hasQuestionPaper = $questionPaper->getStatus() === 'UPLOADED';
-
-        $answerSheetPath = $this->getFilePath($answerSheet->getFileId(), $analysisId);
         $questionPaperPath = $hasQuestionPaper ? $this->getFilePath($questionPaper->getFileId(), $analysisId) : null;
 
         $fileHash = $mongoAnalysis->getAnswerSheetFileHash();
         if (!$fileHash) {
-            $fileHash = $this->computeFileHash($answerSheetPath);
+            $fileHash = $this->computeFileHash($answerSheetPaths[0]);
             $mongoAnalysis->setAnswerSheetFileHash($fileHash);
         }
 
@@ -311,7 +314,7 @@ readonly class DirectAiAnalysisService
             $this->syncPostgresStatus($analysisId, 'PROCESSING');
 
             $combinedResult = $this->directDocumentProvider->extractDocumentsWithPreliminaryAnalysis(
-                $answerSheetPath,
+                $answerSheetPaths,
                 $questionPaperPath,
                 $trustedMetadata
             );
@@ -340,6 +343,25 @@ readonly class DirectAiAnalysisService
             $this->handleAnalysisFailure($mongoAnalysis, $analysisId, $e, $attemptId);
             throw $e;
         }
+    }
+
+    private function hasConfirmedMetadata(Analysis $mongoAnalysis): bool
+    {
+        $pgAnalysis = $this->pgAnalysisRepository->findByAnalysisId($mongoAnalysis->getAnalysisId());
+        if ($pgAnalysis !== null) {
+            if ($pgAnalysis->getMetadataConfirmationStatus() === \App\Enum\MetadataConfirmationStatus::Confirmed->value) {
+                return true;
+            }
+            if ($pgAnalysis->getSubjectName() !== null || $pgAnalysis->getTotalMarks() !== null) {
+                return true;
+            }
+        }
+
+        if ($mongoAnalysis->getMetadataConfirmationStatus() === 'CONFIRMED') {
+            return true;
+        }
+
+        return false;
     }
 
     private function buildTrustedMetadata(Analysis $mongoAnalysis): array

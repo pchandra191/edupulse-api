@@ -26,9 +26,11 @@ use App\Service\Analysis\AnalysisDocumentService;
 use App\Service\Analysis\AnalysisProcessingService;
 use App\Service\Analysis\AnalysisService;
 use App\Service\Analysis\AnalysisWorkflowService;
+use App\Service\Analysis\Report\AiAnswerSheetReportService;
 use App\Service\Analysis\Settings\AnalysisSettings;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\Security;
 use Symfony\Bundle\SecurityBundle\Security as SymfonySecurity;
@@ -41,6 +43,7 @@ class AnalysisController extends AbstractApiController
         private AnalysisDocumentService $analysisDocumentService,
         private AnalysisWorkflowService $analysisWorkflowService,
         private AnalysisProcessingService $analysisProcessingService,
+        private AiAnswerSheetReportService $aiAnswerSheetReportService,
         private SymfonySecurity $security,
         private ValidatorInterface $validator,
         private LoggerInterface $logger,
@@ -286,6 +289,41 @@ class AnalysisController extends AbstractApiController
             'createdAt' => $result->createdAt,
             'updatedAt' => $result->updatedAt,
         ]);
+    }
+
+    #[Security("is_granted('ROLE_STUDENT')")]
+    #[Route('/student/analyses/{analysisId}/ai-report', name: 'student_analysis_ai_report', methods: ['GET'])]
+    public function downloadAiReport(string $analysisId): Response
+    {
+        try {
+            $user = $this->getCurrentUser();
+        } catch (AuthenticationException $e) {
+            return new Response('Authentication required.', Response::HTTP_UNAUTHORIZED);
+        } catch (AuthorizationException $e) {
+            return new Response('Access denied.', Response::HTTP_FORBIDDEN);
+        }
+
+        try {
+            $result = $this->aiAnswerSheetReportService->generateReportWithFilename($user, $analysisId);
+        } catch (AnalysisNotFoundException $e) {
+            return new Response('Analysis not found.', Response::HTTP_NOT_FOUND);
+        } catch (\LogicException $e) {
+            return new Response($e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to generate AI report', [
+                'student_id' => (string) $user->getId(),
+                'analysis_id' => $analysisId,
+                'error' => $e->getMessage(),
+            ]);
+            return new Response('Unable to generate report. Please try again.', Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        $response = new Response($result['content']);
+        $response->headers->set('Content-Type', 'application/pdf');
+        $response->headers->set('Content-Disposition', 'attachment; filename="' . $result['filename'] . '"');
+        $response->headers->set('Cache-Control', 'private, max-age=0, must-revalidate');
+
+        return $response;
     }
 
     #[Security("is_granted('ROLE_STUDENT')")]
