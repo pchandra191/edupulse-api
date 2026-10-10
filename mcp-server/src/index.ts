@@ -6,7 +6,6 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import {
   getMcpIdentity,
   initializeOAuth,
-  oauthChallenge,
   persistRefreshedUpstreamTokens,
   registerOAuthRoutes,
   type McpIdentity,
