@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: edupulse_mcp
+      POSTGRES_USER: edupulse_mcp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - edupulse-mcp-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edupulse_mcp -d edupulse_mcp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      HOST: 0.0.0.0
+      PORT: 8787
+      DATABASE_URL: postgresql://edupulse_mcp:${POSTGRES_PASSWORD:-change-me}@postgres:5432/edupulse_mcp
+      EDUPULSE_API_BASE_URL: ${EDUPULSE_API_BASE_URL:-http://host.docker.internal:8000/api/v1}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8787/mcp}
+      MCP_ISSUER_URL: ${MCP_ISSUER_URL:-http://localhost:8787}
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL:-http://localhost:8787/mcp}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  edupulse-mcp-postgres:
