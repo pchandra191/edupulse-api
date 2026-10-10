@@ -130,7 +130,7 @@ export async function persistRefreshedUpstreamTokens(identity: McpIdentity, acce
 }
 
 export function registerOAuthRoutes(app: Express): void {
-  app.get("/.well-known/oauth-protected-resource", (_req, res) => {
+  const sendResourceMetadata = (_req: Request, res: Response) => {
     res.setHeader("Cache-Control", "public, max-age=300");
     res.json({
       resource: resourceId,
@@ -138,7 +138,9 @@ export function registerOAuthRoutes(app: Express): void {
       scopes_supported: [...scopesAllowed],
       resource_documentation: process.env.MCP_DOCUMENTATION_URL || undefined,
     });
-  });
+  };
+  app.get("/.well-known/oauth-protected-resource", sendResourceMetadata);
+  app.get("/.well-known/oauth-protected-resource/mcp", sendResourceMetadata);
 
   app.get("/.well-known/oauth-authorization-server", (_req, res) => {
     res.setHeader("Cache-Control", "public, max-age=300");
