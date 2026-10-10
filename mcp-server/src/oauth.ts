@@ -80,6 +80,12 @@ export async function initializeOAuth(): Promise<void> {
   if (!apiBaseUrl || !publicMcpUrl || !issuer || !resourceId) {
     throw new Error("Set EDUPULSE_API_BASE_URL, MCP_PUBLIC_URL, and the MCP issuer/resource URLs.");
   }
+  if (production) {
+    const secureUrls = [apiBaseUrl, publicMcpUrl, issuer, resourceId].every((value) => {
+      try { return new URL(value).protocol === "https:"; } catch { return false; }
+    });
+    if (!secureUrls) throw new Error("Production MCP, OAuth, resource, and EduPulse API URLs must all use HTTPS.");
+  }
   if (Buffer.from(keyText, "base64").length !== 32) {
     throw new Error("TOKEN_ENCRYPTION_KEY must be base64 encoding of exactly 32 random bytes.");
   }
