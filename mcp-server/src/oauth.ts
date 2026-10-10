@@ -280,9 +280,9 @@ export function registerOAuthRoutes(app: Express): void {
     };
     const code = randomToken(32);
     await pool.query(
-      "INSERT INTO mcp_oauth_codes (code_hash, client_id, redirect_uri, code_challenge, scopes, resource, user_json, upstream_token_enc, expires_at) " +
-      "VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,NOW() + INTERVAL '5 minutes')",
-      [hash(code), clientId, redirectUri, challenge, scopes, resource, JSON.stringify(user), encrypt(upstreamToken)],
+      "INSERT INTO mcp_oauth_codes (code_hash, client_id, redirect_uri, code_challenge, scopes, resource, user_json, upstream_token_enc, upstream_refresh_token_enc, expires_at) " +
+      "VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,NOW() + INTERVAL '5 minutes')",
+      [hash(code), clientId, redirectUri, challenge, scopes, resource, JSON.stringify(user), encrypt(upstreamToken), encrypt(upstreamRefreshToken)],
     );
     const callback = new URL(redirectUri);
     callback.searchParams.set("code", code);
@@ -306,15 +306,25 @@ export function registerOAuthRoutes(app: Express): void {
       const redirectUri = String(body.redirect_uri ?? "");
       const verifier = String(body.code_verifier ?? "");
       if (!code || !redirectUri || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return oauthError(res, "invalid_request");
-      const consumed = await pool.query(
-        "DELETE FROM mcp_oauth_codes WHERE code_hash = $1 AND client_id = $2 AND redirect_uri = $3 AND resource = $4 AND expires_at > NOW() RETURNING *",
-        [hash(code), clientId, redirectUri, resource],
-      );
-      const row = consumed.rows[0];
-      if (!row) return oauthError(res, "invalid_grant", 400);
-      if (createHash("sha256").update(verifier).digest("base64url") !== row.code_challenge) {
-        return oauthError(res, "invalid_grant", 400, "PKCE verification failed.");
-      }
+      const db = await pool.connect();
+      let row: Record<string, any> | undefined;
+      try {
+        await db.query("BEGIN");
+        const found = await db.query(
+          "SELECT * FROM mcp_oauth_codes WHERE code_hash=$1 AND client_id=$2 AND redirect_uri=$3 AND resource=$4 AND expires_at>NOW() FOR UPDATE",
+          [hash(code), clientId, redirectUri, resource],
+        );
+        row = found.rows[0];
+        if (!row || createHash("sha256").update(verifier).digest("base64url") !== row.code_challenge) {
+          await db.query("ROLLBACK");
+          return oauthError(res, "invalid_grant", 400, "Authorization code is invalid, expired, already used, or PKCE verification failed.");
+        }
+        await db.query("DELETE FROM mcp_oauth_codes WHERE code_hash=$1", [hash(code)]);
+        await db.query("COMMIT");
+      } catch {
+        await db.query("ROLLBACK");
+        return oauthError(res, "server_error", 500);
+      } finally { db.release(); }
       const family = randomToken(24);
       const access = randomToken(32);
       const refresh = randomToken(48);
@@ -371,7 +381,10 @@ export function registerOAuthRoutes(app: Express): void {
 
   app.post("/oauth/revoke", async (req, res) => {
     if (pool && typeof req.body?.token === "string" && req.body.token) {
-      await pool.query("UPDATE mcp_oauth_tokens SET revoked_at=NOW() WHERE token_hash=$1 AND revoked_at IS NULL", [hash(req.body.token)]);
+      await pool.query(
+        "UPDATE mcp_oauth_tokens SET revoked_at=NOW() WHERE family_id IN (SELECT family_id FROM mcp_oauth_tokens WHERE token_hash=$1) AND revoked_at IS NULL",
+        [hash(req.body.token)],
+      );
     }
     res.setHeader("Cache-Control", "no-store").status(200).end();
   });
