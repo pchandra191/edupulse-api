@@ -35,6 +35,19 @@ Requirements: Node.js 20+, PostgreSQL, and a reachable EduPulse Symfony API.
 
 The service creates its OAuth tables on startup. The database user needs permission to create/alter those tables. Health check: `GET http://localhost:8787/health`.
 
+### Run with Docker Compose
+
+1. Copy `.env.example` to `.env`, replace `TOKEN_ENCRYPTION_KEY`, and set a strong `POSTGRES_PASSWORD`.
+2. If the Symfony API is running on your host machine, Docker Compose defaults to `http://host.docker.internal:8000/api/v1`. Set `EDUPULSE_API_BASE_URL_DOCKER` in `.env` if your backend uses a different address.
+3. Start the MCP service and its private PostgreSQL database:
+
+   ```bash
+   docker compose up --build -d
+   docker compose logs -f mcp-server
+   ```
+
+4. Check `http://localhost:8787/health`. Stop the stack with `docker compose down`. The database volume is retained; use `docker compose down -v` only when you intentionally want to delete the local OAuth database.
+
 Build and run production code:
 
 ```bash
