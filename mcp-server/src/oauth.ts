@@ -122,6 +122,13 @@ export async function getMcpIdentity(accessToken: string): Promise<McpIdentity |
   } catch { return null; }
 }
 
+export async function persistRefreshedUpstreamTokens(identity: McpIdentity, accessToken: string, refreshToken: string): Promise<void> {
+  if (!pool) throw new Error("OAuth token storage is unavailable.");
+  await pool.query("UPDATE mcp_oauth_tokens SET upstream_token_enc=$1, upstream_refresh_token_enc=$2 WHERE family_id=$3 AND revoked_at IS NULL", [encrypt(accessToken), encrypt(refreshToken), identity.familyId]);
+  identity.upstreamAccessToken = accessToken;
+  identity.upstreamRefreshToken = refreshToken;
+}
+
 export function registerOAuthRoutes(app: Express): void {
   app.get("/.well-known/oauth-protected-resource", (_req, res) => {
     res.setHeader("Cache-Control", "public, max-age=300");
