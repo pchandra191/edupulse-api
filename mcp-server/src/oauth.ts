@@ -316,18 +316,19 @@ export function registerOAuthRoutes(app: Express): void {
       const verifier = String(body.code_verifier ?? "");
       if (!code || !redirectUri || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return oauthError(res, "invalid_request");
       const db = await pool.connect();
-      let row: Record<string, any> | undefined;
+      let row: Record<string, any>;
       try {
         await db.query("BEGIN");
         const found = await db.query(
           "SELECT * FROM mcp_oauth_codes WHERE code_hash=$1 AND client_id=$2 AND redirect_uri=$3 AND resource=$4 AND expires_at>NOW() FOR UPDATE",
           [hash(code), clientId, redirectUri, resource],
         );
-        row = found.rows[0];
-        if (!row || createHash("sha256").update(verifier).digest("base64url") !== row.code_challenge) {
+        const foundRow = found.rows[0] as Record<string, any> | undefined;
+        if (!foundRow || createHash("sha256").update(verifier).digest("base64url") !== foundRow.code_challenge) {
           await db.query("ROLLBACK");
           return oauthError(res, "invalid_grant", 400, "Authorization code is invalid, expired, already used, or PKCE verification failed.");
         }
+        row = foundRow;
         await db.query("DELETE FROM mcp_oauth_codes WHERE code_hash=$1", [hash(code)]);
         await db.query("COMMIT");
       } catch {
