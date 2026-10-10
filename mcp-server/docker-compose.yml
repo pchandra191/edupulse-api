@@ -26,7 +26,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8787
       DATABASE_URL: postgresql://edupulse_mcp:${POSTGRES_PASSWORD:-change-me}@postgres:5432/edupulse_mcp
-      EDUPULSE_API_BASE_URL: ${EDUPULSE_API_BASE_URL:-http://host.docker.internal:8000/api/v1}
+      EDUPULSE_API_BASE_URL: ${EDUPULSE_API_BASE_URL_DOCKER:-http://host.docker.internal:8000/api/v1}
       MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8787/mcp}
       MCP_ISSUER_URL: ${MCP_ISSUER_URL:-http://localhost:8787}
       MCP_RESOURCE_URL: ${MCP_RESOURCE_URL:-http://localhost:8787/mcp}
