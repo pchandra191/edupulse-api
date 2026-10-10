@@ -14,11 +14,34 @@ on:
       - ".github/workflows/mcp-server.yml"
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: edupulse_mcp_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d edupulse_mcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: mcp-server
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/edupulse_mcp_test
+      DATABASE_SSL: "false"
+      EDUPULSE_API_BASE_URL: http://127.0.0.1:19999/api/v1
+      MCP_PUBLIC_URL: http://127.0.0.1:18787/mcp
+      MCP_ISSUER_URL: http://127.0.0.1:18787
+      MCP_RESOURCE_URL: http://127.0.0.1:18787/mcp
+      TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
