@@ -715,17 +715,24 @@ class OpenAiDirectDocumentProvider
         } catch (VisionApiException $e) {
             throw $e;
         } catch (TransportExceptionInterface $e) {
+            $this->logger->error('OpenAI Responses API transport failure', [
+                'analysisId' => $trustedMetadata['analysisId'] ?? 'unknown',
+                'error' => $e->getMessage(),
+                'previous' => $e->getPrevious() ? get_class($e->getPrevious()) : null,
+            ]);
             throw new VisionApiException(
                 'OpenAI Responses API connection failed: ' . $e->getMessage(),
-                null,
+                'transport_failure',
                 0,
                 $e
             );
         } catch (ClientExceptionInterface $e) {
+            $statusCode = $e->getCode() ?: 400;
+            $errorType = $statusCode === 429 ? 'rate_limit' : 'invalid_request_error';
             throw new VisionApiException(
                 'OpenAI Responses API client error: ' . $e->getMessage(),
-                'invalid_request_error',
-                $e->getCode() ?: 400,
+                $errorType,
+                $statusCode,
                 $e
             );
         } catch (ServerExceptionInterface $e) {
@@ -941,13 +948,13 @@ PROMPT;
             }
         }
 
-        $allowedStatuses = ['STRONG', 'DEVELOPING', 'NEEDS_ATTENTION', 'INSUFFICIENT_EVIDENCE'];
+        $allowedStatuses = ['STRONG', 'DEVELOPING', 'NEEDS_ATTENTION', 'INSUFFICIENT_EVIDENCE', 'UNANSWERED'];
         $allowedEvaluationStatuses = [
             'CORRECT', 'PARTIALLY_CORRECT', 'INCORRECT', 'UNANSWERED',
             'INSUFFICIENT_EVIDENCE', 'NOT_DETERMINABLE', 'UNDETERMINED',
             'ASSESSED_BY_VISIBLE_MARKING_ONLY', 'MARKED_CORRECT',
         ];
-        $allowedCorrectness = ['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT', 'UNDETERMINED', 'NOT_DETERMINABLE', 'INSUFFICIENT_EVIDENCE'];
+        $allowedCorrectness = ['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT', 'UNDETERMINED', 'NOT_DETERMINABLE', 'INSUFFICIENT_EVIDENCE', 'UNANSWERED'];
         foreach ($analysis['conceptAssessments'] ?? [] as $idx => $concept) {
             if (!is_array($concept) || !array_key_exists('status', $concept) || !array_key_exists('concept', $concept)) {
                 return ['usable' => false, 'reason' => "Invalid conceptAssessment at index {$idx}"];
@@ -1267,51 +1274,103 @@ private function buildMetadata(array $extracted, array $trusted): ExtractedAnswe
     /**
      * Get PDF page count using pdftoppm or ImageMagick.
      */
-    private function getPdfPageCount(string $filePath): int
+        private function getPdfPageCount(string $filePath): int
     {
-        // Try pdftoppm first (poppler-utils)
-        if ($this->commandExists('pdftoppm')) {
-            $command = sprintf('pdftoppm -f 1 -l 1 -png "%s" /dev/null 2>&1', $filePath);
-            $output = [];
-            $result = null;
-            exec($command, $output, $result);
-            if ($result === 0) {
-                // Use pdftoppm to count pages
-                $command = sprintf('pdftoppm -png "%s" /tmp/page_count_ 2>&1', $filePath);
-                exec($command, $output, $result);
-                $files = glob('/tmp/page_count_*.png');
-                if (!empty($files)) {
-                    foreach ($files as $f) @unlink($f);
-                    return count($files);
+        $methods = [
+            'pdftoppm' => function () use ($filePath): ?int {
+                if (!$this->commandExists('pdftoppm')) {
+                    return null;
                 }
+                $command = sprintf('pdftoppm -png "%s" /tmp/page_count_ 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0) {
+                    $files = glob('/tmp/page_count_*.png');
+                    if (!empty($files)) {
+                        foreach ($files as $f) @unlink($f);
+                        return count($files);
+                    }
+                }
+                return null;
+            },
+            'identify' => function () use ($filePath): ?int {
+                if (!$this->commandExists('identify')) {
+                    return null;
+                }
+                $command = sprintf('identify -format "%%n" "%s" 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0 && !empty($output[0])) {
+                    return (int) $output[0];
+                }
+                return null;
+            },
+            'magick' => function () use ($filePath): ?int {
+                if (!$this->commandExists('magick')) {
+                    return null;
+                }
+                $command = sprintf('magick identify -format "%%n" "%s" 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0 && !empty($output[0])) {
+                    return (int) $output[0];
+                }
+                return null;
+            },
+            'gs' => function () use ($filePath): ?int {
+                if (!$this->commandExists('gs')) {
+                    return null;
+                }
+                $command = sprintf('gs -q -dNODISPLAY -c "(%s) (r) file runpdfbegin pdfpagecount = quit" 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0 && !empty($output[0]) && is_numeric($output[0])) {
+                    return (int) $output[0];
+                }
+                return null;
+            },
+            'gswin64c' => function () use ($filePath): ?int {
+                if (!$this->commandExists('gswin64c')) {
+                    return null;
+                }
+                $command = sprintf('gswin64c -q -dNODISPLAY -c "(%s) (r) file runpdfbegin pdfpagecount = quit" 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0 && !empty($output[0]) && is_numeric($output[0])) {
+                    return (int) $output[0];
+                }
+                return null;
+            },
+        ];
+
+        foreach ($methods as $name => $method) {
+            try {
+                $count = $method();
+                if ($count !== null && $count > 0) {
+                    $this->logger->debug('PDF page count determined', [
+                        'method' => $name,
+                        'page_count' => $count,
+                        'file' => $filePath,
+                    ]);
+                    return $count;
+                }
+            } catch (\Throwable $e) {
+                $this->logger->debug('PDF page count method failed', [
+                    'method' => $name,
+                    'file' => $filePath,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
-        // Try ImageMagick identify
-        if ($this->commandExists('identify')) {
-            $command = sprintf('identify -format "%%n" "%s"', $filePath);
-            $output = [];
-            $result = null;
-            exec($command, $output, $result);
-            if ($result === 0 && !empty($output[0])) {
-                return (int) $output[0];
-            }
-        }
-
-        // Try magick identify (ImageMagick v7+)
-        if ($this->commandExists('magick')) {
-            $command = sprintf('magick identify -format "%%n" "%s"', $filePath);
-            $output = [];
-            $result = null;
-            exec($command, $output, $result);
-            if ($result === 0 && !empty($output[0])) {
-                return (int) $output[0];
-            }
-        }
-
-        // Fallback: assume 1 page if we can't determine
-        $this->logger->warning('Could not determine PDF page count, assuming 1 page', [
+        $this->logger->warning('Could not determine PDF page count using any available tool, assuming 1 page', [
             'file' => $filePath,
+            'available_tools' => array_keys($methods),
         ]);
         return 1;
     }

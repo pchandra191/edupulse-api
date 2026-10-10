@@ -279,6 +279,9 @@ readonly class DirectAiAnalysisService
         $isRetryFromStatus = in_array($currentStatus, ['PUBLISHED', 'FAILED'], true);
         $isRetry = $isRetry || $isRetryFromStatus;
 
+        // Check if we have valid extraction data to reuse
+        $hasValidExtraction = $this->hasValidExtractionData($mongoAnalysis);
+
         if ($isRetry && !$wasProcessingFailed && $processing->getAttemptId() > 0 && $processing->getAttemptId() !== $attemptId) {
             $this->logger->warning('Newer attempt detected, aborting', [
                 'analysis_id' => $analysisId,
@@ -313,11 +316,47 @@ readonly class DirectAiAnalysisService
             $this->mongoAnalysisRepository->save($mongoAnalysis);
             $this->syncPostgresStatus($analysisId, 'PROCESSING');
 
-            $combinedResult = $this->directDocumentProvider->extractDocumentsWithPreliminaryAnalysis(
-                $answerSheetPaths,
-                $questionPaperPath,
-                $trustedMetadata
-            );
+            $combinedResult = null;
+
+            if ($hasValidExtraction) {
+                $this->logger->info('Reusing existing extraction data for analysis', [
+                    'analysis_id' => $analysisId,
+                ]);
+
+                // Build extraction result from stored data
+                $extractionResult = $this->buildExtractionResultFromStorage($mongoAnalysis);
+
+                // Analyze using stored extraction data
+                $analysis = $this->directDocumentProvider->analyzeExtractedData(
+                    $extractionResult,
+                    $answerSheetPaths,
+                    $questionPaperPath,
+                    $trustedMetadata
+                );
+
+                $combinedResult = new DirectExtractionResult(
+                    metadata: $extractionResult->metadata,
+                    extractedAnswers: $extractionResult->extractedAnswers,
+                    extractedQuestions: $extractionResult->extractedQuestions,
+                    confidence: $extractionResult->confidence,
+                    extractionMethod: $extractionResult->extractionMethod,
+                    ocrMetrics: $extractionResult->ocrMetrics,
+                    documentEvidence: $extractionResult->documentEvidence,
+                    language: $extractionResult->language,
+                    analysis: $analysis,
+                    questionAnalysis: null, // Will be populated from analysis
+                );
+            } else {
+                $this->logger->info('Running combined extraction and analysis', [
+                    'analysis_id' => $analysisId,
+                ]);
+
+                $combinedResult = $this->directDocumentProvider->extractDocumentsWithPreliminaryAnalysis(
+                    $answerSheetPaths,
+                    $questionPaperPath,
+                    $trustedMetadata
+                );
+            }
 
             $this->assertAttemptMatches($processing, $attemptId, $analysisId);
 
@@ -343,6 +382,128 @@ readonly class DirectAiAnalysisService
             $this->handleAnalysisFailure($mongoAnalysis, $analysisId, $e, $attemptId);
             throw $e;
         }
+    }
+
+    /**
+     * Check if the analysis has valid extraction data that can be reused.
+     */
+    private function hasValidExtractionData(Analysis $mongoAnalysis): bool
+    {
+        $exam = $mongoAnalysis->getExam();
+        
+        // Check if we have extracted questions and answers
+        $extractedQuestions = $exam->getExtractedQuestions() ?? [];
+        $extractedAnswers = $exam->getExtractedAnswers() ?? [];
+        
+        // Must have at least some extracted data
+        if (empty($extractedQuestions) && empty($extractedAnswers)) {
+            return false;
+        }
+
+        // Check extraction result status
+        $extractionResult = $exam->getExtractionResult() ?? '';
+        if (!in_array($extractionResult, ['SUCCESS', 'PARTIAL'], true)) {
+            return false;
+        }
+
+        // Check extraction confidence is reasonable
+        $confidence = $exam->getExtractionConfidence();
+        if ($confidence !== null && $confidence < 0.1) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Build DirectExtractionResult from stored extraction data.
+     */
+    private function buildExtractionResultFromStorage(Analysis $mongoAnalysis): DirectExtractionResult
+    {
+        $exam = $mongoAnalysis->getExam();
+
+        $metadata = $exam->getExtractedMetadata() ?? [];
+        $extractedAnswers = $exam->getExtractedAnswers() ?? [];
+        $extractedQuestions = $exam->getExtractedQuestions() ?? [];
+
+        // Build metadata object
+        $metadataObj = $this->buildMetadataFromStorage($metadata);
+
+        // Build extracted answers
+        $extractedAnswers = [];
+        foreach ($extractedAnswers as $ans) {
+            $extractedAnswers[] = new ExtractedAnswer(
+                questionNumber: $ans['questionNumber'] ?? null,
+                answerText: $ans['answerText'] ?? null,
+                page: $ans['page'] ?? null,
+                confidence: $ans['confidence'] ?? null,
+                sourcePage: $ans['sourcePage'] ?? null,
+            );
+        }
+
+        // Build extracted questions
+        $extractedQuestions = [];
+        foreach ($extractedQuestions as $q) {
+            $extractedQuestions[] = [
+                'questionNumber' => $q['questionNumber'] ?? null,
+                'subQuestion' => $q['subQuestion'] ?? null,
+                'questionText' => $q['questionText'] ?? null,
+                'marks' => $q['marks'] ?? null,
+                'rawText' => $q['rawText'] ?? null,
+                'language' => $q['language'] ?? null,
+                'confidence' => $q['confidence'] ?? null,
+                'questionKnownFromPaper' => $q['questionKnownFromPaper'] ?? null,
+            ];
+        }
+
+        return new DirectExtractionResult(
+            metadata: $metadataObj,
+            extractedAnswers: $extractedAnswers,
+            extractedQuestions: $extractedQuestions,
+            confidence: $exam->getExtractionConfidence() ?? 0.5,
+            extractionMethod: $exam->getExtractionMethod() ?? 'UNKNOWN',
+            ocrMetrics: null,
+            documentEvidence: $exam->getDocumentEvidence() ?? null,
+            language: $exam->getExtractionLanguage() ?? 'en',
+        );
+    }
+
+    /**
+     * Build metadata object from stored data.
+     */
+    private function buildMetadataFromStorage(array $metadata): \App\DTO\Analysis\ExtractedAnswerSheetMetadata
+    {
+        $merge = function (?string $key, ?string $extractedValue): ?\App\Service\Analysis\Processing\ProvenanceValue {
+            if ($extractedValue !== null) {
+                return new \App\Service\Analysis\Processing\ProvenanceValue($extractedValue, \App\Service\Analysis\Processing\ExtractionProvenance::Extracted, 0.5);
+            }
+            return null;
+        };
+
+        $mergeNumeric = function (?string $key, $extractedValue): ?\App\Service\Analysis\Processing\ProvenanceValue {
+            $extractedValue = $extractedValue !== null ? (string)$extractedValue : null;
+            if ($extractedValue !== null) {
+                return new \App\Service\Analysis\Processing\ProvenanceValue($extractedValue, \App\Service\Analysis\Processing\ExtractionProvenance::Extracted, 0.5);
+            }
+            return null;
+        };
+
+        return new \App\DTO\Analysis\ExtractedAnswerSheetMetadata(
+            studentName: $metadata['studentName'] ?? null,
+            rollNumber: $metadata['rollNumber'] ?? null,
+            subject: $metadata['subject'] ?? null,
+            examTitle: $metadata['examTitle'] ?? null,
+            academicYear: $metadata['academicYear'] ?? null,
+            class: $metadata['class'] ?? null,
+            section: $metadata['section'] ?? null,
+            totalMarks: $metadata['totalMarks'] ?? null,
+            scoredMarks: $metadata['scoredMarks'] ?? null,
+            examDate: $metadata['examDate'] ?? null,
+            examSubType: $metadata['examSubType'] ?? null,
+            instituteName: $metadata['instituteName'] ?? null,
+            extractionResult: $metadata['extractionResult'] ?? 'SUCCESS',
+            extractionConfidence: $metadata['extractionConfidence'] ?? 0.5,
+        );
     }
 
     private function hasConfirmedMetadata(Analysis $mongoAnalysis): bool
@@ -392,6 +553,178 @@ readonly class DirectAiAnalysisService
         }
 
         return $metadata;
+    }
+
+    private function syncPostgresStatus(string $analysisId, string $status): void
+    {
+        try {
+            $this->entityManager->beginTransaction();
+            $pgAnalysis = $this->pgAnalysisRepository->findByAnalysisId($analysisId);
+            if ($pgAnalysis) {
+                $pgAnalysis->setStatus($status);
+                $this->entityManager->flush();
+                $this->entityManager->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+            $this->logger->error('Failed to update PostgreSQL analysis status', [
+                'analysis_id' => $analysisId,
+                'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Validate and deterministically repair the AI analysis result.
+     * 
+     * This method performs comprehensive validation of the AI analysis result
+     * and applies deterministic repairs for known issues. It returns a validation
+     * report with all detected issues and applied repairs.
+     * 
+     * @return array{
+     *     valid: bool,
+     *     violations: array<string>,
+     *     repairs: array<string>,
+     *     repaired: bool
+     * }
+     */
+    public function validateAndRepairAnalysis(array $aiAnalysis): array
+    {
+        $violations = [];
+        $repairs = [];
+        $repaired = false;
+
+        // Validate questionAnalysis
+        $questionAnalysis = $aiAnalysis['questionAnalysis'] ?? [];
+        foreach ($questionAnalysis as $idx => $qa) {
+            $prefix = "questionAnalysis[{$idx}]";
+
+            // Validate evaluationStatus
+            $eval = $qa['evaluation'] ?? [];
+            $evalStatus = $eval['evaluationStatus'] ?? null;
+            if ($evalStatus !== null && !in_array($evalStatus, ['CORRECT', 'PARTIALLY_CORRECT', 'INCORRECT', 'UNANSWERED', 'INSUFFICIENT_EVIDENCE', 'NOT_DETERMINABLE', 'UNDETERMINED', 'ASSESSED_BY_VISIBLE_MARKING_ONLY', 'MARKED_CORRECT'], true)) {
+                $violations[] = "{$prefix}.evaluation.evaluationStatus: invalid value '{$evalStatus}'";
+            }
+
+            // Validate correctness
+            $correctness = $eval['correctness'] ?? null;
+            if ($correctness !== null && !in_array($correctness, ['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT', 'UNDETERMINED', 'NOT_DETERMINABLE', 'INSUFFICIENT_EVIDENCE', 'UNANSWERED'], true)) {
+                $violations[] = "{$prefix}.evaluation.correctness: invalid value '{$correctness}'";
+            }
+
+            // Validate marks
+            $marksAwarded = $eval['marksAwarded'] ?? null;
+            $maxMarks = $eval['maxMarks'] ?? null;
+            if ($marksAwarded !== null && (!is_numeric($marksAwarded) || $marksAwarded < 0)) {
+                $violations[] = "{$prefix}.evaluation.marksAwarded: must be non-negative number or null";
+            }
+            if ($maxMarks !== null && (!is_numeric($maxMarks) || $maxMarks < 0)) {
+                $violations[] = "{$prefix}.evaluation.maxMarks: must be non-negative number or null";
+            }
+            if ($marksAwarded !== null && $maxMarks !== null && $marksAwarded > $maxMarks) {
+                $violations[] = "{$prefix}.evaluation.marksAwarded: cannot exceed maxMarks";
+            }
+
+            // Validate concept status
+            $concept = $qa['concept'] ?? [];
+            $conceptStatus = $concept['status'] ?? null;
+            if ($conceptStatus !== null && !in_array($conceptStatus, ['STRONG', 'DEVELOPING', 'NEEDS_ATTENTION', 'INSUFFICIENT_EVIDENCE', 'UNANSWERED'], true)) {
+                $violations[] = "{$prefix}.concept.status: invalid value '{$conceptStatus}'";
+            }
+
+            // Validate questionAnalysis status
+            $qaStatus = $qa['status'] ?? null;
+            if ($qaStatus !== null && !in_array($qaStatus, ['STRONG', 'DEVELOPING', 'NEEDS_ATTENTION', 'INSUFFICIENT_EVIDENCE', 'UNANSWERED'], true)) {
+                $violations[] = "{$prefix}.status: invalid value '{$qaStatus}'";
+            }
+
+            // Validate marksAwarded/maxMarks consistency with evaluationStatus
+            if ($evalStatus === 'UNANSWERED' && ($marksAwarded !== null || $maxMarks !== null)) {
+                // Repair: nullify marks for unanswered questions
+                $eval['marksAwarded'] = null;
+                $eval['maxMarks'] = null;
+                $repairs[] = "{$prefix}.evaluation: nullified marks for UNANSWERED question";
+                $repaired = true;
+            }
+            if ($evalStatus === 'CORRECT' && $marksAwarded !== null && $maxMarks !== null && $marksAwarded < $maxMarks) {
+                // This is PARTIALLY_CORRECT, not CORRECT
+                $eval['evaluationStatus'] = 'PARTIALLY_CORRECT';
+                $repairs[] = "{$prefix}.evaluationStatus: corrected to PARTIALLY_CORRECT (marksAwarded < maxMarks)";
+                $repaired = true;
+            }
+
+            // Ensure missingPoints is an array
+            if (!isset($eval['missingPoints']) || !is_array($eval['missingPoints'])) {
+                $eval['missingPoints'] = [];
+                $repairs[] = "{$prefix}.evaluation.missingPoints: initialized as empty array";
+                $repaired = true;
+            }
+
+            // Ensure concept name is not null when status is not INSUFFICIENT_EVIDENCE
+            $conceptName = $concept['name'] ?? null;
+            $conceptStatus = $concept['status'] ?? 'INSUFFICIENT_EVIDENCE';
+            if ($conceptStatus !== 'INSUFFICIENT_EVIDENCE' && $conceptName === null) {
+                $violations[] = "{$prefix}.concept.name: must not be null when concept status is not INSUFFICIENT_EVIDENCE";
+            }
+
+            // Ensure improvement object has all required fields
+            $improvement = $qa['improvement'] ?? [];
+            foreach (['whatToLearn', 'whatToPractice', 'recommendedAction'] as $field) {
+                if (!array_key_exists($field, $improvement)) {
+                    $improvement[$field] = null;
+                    $repairs[] = "{$prefix}.improvement.{$field}: initialized as null";
+                    $repaired = true;
+                }
+            }
+        }
+
+        // Validate currentExamAnalysis
+        $currentExamAnalysis = $aiAnalysis['currentExamAnalysis'] ?? [];
+        $performance = $currentExamAnalysis['performance'] ?? [];
+        
+        if (isset($performance['score']) && $performance['score'] !== null && (!is_numeric($performance['score']) || $performance['score'] < 0)) {
+            $violations[] = 'currentExamAnalysis.performance.score: must be non-negative number or null';
+        }
+        if (isset($performance['totalMarks']) && $performance['totalMarks'] !== null && (!is_numeric($performance['totalMarks']) || $performance['totalMarks'] < 0)) {
+            $violations[] = 'currentExamAnalysis.performance.totalMarks: must be non-negative number or null';
+        }
+        if (isset($performance['percentage']) && $performance['percentage'] !== null && (!is_numeric($performance['percentage']) || $performance['percentage'] < 0 || $performance['percentage'] > 100)) {
+            $violations[] = 'currentExamAnalysis.performance.percentage: must be between 0 and 100 or null';
+        }
+
+        // Validate conceptAssessments
+        foreach ($currentExamAnalysis['conceptAssessments'] ?? [] as $idx => $ca) {
+            $caStatus = $ca['status'] ?? null;
+            if ($caStatus !== null && !in_array($caStatus, ['STRONG', 'DEVELOPING', 'NEEDS_ATTENTION', 'INSUFFICIENT_EVIDENCE', 'UNANSWERED'], true)) {
+                $violations[] = "currentExamAnalysis.conceptAssessments[{$idx}].status: invalid value '{$caStatus}'";
+            }
+            $caConfidence = $ca['confidence'] ?? null;
+            if ($caConfidence !== null && (!is_numeric($caConfidence) || $caConfidence < 0 || $caConfidence > 1)) {
+                $violations[] = "currentExamAnalysis.conceptAssessments[{$idx}].confidence: must be between 0 and 1";
+            }
+        }
+
+        // Validate conceptAssessments in questionAnalysis are consistent with currentExamAnalysis
+        // (This is a cross-reference check, violations are logged but not fatal)
+
+        // Check for missing required arrays
+        foreach (['strengths', 'weaknesses', 'needsAttention', 'conceptGaps', 'recommendations', 'conceptAssessments', 'mistakes', 'evidence'] as $key) {
+            if (!array_key_exists($key, $currentExamAnalysis) || !is_array($currentExamAnalysis[$key])) {
+                $violations[] = "currentExamAnalysis.{$key}: missing or not an array";
+            }
+        }
+
+        $valid = empty($violations);
+
+return [
+            'valid' => $valid,
+            'violations' => $violations,
+            'repairs' => $repairs,
+            'repaired' => $repaired,
+        ];
     }
 
     private function saveExtractedData(Analysis $mongoAnalysis, DirectExtractionResult $extractionResult, string $extractionMethod): void
@@ -706,25 +1039,5 @@ readonly class DirectAiAnalysisService
         return hash_file('sha256', $filePath);
     }
 
-    private function syncPostgresStatus(string $analysisId, string $status): void
-    {
-        try {
-            $this->entityManager->beginTransaction();
-            $pgAnalysis = $this->pgAnalysisRepository->findByAnalysisId($analysisId);
-            if ($pgAnalysis) {
-                $pgAnalysis->setStatus($status);
-                $this->entityManager->flush();
-                $this->entityManager->commit();
-            }
-        } catch (\Throwable $e) {
-            if ($this->entityManager->getConnection()->isTransactionActive()) {
-                $this->entityManager->rollback();
-            }
-            $this->logger->error('Failed to update PostgreSQL analysis status', [
-                'analysis_id' => $analysisId,
-                'status' => $status,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
+    
 }

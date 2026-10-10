@@ -368,8 +368,8 @@ readonly class AnalysisWorkflowService
     {
         $this->requireStatus($analysis, AnalysisStatus::Processing, 'analysis_failed');
 
-        $this->transitionStatus($analysis, AnalysisStatus::Published);
-        $this->logger->info('AI analysis failed, returned to published', ['analysis_id' => $analysis->getAnalysisId()]);
+        $this->transitionStatus($analysis, AnalysisStatus::Failed);
+        $this->logger->info('AI analysis failed, marked as failed', ['analysis_id' => $analysis->getAnalysisId()]);
     }
 
     public function retry(Analysis $analysis): void
@@ -467,7 +467,10 @@ readonly class AnalysisWorkflowService
         if ($analysis->getStatus() === AnalysisStatus::Archived->value) {
             return false;
         }
-        return $analysis->getStatus() === AnalysisStatus::Failed->value;
+        return in_array($analysis->getStatus(), [
+            AnalysisStatus::Failed->value,
+            AnalysisStatus::Published->value,
+        ], true);
     }
 
     public function canArchive(Analysis $analysis): bool

@@ -756,6 +756,62 @@ class OpenAiDirectDocumentProviderTest extends TestCase
         }
     }
 
+    public function testValidateAnalysisAcceptsUnansweredCorrectness(): void
+    {
+        $provider = $this->createProvider();
+        
+        // Test with UNANSWERED correctness - legitimate for unanswered questions
+        $result = $this->callProtected($provider, 'validateAnalysis', [
+            [
+                'currentExamAnalysis' => [
+                    'strengths' => [],
+                    'weaknesses' => [],
+                    'needsAttention' => [],
+                    'conceptGaps' => [],
+                    'recommendations' => [],
+                    'conceptAssessments' => [],
+                    'mistakes' => [],
+                    'evidence' => [],
+                ],
+                'questionAnalysis' => [
+                    [
+                        'questionNumber' => '1',
+                        'status' => 'UNANSWERED',
+                        'evaluation' => [
+                            'evaluationStatus' => 'UNANSWERED',
+                            'correctness' => 'UNANSWERED',
+                            'marksAwarded' => null,
+                            'maxMarks' => null,
+                            'whatStudentDidWell' => null,
+                            'mistake' => null,
+                            'whyItIsWrong' => null,
+                            'missingPoints' => [],
+                        ],
+                        'concept' => [
+                            'name' => null,
+                            'status' => 'INSUFFICIENT_EVIDENCE',
+                        ],
+                        'improvement' => [
+                            'whatToLearn' => null,
+                            'whatToPractice' => null,
+                            'recommendedAction' => null,
+                        ],
+                    ],
+                ],
+            ],
+            new DirectExtractionResult(
+                metadata: new ExtractedAnswerSheetMetadata(),
+                extractedAnswers: [],
+                extractedQuestions: [],
+                confidence: 0.9,
+                extractionMethod: 'OPENAI_DIRECT_DOCUMENT',
+            ),
+        ]);
+        
+        $this->assertTrue($result['usable'], "UNANSWERED correctness should be accepted for unanswered questions");
+        $this->assertStringContainsString('Valid analysis', $result['reason']);
+    }
+
     public function testValidateAnalysisRejectsInvalidCorrectnessValue(): void
     {
         $provider = $this->createProvider();
