@@ -1,65 +1,88 @@
-# EduPulse AI — ChatGPT MCP Server
+# EduPulse AI — ChatGPT MCP server
 
-This is the first read-only MCP integration for EduPulse AI. It exposes selected student endpoints from the existing Symfony API as tools that an MCP-compatible client can call.
+A remote Model Context Protocol (MCP) server for connecting ChatGPT to a student's existing EduPulse account. The current release is deliberately read-only.
 
-## Included tools
+## Tools
 
-- **get_my_learning_intelligence** — calls GET /api/v1/student/intelligence.
-- **list_my_analyses** — calls GET /api/v1/student/analyses.
+- `get_my_learning_intelligence` — reads `GET /api/v1/student/intelligence`; requires `learning:read`.
+- `list_my_analyses` — reads `GET /api/v1/student/analyses`; requires `analyses:read`.
 
-Both tools forward the caller's EduPulse Bearer access token to the backend. They do not accept student IDs, institute IDs, or identity overrides; the Symfony API must derive access from the authenticated user and enforce its existing authorization rules.
+The tools never accept a student or institute ID. The Symfony API remains responsible for account, role, enrollment, and tenant authorization. The current OAuth sign-in accepts student accounts only.
 
-## Requirements
+## Architecture
 
-- Node.js 20+
-- A running EduPulse Symfony API
-- A valid EduPulse access token for a student account
-- HTTPS and a stable public URL before connecting a hosted ChatGPT client
+- Node.js 20+ / TypeScript MCP server using Streamable HTTP at `POST /mcp`.
+- Existing Symfony API handles EduPulse login, session refresh, and data authorization.
+- PostgreSQL stores OAuth clients, one-time authorization codes, and hashed access/refresh tokens. EduPulse access and refresh credentials are encrypted at rest using AES-256-GCM.
+- OAuth access tokens last 30 minutes. MCP refresh tokens last 30 days and rotate on use. Revocation invalidates the token family.
+- OAuth uses authorization code + PKCE (S256), validates exact registered redirect URIs, requires explicit consent, and only grants the two read-only scopes.
 
-## Run locally
+## Local setup
 
-From this directory:
+Requirements: Node.js 20+, PostgreSQL, and a reachable EduPulse Symfony API.
 
-    cp .env.example .env
-    npm install
-    npm run dev
+1. Create a dedicated PostgreSQL database/user for the MCP service.
+2. Copy `.env.example` to `.env`.
+3. Set `EDUPULSE_API_BASE_URL` to your API base URL, including `/api/v1`.
+4. Set `DATABASE_URL` and generate a stable encryption key with `openssl rand -base64 32`. Keep the key in your deployment secret manager; losing it invalidates stored OAuth sessions.
+5. For local testing, keep `NODE_ENV=development` and local `MCP_PUBLIC_URL`, `MCP_ISSUER_URL`, and `MCP_RESOURCE_URL` values.
+6. Run:
 
-Set EDUPULSE_API_BASE_URL to your backend API base, including its version prefix. If Symfony runs at http://localhost:8000, use http://localhost:8000/api/v1.
+   ```bash
+   npm install
+   npm run dev
+   ```
 
-Health check: GET http://localhost:8787/health
+The service creates its OAuth tables on startup. The database user needs permission to create/alter those tables. Health check: `GET http://localhost:8787/health`.
 
-MCP endpoint: POST http://localhost:8787/mcp
+Build and run production code:
 
-The endpoint requires an Authorization: Bearer header with a valid EduPulse access token and a JSON request body.
+```bash
+npm run build
+npm start
+```
 
-Build and run:
+## OAuth endpoints
 
-    npm run build
-    npm start
+- `GET /.well-known/oauth-protected-resource` — protected resource metadata.
+- `GET /.well-known/oauth-authorization-server` — authorization server metadata.
+- `POST /oauth/register` — dynamic registration for public clients.
+- `GET /oauth/authorize` and `POST /oauth/authorize` — EduPulse sign-in and consent.
+- `POST /oauth/token` — authorization-code exchange and refresh-token rotation.
+- `POST /oauth/revoke` — revoke the token family.
+- `POST /mcp` — Streamable HTTP MCP endpoint.
+- `GET /health` — health check.
 
-## Connect an MCP client for local development
+Production redirect URIs are restricted to HTTPS callbacks on `chatgpt.com` / `www.chatgpt.com`. Confirm the exact callback URL supported by the ChatGPT app configuration before deploying. Localhost callbacks are allowed only when `NODE_ENV` is not `production`.
 
-Configure the MCP client to use the server's /mcp endpoint and provide a valid EduPulse Bearer token using that client's supported authentication mechanism. For a remote ChatGPT connection, the endpoint must be publicly reachable over HTTPS.
+## Deployment
 
-## Important: authentication and publishing
+1. Deploy this service behind HTTPS at a stable public hostname.
+2. Configure a durable PostgreSQL database, `DATABASE_URL`, `TOKEN_ENCRYPTION_KEY`, `EDUPULSE_API_BASE_URL`, `MCP_PUBLIC_URL`, `MCP_ISSUER_URL`, and `MCP_RESOURCE_URL`.
+3. Set `NODE_ENV=production`. Configure `ALLOWED_ORIGINS` narrowly for browser-based clients; it is not an authentication control.
+4. Verify `/health` and both OAuth discovery documents over the public HTTPS hostname.
+5. Add the remote MCP endpoint in ChatGPT's app/developer configuration, use OAuth as the authentication method, and complete the consent flow with a test student account.
+6. Verify both tools, missing/expired/revoked tokens, scope restrictions, upstream token refresh, and cross-student authorization. Confirm that Symfony rejects non-student and unauthorized access.
+7. Review the current OpenAI app publishing requirements and complete their review before directory submission.
 
-This initial server forwards an existing EduPulse access token; it does **not** implement the OAuth authorization-code flow or OAuth protected-resource metadata required by many hosted ChatGPT app integrations. Do not expose a long-lived student token in a public URL, source code, or shared configuration. Before a public ChatGPT directory release, implement and test OAuth account linking, short-lived scoped tokens, revocation, and account/institute authorization. Verify current OpenAI app submission requirements before publishing.
+The Dockerfile builds a production image. It expects the same environment variables and an externally managed PostgreSQL database.
 
-## Security notes
+## Security notes and current limitations
 
-- Read-only tools only.
-- No arbitrary student or institute identifiers are accepted by the tools.
-- Browser origins are allowlisted using ALLOWED_ORIGINS.
-- Upstream error bodies and access tokens are never returned to the MCP client.
-- Use HTTPS in production and store secrets in deployment environment variables, not in Git.
-- Ensure the Symfony endpoints enforce tenant and role authorization. MCP is not a replacement for backend authorization.
+- Google sign-in is intentionally not implemented here; it belongs on a separate branch.
+- OAuth access/refresh tokens are random opaque values; only their SHA-256 hashes are stored. Upstream EduPulse tokens are encrypted with AES-256-GCM.
+- Never commit a real `.env`, database password, or encryption key. Use secret manager/environment injection.
+- Use HTTPS for the MCP endpoint, OAuth issuer, and EduPulse API in production.
+- Keep the database private and restrict database privileges to this service.
+- The authorization page currently uses EduPulse email/password because the existing backend has a login endpoint. A branded first-party login/consent page or a dedicated OAuth provider in the Symfony backend would be preferable before broad public release.
+- Add shared rate limiting, operational monitoring, database backup/restore tests, and a production security review before public release. This branch should not be considered production-certified until the CI build and live OAuth/MCP integration tests pass.
 
-## Protocol smoke test
+## Smoke checks
 
-After starting the server, send an MCP initialize JSON-RPC request to /mcp with a valid Bearer token. The client should advertise the Streamable HTTP transport and then call tools/list.
+```bash
+curl -fsS http://localhost:8787/health
+curl -fsS http://localhost:8787/.well-known/oauth-protected-resource
+curl -fsS http://localhost:8787/.well-known/oauth-authorization-server
+```
 
-    curl -i http://localhost:8787/mcp \
-      -H 'Authorization: Bearer YOUR_EDUPULSE_ACCESS_TOKEN' \
-      -H 'Content-Type: application/json' \
-      -H 'Accept: application/json, text/event-stream' \
-      -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke-test","version":"1.0.0"}}}'
+To validate the protocol end-to-end, configure the client through OAuth rather than copying a long-lived EduPulse token into a shared ChatGPT configuration. A successful OAuth exchange should produce a short-lived MCP bearer token; an unauthenticated request to `/mcp` should return HTTP 401 with a `WWW-Authenticate` resource-metadata challenge.
