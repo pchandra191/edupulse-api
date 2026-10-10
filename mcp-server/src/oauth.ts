@@ -20,6 +20,8 @@ const pool = process.env.DATABASE_URL ? new Pool({
 
 export type McpIdentity = {
   upstreamAccessToken: string;
+  upstreamRefreshToken: string;
+  familyId: string;
   scopes: string[];
   resource: string;
   user: { id?: string; email?: string; name?: string };
@@ -87,20 +89,22 @@ export async function initializeOAuth(): Promise<void> {
     "CREATE TABLE IF NOT EXISTS mcp_oauth_codes (" +
     "code_hash TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES mcp_oauth_clients(client_id) ON DELETE CASCADE, " +
     "redirect_uri TEXT NOT NULL, code_challenge TEXT NOT NULL, scopes TEXT[] NOT NULL, resource TEXT NOT NULL, " +
-    "user_json JSONB NOT NULL, upstream_token_enc TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());" +
+    "user_json JSONB NOT NULL, upstream_token_enc TEXT NOT NULL, upstream_refresh_token_enc TEXT, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());" +
     "CREATE TABLE IF NOT EXISTS mcp_oauth_tokens (" +
     "token_hash TEXT PRIMARY KEY, token_type TEXT NOT NULL CHECK (token_type IN ('access','refresh')), family_id TEXT NOT NULL, " +
     "client_id TEXT NOT NULL REFERENCES mcp_oauth_clients(client_id) ON DELETE CASCADE, scopes TEXT[] NOT NULL, resource TEXT NOT NULL, " +
-    "user_json JSONB NOT NULL, upstream_token_enc TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL, revoked_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());" +
+    "user_json JSONB NOT NULL, upstream_token_enc TEXT NOT NULL, upstream_refresh_token_enc TEXT, expires_at TIMESTAMPTZ NOT NULL, revoked_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());" +
     "CREATE INDEX IF NOT EXISTS idx_mcp_oauth_tokens_expiry ON mcp_oauth_tokens(expires_at);" +
-    "CREATE INDEX IF NOT EXISTS idx_mcp_oauth_codes_expiry ON mcp_oauth_codes(expires_at);"
+    "CREATE INDEX IF NOT EXISTS idx_mcp_oauth_codes_expiry ON mcp_oauth_codes(expires_at);" +
+    "ALTER TABLE mcp_oauth_codes ADD COLUMN IF NOT EXISTS upstream_refresh_token_enc TEXT;" +
+    "ALTER TABLE mcp_oauth_tokens ADD COLUMN IF NOT EXISTS upstream_refresh_token_enc TEXT;"
   );
 }
 
 export async function getMcpIdentity(accessToken: string): Promise<McpIdentity | null> {
   if (!pool) return null;
   const result = await pool.query(
-    "SELECT scopes, resource, user_json, upstream_token_enc FROM mcp_oauth_tokens " +
+    "SELECT scopes, resource, user_json, upstream_token_enc, upstream_refresh_token_enc, family_id FROM mcp_oauth_tokens " +
     "WHERE token_hash = $1 AND token_type = 'access' AND revoked_at IS NULL AND expires_at > NOW()",
     [hash(accessToken)],
   );
@@ -109,6 +113,8 @@ export async function getMcpIdentity(accessToken: string): Promise<McpIdentity |
   try {
     return {
       upstreamAccessToken: decrypt(row.upstream_token_enc as string),
+      upstreamRefreshToken: row.upstream_refresh_token_enc ? decrypt(row.upstream_refresh_token_enc as string) : "",
+      familyId: row.family_id as string,
       scopes: row.scopes as string[],
       resource: row.resource as string,
       user: row.user_json as McpIdentity["user"],
@@ -260,8 +266,12 @@ export function registerOAuthRoutes(app: Express): void {
     const data = payload.data && typeof payload.data === "object" ? payload.data as Record<string, unknown> : payload;
     const upstreamToken = typeof data.accessToken === "string" ? data.accessToken :
       typeof data.access_token === "string" ? data.access_token : "";
+    const upstreamRefreshToken = typeof data.refresh_token === "string" ? data.refresh_token :
+      typeof data.refreshToken === "string" ? data.refreshToken : "";
     const rawUser = data.user && typeof data.user === "object" ? data.user as Record<string, unknown> : {};
-    if (!upstreamToken) return res.status(502).type("html").send("EduPulse sign-in did not return an access token.");
+    if (!upstreamToken || !upstreamRefreshToken) return res.status(502).type("html").send("EduPulse sign-in did not return the required session tokens.");
+    const roles = Array.isArray(rawUser.roles) ? rawUser.roles.map(String) : [];
+    if (!roles.includes("ROLE_STUDENT")) return res.status(403).type("html").send("This ChatGPT connection currently supports student accounts only.");
     const user = {
       ...(rawUser.id !== undefined ? { id: String(rawUser.id) } : {}),
       email: typeof rawUser.email === "string" ? rawUser.email : String(body.email),
@@ -309,10 +319,10 @@ export function registerOAuthRoutes(app: Express): void {
       const access = randomToken(32);
       const refresh = randomToken(48);
       await pool.query(
-        "INSERT INTO mcp_oauth_tokens (token_hash,token_type,family_id,client_id,scopes,resource,user_json,upstream_token_enc,expires_at) " +
-        "VALUES ($1,'access',$2,$3,$4,$5,$6::jsonb,$7,NOW()+($8*INTERVAL '1 second'))," +
-        "($9,'refresh',$2,$3,$4,$5,$6::jsonb,$7,NOW()+($10*INTERVAL '1 second'))",
-        [hash(access), family, clientId, row.scopes, resource, JSON.stringify(row.user_json), row.upstream_token_enc, accessLifetime,
+        "INSERT INTO mcp_oauth_tokens (token_hash,token_type,family_id,client_id,scopes,resource,user_json,upstream_token_enc,upstream_refresh_token_enc,expires_at) " +
+        "VALUES ($1,'access',$2,$3,$4,$5,$6::jsonb,$7,$8,NOW()+($9*INTERVAL '1 second'))," +
+        "($10,'refresh',$2,$3,$4,$5,$6::jsonb,$7,$8,NOW()+($11*INTERVAL '1 second'))",
+        [hash(access), family, clientId, row.scopes, resource, JSON.stringify(row.user_json), row.upstream_token_enc, row.upstream_refresh_token_enc, accessLifetime,
           hash(refresh), refreshLifetime],
       );
       return res.setHeader("Cache-Control", "no-store").json({
@@ -340,10 +350,10 @@ export function registerOAuthRoutes(app: Express): void {
         const access = randomToken(32);
         const refresh = randomToken(48);
         await db.query(
-          "INSERT INTO mcp_oauth_tokens (token_hash,token_type,family_id,client_id,scopes,resource,user_json,upstream_token_enc,expires_at) " +
-          "VALUES ($1,'access',$2,$3,$4,$5,$6::jsonb,$7,NOW()+($8*INTERVAL '1 second'))," +
-          "($9,'refresh',$2,$3,$4,$5,$6::jsonb,$7,NOW()+($10*INTERVAL '1 second'))",
-          [hash(access), row.family_id, clientId, row.scopes, resource, JSON.stringify(row.user_json), row.upstream_token_enc, accessLifetime,
+          "INSERT INTO mcp_oauth_tokens (token_hash,token_type,family_id,client_id,scopes,resource,user_json,upstream_token_enc,upstream_refresh_token_enc,expires_at) " +
+          "VALUES ($1,'access',$2,$3,$4,$5,$6::jsonb,$7,$8,NOW()+($9*INTERVAL '1 second'))," +
+          "($10,'refresh',$2,$3,$4,$5,$6::jsonb,$7,$8,NOW()+($11*INTERVAL '1 second'))",
+          [hash(access), row.family_id, clientId, row.scopes, resource, JSON.stringify(row.user_json), row.upstream_token_enc, row.upstream_refresh_token_enc, accessLifetime,
             hash(refresh), refreshLifetime],
         );
         await db.query("COMMIT");
