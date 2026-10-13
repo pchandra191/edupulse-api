@@ -43,6 +43,7 @@ class OpenAiDirectDocumentProvider
     private ExamAnalysisPromptBuilder $promptBuilder;
     private AnalysisSettings $analysisSettings;
     private OpenAiSanitizer $sanitizer;
+    private ImageToPdfConverter $imageToPdfConverter;
 
     // NOTE: pdfDetail is currently reserved for future use.
     // The OpenAI Responses API input_file mechanism does not expose a pdf_detail parameter.
@@ -60,6 +61,7 @@ class OpenAiDirectDocumentProvider
         ExamAnalysisPromptBuilder $promptBuilder,
         AnalysisSettings $analysisSettings,
         OpenAiSanitizer $sanitizer,
+        ImageToPdfConverter $imageToPdfConverter,
     ) {
         $this->httpClient = $httpClient;
         $this->apiKey = $apiKey;
@@ -71,6 +73,7 @@ class OpenAiDirectDocumentProvider
         $this->promptBuilder = $promptBuilder;
         $this->analysisSettings = $analysisSettings;
         $this->sanitizer = $sanitizer;
+        $this->imageToPdfConverter = $imageToPdfConverter;
 
         $this->logger->info('[DIRECT-AI-MODEL]', [
             'configuredModel' => $this->extractionModel,
@@ -78,11 +81,11 @@ class OpenAiDirectDocumentProvider
         ]);
     }
 
-    /**
-      * Stage 1: Extract document data using OpenAI Responses API with input_file
-      *
-      * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
-      */
+/**
+     * Stage 1: Extract document data using OpenAI Responses API with input_file
+     *
+     * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     */
     public function extractDocuments(
         array $answerSheetPaths,
         ?string $questionPaperPath,
@@ -96,12 +99,20 @@ class OpenAiDirectDocumentProvider
             'trusted_metadata_keys' => array_keys($trustedMetadata),
         ]);
 
+        // Convert images to PDF and track for cleanup
+        $convertedFiles = [];
+        $answerSheetPathsForUpload = $this->convertImagesToPdf($answerSheetPaths, $convertedFiles);
+        $questionPaperPathForUpload = $questionPaperPath ? $this->convertImageToPdfIfNeeded($questionPaperPath) : null;
+        if ($questionPaperPathForUpload !== $questionPaperPath) {
+            $convertedFiles[] = $questionPaperPathForUpload;
+        }
+
         // Upload all answer-sheet files to OpenAI Files API (in order)
         $answerSheetFileIds = [];
-        foreach ($answerSheetPaths as $answerSheetPath) {
+        foreach ($answerSheetPathsForUpload as $answerSheetPath) {
             $answerSheetFileIds[] = $this->uploadFile($answerSheetPath);
         }
-        $questionPaperFileId = $questionPaperPath ? $this->uploadFile($questionPaperPath) : null;
+        $questionPaperFileId = $questionPaperPathForUpload ? $this->uploadFile($questionPaperPathForUpload) : null;
 
         try {
             // Build the extraction request with one input_file per answer-sheet file, in order
@@ -137,6 +148,12 @@ class OpenAiDirectDocumentProvider
             }
             if ($questionPaperFileId) {
                 $this->deleteFile($questionPaperFileId);
+            }
+            // Clean up converted PDF files
+            foreach ($convertedFiles as $convertedFile) {
+                if (file_exists($convertedFile)) {
+                    @unlink($convertedFile);
+                }
             }
         }
     }
@@ -200,12 +217,20 @@ class OpenAiDirectDocumentProvider
             'trusted_metadata_keys' => array_keys($trustedMetadata),
         ]);
 
+        // Convert images to PDF and track for cleanup
+        $convertedFiles = [];
+        $answerSheetPathsForUpload = $this->convertImagesToPdf($answerSheetPaths, $convertedFiles);
+        $questionPaperPathForUpload = $questionPaperPath ? $this->convertImageToPdfIfNeeded($questionPaperPath) : null;
+        if ($questionPaperPathForUpload !== $questionPaperPath) {
+            $convertedFiles[] = $questionPaperPathForUpload;
+        }
+
         // Upload all answer-sheet files to OpenAI Files API (in order)
         $answerSheetFileIds = [];
-        foreach ($answerSheetPaths as $answerSheetPath) {
+        foreach ($answerSheetPathsForUpload as $answerSheetPath) {
             $answerSheetFileIds[] = $this->uploadFile($answerSheetPath);
         }
-        $questionPaperFileId = $questionPaperPath ? $this->uploadFile($questionPaperPath) : null;
+        $questionPaperFileId = $questionPaperPathForUpload ? $this->uploadFile($questionPaperPathForUpload) : null;
 
         try {
             // One input_file per answer-sheet file, in order, followed by the optional question paper
@@ -263,7 +288,7 @@ class OpenAiDirectDocumentProvider
                 language: $extractionResult->language,
                 analysis: $analysis,
                 questionAnalysis: $parsed['questionAnalysis'] ?? null,
-);
+        );
         } finally {
             foreach ($answerSheetFileIds as $answerSheetFileId) {
                 $this->deleteFile($answerSheetFileId);
@@ -271,15 +296,21 @@ class OpenAiDirectDocumentProvider
             if ($questionPaperFileId) {
                 $this->deleteFile($questionPaperFileId);
             }
+            // Clean up converted PDF files
+            foreach ($convertedFiles as $convertedFile) {
+                if (file_exists($convertedFile)) {
+                    @unlink($convertedFile);
+                }
+            }
         }
     }
 
-    /**
-      * Stage 2: Analyze extracted data using OpenAI Responses API
-      * Only called after student confirms metadata and clicks "Start AI Analysis"
-      *
-      * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
-      */
+/**
+     * Stage 2: Analyze extracted data using OpenAI Responses API
+     * Only called after student confirms metadata and clicks "Start AI Analysis"
+     *
+     * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     */
     public function analyzeExtractedData(
         DirectExtractionResult $extractionResult,
         array $answerSheetPaths,
@@ -293,13 +324,21 @@ class OpenAiDirectDocumentProvider
             'has_question_paper' => $questionPaperPath !== null,
         ]);
 
+        // Convert images to PDF and track for cleanup
+        $convertedFiles = [];
+        $answerSheetPathsForUpload = $this->convertImagesToPdf($answerSheetPaths, $convertedFiles);
+        $questionPaperPathForUpload = $questionPaperPath ? $this->convertImageToPdfIfNeeded($questionPaperPath) : null;
+        if ($questionPaperPathForUpload !== $questionPaperPath) {
+            $convertedFiles[] = $questionPaperPathForUpload;
+        }
+
         // If we have original files, we can send them again for analysis context
         $inputFiles = [];
-        foreach ($answerSheetPaths as $answerSheetPath) {
+        foreach ($answerSheetPathsForUpload as $answerSheetPath) {
             $inputFiles[] = $this->uploadFile($answerSheetPath);
         }
-        if ($questionPaperPath) {
-            $inputFiles[] = $this->uploadFile($questionPaperPath);
+        if ($questionPaperPathForUpload) {
+            $inputFiles[] = $this->uploadFile($questionPaperPathForUpload);
         }
 
         try {
@@ -329,6 +368,12 @@ class OpenAiDirectDocumentProvider
             foreach ($inputFiles as $fileId) {
                 $this->deleteFile($fileId);
             }
+            // Clean up converted PDF files
+            foreach ($convertedFiles as $convertedFile) {
+                if (file_exists($convertedFile)) {
+                    @unlink($convertedFile);
+                }
+            }
         }
     }
 
@@ -337,8 +382,10 @@ class OpenAiDirectDocumentProvider
      */
     private function uploadFile(string $filePath): string
     {
-        $fileName = basename($filePath);
-        $mimeType = $this->getMimeTypeFromExtension($filePath);
+        // Convert images to PDF for OpenAI Responses API compatibility
+        $fileToUpload = $this->convertImageToPdfIfNeeded($filePath);
+        $fileName = basename($fileToUpload);
+        $mimeType = $this->getMimeTypeFromExtension($fileToUpload);
 
         $this->logger->info('[OPENAI-FILES-AUTH]', [
             'apiKeyConfigured' => $this->apiKey !== '',
@@ -347,7 +394,7 @@ class OpenAiDirectDocumentProvider
 
         $this->logger->debug('Uploading file to OpenAI Files API', [
             'file' => $fileName,
-            'size' => filesize($filePath),
+            'size' => filesize($fileToUpload),
             'mime_type' => $mimeType,
         ]);
 
@@ -356,7 +403,7 @@ class OpenAiDirectDocumentProvider
                 'Authorization' => 'Bearer ' . $this->apiKey,
             ],
             'body' => [
-                'file' => fopen($filePath, 'r'),
+                'file' => fopen($fileToUpload, 'r'),
                 'purpose' => 'user_data',
             ],
         ]);
@@ -381,6 +428,52 @@ class OpenAiDirectDocumentProvider
 
         $this->logger->debug('File uploaded to OpenAI', ['file_id' => $fileId, 'file' => $fileName]);
         return $fileId;
+    }
+
+    /**
+     * Convert image to PDF if needed for OpenAI Responses API
+     * Returns the path to use for upload (original or converted PDF)
+     */
+    private function convertImageToPdfIfNeeded(string $filePath): string
+    {
+        $mimeType = mime_content_type($filePath);
+        
+        // Only convert JPEG, PNG, WebP to PDF
+        if (!in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            return $filePath;
+        }
+
+        try {
+            return $this->imageToPdfConverter->convert($filePath);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Image to PDF conversion failed, uploading original', [
+                'file' => $filePath,
+                'error' => $e->getMessage(),
+            ]);
+            return $filePath;
+        }
+    }
+
+    /**
+     * Convert multiple images to PDFs
+     * Returns array of paths to use for upload (PDFs for images, originals for others)
+     * Populates $convertedFiles with paths that need cleanup
+     *
+     * @param array<string> $paths
+     * @param array<string> $convertedFiles
+     * @return array<string>
+     */
+    private function convertImagesToPdf(array $paths, array &$convertedFiles): array
+    {
+        $result = [];
+        foreach ($paths as $path) {
+            $converted = $this->convertImageToPdfIfNeeded($path);
+            $result[] = $converted;
+            if ($converted !== $path) {
+                $convertedFiles[] = $converted;
+            }
+        }
+        return $result;
     }
 
     /**

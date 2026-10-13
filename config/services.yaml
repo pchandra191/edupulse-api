@@ -261,6 +261,7 @@ services:
             $promptBuilder: '@App\Service\Analysis\AI\Prompt\ExamAnalysisPromptBuilder'
             $analysisSettings: '@App\Service\Analysis\Settings\AnalysisSettings'
             $sanitizer: '@App\Service\Analysis\Processing\OpenAiSanitizer'
+            $imageToPdfConverter: '@App\Service\Analysis\Processing\ImageToPdfConverter'
 
     App\Service\Analysis\AnalysisModeResolver:
         arguments:
