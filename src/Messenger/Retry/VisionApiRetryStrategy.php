@@ -20,7 +20,7 @@ class VisionApiRetryStrategy implements RetryStrategyInterface
     private int $multiplier;
     private int $delay;
 
-    public function __construct(int $maxRetries = 3, int $multiplier = 2, int $delay = 1000)
+    public function __construct(int $maxRetries = 2, int $multiplier = 2, int $delay = 1000)
     {
         $this->maxRetries = $maxRetries;
         $this->multiplier = $multiplier;
@@ -46,8 +46,14 @@ class VisionApiRetryStrategy implements RetryStrategyInterface
             return false;
         }
 
-        // For other exceptions, allow retry (default behavior)
-        return true;
+        // For other exceptions, check retry count to limit retries
+        $retryCount = RedeliveryStamp::getRetryCountFromEnvelope($message);
+        if ($retryCount >= $this->maxRetries) {
+            return false;
+        }
+
+        // Don't retry on non-retryable runtime exceptions (e.g., PDF extraction failures)
+        return $this->isRetryableException($throwable);
     }
 
     public function getWaitingTime(Envelope $message, ?\Throwable $throwable = null): int
@@ -73,13 +79,40 @@ class VisionApiRetryStrategy implements RetryStrategyInterface
         }
 
         // For other exceptions, use default retry logic with exponential backoff
-        $retryCount = \Symfony\Component\Messenger\Stamp\RedeliveryStamp::getRetryCountFromEnvelope($message);
+        $retryCount = RedeliveryStamp::getRetryCountFromEnvelope($message);
         
         if ($retryCount >= $this->maxRetries) {
             return 0;
         }
 
         return $this->delay * pow($this->multiplier, $retryCount);
+    }
+
+    /**
+     * Determine if an exception is retryable.
+     * Non-retryable: PDF extraction failures, file not found, invalid data, etc.
+     */
+    private function isRetryableException(\Throwable $throwable): bool
+    {
+        $nonRetryableMessages = [
+            'Failed to extract text from PDF',
+            'Invalid PDF data',
+            'Missing `%PDF-` header',
+            'Failed to extract text from text file',
+            'Failed to extract text from image',
+            'Unsupported file type for text extraction',
+            'PDF parser library not available',
+            'Failed to read text file',
+        ];
+
+        $message = $throwable->getMessage();
+        foreach ($nonRetryableMessages as $nonRetryable) {
+            if (str_contains($message, $nonRetryable)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

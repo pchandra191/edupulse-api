@@ -140,16 +140,17 @@ readonly class DirectAiAnalysisService
                 continue;
             }
             $sheetPath = $this->getFilePath($sheet->getFileId(), $analysisId);
+            $sheetMimeType = $sheet->getMimeType() ?? 'application/pdf';
 
             $this->logger->debug('[PDF-EXTRACTION-START]', [
                 'analysisId' => $analysisId,
                 'fileId' => $sheet->getFileId(),
                 'path' => $sheetPath,
-                'mimeType' => 'application/pdf',
+                'mimeType' => $sheetMimeType,
                 'fileSize' => filesize($sheetPath),
             ]);
 
-            $data = $this->documentTextExtractor->extract($sheetPath, 'application/pdf');
+            $data = $this->documentTextExtractor->extract($sheetPath, $sheetMimeType);
 
             $this->logger->info('[PDF-EXTRACTION-RESULT]', [
                 'analysisId' => $analysisId,

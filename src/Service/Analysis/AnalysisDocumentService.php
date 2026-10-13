@@ -275,19 +275,18 @@ readonly class AnalysisDocumentService
 
     private function storeFile(\Symfony\Component\HttpFoundation\File\UploadedFile $file, string $analysisId): array
     {
-        $extension = strtolower(pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
-        $allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-        if (!in_array($extension, $allowedExtensions, true)) {
-            throw new \InvalidArgumentException('Invalid file extension. Allowed: pdf, jpg, jpeg, png, webp.');
-        }
-
-        // Capture all file metadata BEFORE moving. After move() the PHP
-        // temporary upload file no longer exists, so content-based
-        // getMimeType()/getSize() would throw
-        // "The ... file does not exist or is not readable".
         $originalFilename = $file->getClientOriginalName();
         $mimeType = $file->getMimeType();
         $size = $file->getSize();
+
+        // Detect actual file type from content to use correct extension
+        $detectedMimeType = $this->detectMimeType($file->getPathname());
+        $extension = $this->extensionFromMimeType($detectedMimeType);
+
+        $allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+        if (!in_array($extension, $allowedExtensions, true)) {
+            throw new \InvalidArgumentException('Invalid file type. Allowed: PDF, JPG, PNG, WEBP.');
+        }
 
         $fileId = Uuid::v7()->toRfc4122();
         $storedFilename = $fileId . '.' . $extension;
@@ -301,17 +300,36 @@ readonly class AnalysisDocumentService
             throw new \RuntimeException('Failed to store uploaded document: ' . $storedFilename);
         }
 
-        // Calculate page count for the stored file
-        $pageCount = $this->calculatePageCount($permanentPath, $mimeType);
+        // Calculate page count for the stored file using detected MIME type
+        $pageCount = $this->calculatePageCount($permanentPath, $detectedMimeType);
 
         return [
             'fileId' => $fileId,
             'storedFilename' => $storedFilename,
             'originalFilename' => $originalFilename,
-            'mimeType' => $mimeType,
+            'mimeType' => $detectedMimeType,
             'size' => $size,
             'pageCount' => $pageCount,
         ];
+    }
+
+    private function detectMimeType(string $filePath): string
+    {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filePath);
+        finfo_close($finfo);
+        return $mimeType ?: 'application/octet-stream';
+    }
+
+    private function extensionFromMimeType(string $mimeType): string
+    {
+        return match ($mimeType) {
+            'application/pdf' => 'pdf',
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            default => 'bin',
+        };
     }
 
     /**

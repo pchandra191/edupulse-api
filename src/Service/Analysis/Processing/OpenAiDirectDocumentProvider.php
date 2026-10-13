@@ -948,20 +948,9 @@ PROMPT;
             }
         }
 
-        $allowedStatuses = ['STRONG', 'DEVELOPING', 'NEEDS_ATTENTION', 'INSUFFICIENT_EVIDENCE', 'UNANSWERED'];
-        $allowedEvaluationStatuses = [
-            'CORRECT', 'PARTIALLY_CORRECT', 'INCORRECT', 'UNANSWERED',
-            'INSUFFICIENT_EVIDENCE', 'NOT_DETERMINABLE', 'UNDETERMINED',
-            'ASSESSED_BY_VISIBLE_MARKING_ONLY', 'MARKED_CORRECT',
-        ];
-        $allowedCorrectness = ['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT', 'UNDETERMINED', 'NOT_DETERMINABLE', 'INSUFFICIENT_EVIDENCE', 'UNANSWERED'];
         foreach ($analysis['conceptAssessments'] ?? [] as $idx => $concept) {
             if (!is_array($concept) || !array_key_exists('status', $concept) || !array_key_exists('concept', $concept)) {
                 return ['usable' => false, 'reason' => "Invalid conceptAssessment at index {$idx}"];
-            }
-            $status = $concept['status'] ?? null;
-            if ($status !== null && !in_array($status, $allowedStatuses, true)) {
-                return ['usable' => false, 'reason' => "Invalid concept status '{$concept['status']}' at index {$idx}"];
             }
             $conf = $concept['confidence'] ?? null;
             if ($conf !== null && (!is_numeric($conf) || $conf < 0 || $conf > 1)) {
@@ -990,25 +979,18 @@ PROMPT;
                 if (!is_array($qa) || !array_key_exists('questionNumber', $qa) || !array_key_exists('status', $qa) || !array_key_exists('evaluation', $qa) || !array_key_exists('concept', $qa) || !array_key_exists('improvement', $qa)) {
                     return ['usable' => false, 'reason' => "Invalid questionAnalysis at index {$idx}"];
                 }
-                $qaStatus = $qa['status'] ?? null;
-                if ($qaStatus !== null && !in_array($qaStatus, $allowedStatuses, true)) {
-                    return ['usable' => false, 'reason' => "Invalid questionAnalysis status '{$qaStatus}' at index {$idx}"];
-                }
 
                 $evaluation = $qa['evaluation'] ?? [];
                 if (!is_array($evaluation) || !array_key_exists('evaluationStatus', $evaluation) || !array_key_exists('correctness', $evaluation)) {
                     return ['usable' => false, 'reason' => "Invalid evaluation in questionAnalysis at index {$idx}"];
                 }
                 $evalStatus = $evaluation['evaluationStatus'] ?? null;
-                if ($evalStatus !== null && !in_array($evalStatus, $allowedEvaluationStatuses, true)) {
-                    return ['usable' => false, 'reason' => "Invalid evaluationStatus '{$evalStatus}' in questionAnalysis at index {$idx}"];
+                if ($evalStatus !== null && !is_string($evalStatus)) {
+                    return ['usable' => false, 'reason' => "Invalid evaluationStatus type in questionAnalysis at index {$idx}"];
                 }
                 $correctness = $evaluation['correctness'] ?? null;
                 if ($correctness !== null && !is_string($correctness)) {
                     return ['usable' => false, 'reason' => "Invalid correctness type in questionAnalysis at index {$idx}"];
-                }
-                if ($correctness !== null && !in_array($correctness, $allowedCorrectness, true)) {
-                    return ['usable' => false, 'reason' => "Invalid correctness '{$correctness}' in questionAnalysis at index {$idx}"];
                 }
                 foreach (['studentAnswer', 'questionText', 'feedback', 'reason'] as $field) {
                     if (array_key_exists($field, $evaluation) && $evaluation[$field] !== null && !is_string($evaluation[$field])) {
@@ -1027,10 +1009,6 @@ PROMPT;
                 $concept = $qa['concept'] ?? [];
                 if (!is_array($concept) || !array_key_exists('name', $concept) || !array_key_exists('status', $concept)) {
                     return ['usable' => false, 'reason' => "Invalid concept in questionAnalysis at index {$idx}"];
-                }
-                $conceptStatus = $concept['status'] ?? null;
-                if ($conceptStatus !== null && !in_array($conceptStatus, $allowedStatuses, true)) {
-                    return ['usable' => false, 'reason' => "Invalid concept status '{$conceptStatus}' in questionAnalysis at index {$idx}"];
                 }
 
                 $improvement = $qa['improvement'] ?? [];
