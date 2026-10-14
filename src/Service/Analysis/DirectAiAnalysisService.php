@@ -74,8 +74,14 @@ readonly class DirectAiAnalysisService
             throw new \RuntimeException('Answer sheet must be uploaded before processing.');
         }
 
-        $questionPaper = $mongoAnalysis->getDocuments()->getQuestionPaper();
-        $hasQuestionPaper = $questionPaper->getStatus() === 'UPLOADED';
+        $questionPapers = $mongoAnalysis->getDocuments()->getQuestionPapers();
+        $hasQuestionPaper = false;
+        foreach ($questionPapers as $paper) {
+            if ($paper->getStatus() === 'UPLOADED') {
+                $hasQuestionPaper = true;
+                break;
+            }
+        }
 
         $currentStatus = $mongoAnalysis->getStatus();
         $processing = $mongoAnalysis->getProcessing();
@@ -120,7 +126,7 @@ readonly class DirectAiAnalysisService
             throw new \RuntimeException('At least one answer sheet must be uploaded before processing.');
         }
 
-        $questionPaperPath = $hasQuestionPaper ? $this->getFilePath($questionPaper->getFileId(), $analysisId) : null;
+        $questionPaperPath = $hasQuestionPaper ? $this->getFilePath($questionPapers[0]->getFileId(), $analysisId) : null;
 
         // Step 1: Extract text from all answer sheets using DocumentTextExtractor (SetaPDF)
         $this->logger->info('[PDF-EXTRACTION-START]', [
@@ -263,9 +269,13 @@ readonly class DirectAiAnalysisService
             throw new \RuntimeException('At least one answer sheet must be uploaded before AI analysis.');
         }
 
-        $questionPaper = $mongoAnalysis->getDocuments()->getQuestionPaper();
-        $hasQuestionPaper = $questionPaper->getStatus() === 'UPLOADED';
-        $questionPaperPath = $hasQuestionPaper ? $this->getFilePath($questionPaper->getFileId(), $analysisId) : null;
+        $questionPaperPaths = [];
+        foreach ($mongoAnalysis->getDocuments()->getQuestionPapers() as $paper) {
+            if ($paper->getStatus() === 'UPLOADED') {
+                $questionPaperPaths[] = $this->getFilePath($paper->getFileId(), $analysisId);
+            }
+        }
+        $hasQuestionPaper = !empty($questionPaperPaths);
 
         $fileHash = $mongoAnalysis->getAnswerSheetFileHash();
         if (!$fileHash) {
@@ -331,7 +341,7 @@ readonly class DirectAiAnalysisService
                 $analysis = $this->directDocumentProvider->analyzeExtractedData(
                     $extractionResult,
                     $answerSheetPaths,
-                    $questionPaperPath,
+                    $questionPaperPaths,
                     $trustedMetadata
                 );
 
@@ -354,7 +364,7 @@ readonly class DirectAiAnalysisService
 
                 $combinedResult = $this->directDocumentProvider->extractDocumentsWithPreliminaryAnalysis(
                     $answerSheetPaths,
-                    $questionPaperPath,
+                    $questionPaperPaths,
                     $trustedMetadata
                 );
             }

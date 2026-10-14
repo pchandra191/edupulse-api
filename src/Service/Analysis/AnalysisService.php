@@ -319,21 +319,21 @@ readonly class AnalysisService
             source: $mongoAnalysis->getSource(),
             status: $mongoAnalysis->getStatus(),
             documents: new DocumentsDTO(
-                questionPaper: new DocumentFileDTO(
+                questionPaper: $questionPaperFile && $questionPaperFile->getFileId() ? new DocumentFileDTO(
                     fileId: $questionPaperFile->getFileId(),
                     status: $questionPaperFile->getStatus(),
                     originalFilename: $questionPaperFile->getOriginalFilename(),
                     mimeType: $questionPaperFile->getMimeType(),
                     fileSize: $questionPaperFile->getFileSize(),
-                ),
+                ) : null,
                 answerSheets: array_map(fn(DocumentFile $as) => new DocumentFileDTO(
-                    fileId: $as->getFileId(),
+                    fileId: $as->getFileId() ?? '',
                     status: $as->getStatus(),
                     originalFilename: $as->getOriginalFilename(),
                     mimeType: $as->getMimeType(),
                     fileSize: $as->getFileSize(),
                     page: $as->getPage(),
-                ), $documents->getAnswerSheets()),
+                ), array_filter($documents->getAnswerSheets(), fn($as) => $as !== null && $as->getFileId() !== null)),
             ),
             exam: new ExamDTO(
                 title: $exam->getTitle(),
@@ -366,7 +366,7 @@ readonly class AnalysisService
             studentName: $studentName,
             rollNumber: $rollNumber,
             metadataReady: $pgAnalysis?->getSubject() !== null || $pgAnalysis?->getSubjectName() !== null,
-            answerSheetUploaded: $documents->getAnswerSheet()?->getStatus() === 'UPLOADED',
+            answerSheetUploaded: $documents->getAnswerSheet() !== null && $documents->getAnswerSheet()?->getStatus() === 'UPLOADED' ? true : false,
             createdAt: $mongoAnalysis->getCreatedAt()->format(\DateTimeInterface::ATOM),
             updatedAt: $mongoAnalysis->getUpdatedAt()->format(\DateTimeInterface::ATOM),
             documentClassification: $mongoAnalysis->getDocumentClassification(),

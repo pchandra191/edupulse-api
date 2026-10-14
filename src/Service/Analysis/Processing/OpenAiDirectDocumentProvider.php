@@ -162,14 +162,14 @@ class OpenAiDirectDocumentProvider
      * Stage 1+2 combined: Extract and analyze in one OpenAI request.
      * Returns extraction result with required question-level analysis.
      *
-     * @param array<string>|string $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     * @param array<string> $questionPaperPaths Ordered question-paper file paths
      */
     public function extractDocumentsWithPreliminaryAnalysis(
-        array|string $answerSheetPaths,
-        ?string $questionPaperPath,
+        array $answerSheetPaths,
+        array $questionPaperPaths,
         array $trustedMetadata = []
     ): DirectExtractionResult {
-        $answerSheetPaths = is_array($answerSheetPaths) ? $answerSheetPaths : [$answerSheetPaths];
         // Calculate total file sizes and page counts for cost check
         $totalFileSize = 0;
         $totalPageCount = 0;
@@ -181,29 +181,29 @@ class OpenAiDirectDocumentProvider
                 $totalPageCount += 1; // Images count as 1 page
             }
         }
-        if ($questionPaperPath) {
-            $totalFileSize += filesize($questionPaperPath);
-            if (strtolower(pathinfo($questionPaperPath, PATHINFO_EXTENSION)) === 'pdf') {
-                $totalPageCount += $this->getPdfPageCount($questionPaperPath);
+        foreach ($questionPaperPaths as $path) {
+            $totalFileSize += filesize($path);
+            if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'pdf') {
+                $totalPageCount += $this->getPdfPageCount($path);
             } else {
                 $totalPageCount += 1;
             }
         }
 
         // Cost safety check
-        $this->performCostCheck($answerSheetPaths, $questionPaperPath, $totalFileSize, $totalPageCount);
+        $this->performCostCheck($answerSheetPaths, $questionPaperPaths, $totalFileSize, $totalPageCount);
 
         $this->logger->info('[DIRECT-AI-START]', [
             'model' => $this->extractionModel,
             'answerSheetCount' => count($answerSheetPaths),
-            'questionPaperPresent' => $questionPaperPath !== null,
+            'questionPaperCount' => count($questionPaperPaths),
         ]);
 
         $this->logger->info('[DIRECT-AI-COST-CHECK]', [
             'analysisId' => $trustedMetadata['analysisId'] ?? 'unknown',
             'model' => $this->extractionModel,
             'answerSheetCount' => count($answerSheetPaths),
-            'questionPaperPresent' => $questionPaperPath !== null,
+            'questionPaperCount' => count($questionPaperPaths),
             'pageCount' => $totalPageCount,
             'totalFileSize' => $totalFileSize,
             'maxOutputTokens' => $this->analysisSettings->getDirectAiMaxOutputTokens(),
@@ -212,30 +212,30 @@ class OpenAiDirectDocumentProvider
         $this->logger->info('Starting OpenAI Direct Document combined extraction+analysis', [
             'answer_sheet_count' => count($answerSheetPaths),
             'answer_sheets' => array_map(fn(string $p): string => basename($p), $answerSheetPaths),
-            'question_paper' => $questionPaperPath,
-            'has_question_paper' => $questionPaperPath !== null,
+            'question_papers' => array_map(fn(string $p): string => basename($p), $questionPaperPaths),
+            'has_question_paper' => !empty($questionPaperPaths),
             'trusted_metadata_keys' => array_keys($trustedMetadata),
         ]);
 
         // Convert images to PDF and track for cleanup
         $convertedFiles = [];
         $answerSheetPathsForUpload = $this->convertImagesToPdf($answerSheetPaths, $convertedFiles);
-        $questionPaperPathForUpload = $questionPaperPath ? $this->convertImageToPdfIfNeeded($questionPaperPath) : null;
-        if ($questionPaperPathForUpload !== $questionPaperPath) {
-            $convertedFiles[] = $questionPaperPathForUpload;
-        }
+        $questionPaperPathsForUpload = $this->convertImagesToPdf($questionPaperPaths, $convertedFiles);
 
         // Upload all answer-sheet files to OpenAI Files API (in order)
         $answerSheetFileIds = [];
         foreach ($answerSheetPathsForUpload as $answerSheetPath) {
             $answerSheetFileIds[] = $this->uploadFile($answerSheetPath);
         }
-        $questionPaperFileId = $questionPaperPathForUpload ? $this->uploadFile($questionPaperPathForUpload) : null;
+        $questionPaperFileIds = [];
+        foreach ($questionPaperPathsForUpload as $questionPaperPath) {
+            $questionPaperFileIds[] = $this->uploadFile($questionPaperPath);
+        }
 
         try {
-            // One input_file per answer-sheet file, in order, followed by the optional question paper
+            // One input_file per answer-sheet file, in order, followed by question papers
             $inputFiles = $answerSheetFileIds;
-            if ($questionPaperFileId) {
+            foreach ($questionPaperFileIds as $questionPaperFileId) {
                 $inputFiles[] = $questionPaperFileId;
             }
 
@@ -293,7 +293,7 @@ class OpenAiDirectDocumentProvider
             foreach ($answerSheetFileIds as $answerSheetFileId) {
                 $this->deleteFile($answerSheetFileId);
             }
-            if ($questionPaperFileId) {
+            foreach ($questionPaperFileIds as $questionPaperFileId) {
                 $this->deleteFile($questionPaperFileId);
             }
             // Clean up converted PDF files
@@ -310,35 +310,33 @@ class OpenAiDirectDocumentProvider
      * Only called after student confirms metadata and clicks "Start AI Analysis"
      *
      * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     * @param array<string> $questionPaperPaths Ordered question-paper file paths
      */
     public function analyzeExtractedData(
         DirectExtractionResult $extractionResult,
         array $answerSheetPaths,
-        ?string $questionPaperPath,
+        array $questionPaperPaths,
         array $trustedMetadata = []
     ): CurrentExamAnalysis {
         $this->logger->info('Starting OpenAI Direct AI analysis', [
             'answers_count' => count($extractionResult->extractedAnswers),
             'questions_count' => count($extractionResult->extractedQuestions),
             'answer_sheet_count' => count($answerSheetPaths),
-            'has_question_paper' => $questionPaperPath !== null,
+            'question_paper_count' => count($questionPaperPaths),
         ]);
 
         // Convert images to PDF and track for cleanup
         $convertedFiles = [];
         $answerSheetPathsForUpload = $this->convertImagesToPdf($answerSheetPaths, $convertedFiles);
-        $questionPaperPathForUpload = $questionPaperPath ? $this->convertImageToPdfIfNeeded($questionPaperPath) : null;
-        if ($questionPaperPathForUpload !== $questionPaperPath) {
-            $convertedFiles[] = $questionPaperPathForUpload;
-        }
+        $questionPaperPathsForUpload = $this->convertImagesToPdf($questionPaperPaths, $convertedFiles);
 
         // If we have original files, we can send them again for analysis context
         $inputFiles = [];
         foreach ($answerSheetPathsForUpload as $answerSheetPath) {
             $inputFiles[] = $this->uploadFile($answerSheetPath);
         }
-        if ($questionPaperPathForUpload) {
-            $inputFiles[] = $this->uploadFile($questionPaperPathForUpload);
+        foreach ($questionPaperPathsForUpload as $questionPaperPath) {
+            $inputFiles[] = $this->uploadFile($questionPaperPath);
         }
 
         try {
@@ -1105,11 +1103,11 @@ PROMPT;
                 }
 
                 $improvement = $qa['improvement'] ?? [];
-                if (!is_array($improvement) || !array_key_exists('whatToLearn', $improvement) || !array_key_exists('whatToPractice', $improvement) || !array_key_exists('recommendedAction', $improvement)) {
+                if (!is_array($improvement)) {
                     return ['usable' => false, 'reason' => "Invalid improvement in questionAnalysis at index {$idx}"];
                 }
                 foreach (['whatToLearn', 'whatToPractice', 'recommendedAction'] as $field) {
-                    if ($improvement[$field] !== null && !is_string($improvement[$field])) {
+                    if (array_key_exists($field, $improvement) && $improvement[$field] !== null && !is_string($improvement[$field])) {
                         return ['usable' => false, 'reason' => "Invalid {$field} in improvement at index {$idx}"];
                     }
                 }
@@ -1300,7 +1298,7 @@ private function buildMetadata(array $extracted, array $trusted): ExtractedAnswe
      */
     private function performCostCheck(
         array $answerSheetPaths,
-        ?string $questionPaperPath,
+        array $questionPaperPaths,
         int $totalFileSize,
         int $totalPageCount
     ): void {

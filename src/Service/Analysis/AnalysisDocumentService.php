@@ -88,17 +88,19 @@ readonly class AnalysisDocumentService
         $documents = $mongoAnalysis->getDocuments();
 
         if ($request->documentType === 'QUESTION_PAPER') {
-            // Question paper remains single file (replace if exists).
-            // Metadata comes from $fileInfo (captured before the move) —
-            // the UploadedFile's PHP temp path is gone after move().
-            $questionPaper = $documents->getQuestionPaper();
-            $questionPaper->setFileId($fileInfos[0]['fileId']);
-            $questionPaper->setStoredFilename($fileInfos[0]['storedFilename']);
-            $questionPaper->setOriginalFilename($fileInfos[0]['originalFilename']);
-            $questionPaper->setMimeType($fileInfos[0]['mimeType']);
-            $questionPaper->setFileSize($fileInfos[0]['size']);
-            $questionPaper->setPageCount($fileInfos[0]['pageCount'] ?? 1);
-            $questionPaper->setStatus('UPLOADED');
+            // Question papers: append to existing question papers (like answer sheets).
+            foreach ($fileInfos as $fileInfo) {
+                $questionPaper = new DocumentFile();
+                $questionPaper->setFileId($fileInfo['fileId']);
+                $questionPaper->setStoredFilename($fileInfo['storedFilename']);
+                $questionPaper->setOriginalFilename($fileInfo['originalFilename']);
+                $questionPaper->setMimeType($fileInfo['mimeType']);
+                $questionPaper->setFileSize($fileInfo['size']);
+                $questionPaper->setStatus('UPLOADED');
+                $questionPaper->setPage($fileInfo['page']);
+                $questionPaper->setPageCount($fileInfo['pageCount'] ?? 1);
+                $documents->addQuestionPaper($questionPaper);
+            }
         } elseif ($request->documentType === 'ANSWER_SHEET') {
             // Answer sheets: append to existing answer sheets.
             // Metadata comes from $fileInfo (captured before the move) —
@@ -227,9 +229,10 @@ readonly class AnalysisDocumentService
         $documents = $mongoAnalysis->getDocuments();
 
         // Question paper pages
-        $questionPaper = $documents->getQuestionPaper();
-        if ($questionPaper->getFileId()) {
-            $total += $questionPaper->getPageCount() ?? 1;
+        foreach ($documents->getQuestionPapers() as $questionPaper) {
+            if ($questionPaper->getFileId()) {
+                $total += $questionPaper->getPageCount() ?? 1;
+            }
         }
 
         // Answer sheets pages

@@ -225,19 +225,22 @@ class AnalysisController extends AbstractApiController
         // Calculate effective upload limits and usage
         $limits = $this->calculateLimits($documents);
 
+        $questionPaper = $documents->questionPaper;
+        $answerSheets = $documents->answerSheets;
+
         return $this->success('Analysis retrieved successfully.', [
             'analysisId' => $result->analysisId,
             'studentId' => $result->studentId,
             'source' => $result->source,
             'status' => $result->status,
             'documents' => [
-                'questionPaper' => [
-                    'fileId' => $documents->questionPaper->fileId,
-                    'status' => $documents->questionPaper->status,
-                    'originalFilename' => $documents->questionPaper->originalFilename,
-                    'mimeType' => $documents->questionPaper->mimeType,
-                    'fileSize' => $documents->questionPaper->fileSize,
-                ],
+                'questionPaper' => $questionPaper && $questionPaper->fileId ? [
+                    'fileId' => $questionPaper->fileId,
+                    'status' => $questionPaper->status,
+                    'originalFilename' => $questionPaper->originalFilename,
+                    'mimeType' => $questionPaper->mimeType,
+                    'fileSize' => $questionPaper->fileSize,
+                ] : null,
                 'answerSheets' => array_map(fn($as) => [
                     'fileId' => $as->fileId,
                     'status' => $as->status,
@@ -245,14 +248,14 @@ class AnalysisController extends AbstractApiController
                     'mimeType' => $as->mimeType,
                     'fileSize' => $as->fileSize,
                     'page' => $as->page,
-                ], $documents->answerSheets),
+                ], array_filter($answerSheets, fn($as) => $as !== null && $as->fileId !== null)),
                 // Backward compatibility: first answer sheet as answerSheet
-                'answerSheet' => !empty($documents->answerSheets) ? [
-                    'fileId' => $documents->answerSheets[0]->fileId,
-                    'status' => $documents->answerSheets[0]->status,
-                    'originalFilename' => $documents->answerSheets[0]->originalFilename,
-                    'mimeType' => $documents->answerSheets[0]->mimeType,
-                    'fileSize' => $documents->answerSheets[0]->fileSize,
+                'answerSheet' => !empty($answerSheets) && $answerSheets[0]->fileId ? [
+                    'fileId' => $answerSheets[0]->fileId,
+                    'status' => $answerSheets[0]->status,
+                    'originalFilename' => $answerSheets[0]->originalFilename,
+                    'mimeType' => $answerSheets[0]->mimeType,
+                    'fileSize' => $answerSheets[0]->fileSize,
                 ] : null,
             ],
             'exam' => [

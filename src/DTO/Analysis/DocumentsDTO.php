@@ -8,7 +8,7 @@ namespace App\DTO\Analysis;
 readonly class DocumentsDTO
 {
     public function __construct(
-        public DocumentFileDTO $questionPaper,
+        public ?DocumentFileDTO $questionPaper = null,
         /** @var DocumentFileDTO[] */
         public array $answerSheets = [],
     ) {

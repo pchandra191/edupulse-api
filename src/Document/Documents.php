@@ -10,30 +10,102 @@ use Doctrine\ODM\MongoDB\PersistentCollection;
 #[ODM\EmbeddedDocument]
 class Documents
 {
-    #[ODM\EmbedOne(targetDocument: DocumentFile::class)]
-    private DocumentFile $questionPaper;
+    /** @var DocumentFile[] */
+    #[ODM\EmbedMany(targetDocument: DocumentFile::class)]
+    private array|PersistentCollection $questionPapers = [];
 
     /** @var DocumentFile[] */
     #[ODM\EmbedMany(targetDocument: DocumentFile::class)]
     private array|PersistentCollection $answerSheets = [];
 
+    // Legacy field for backward compatibility - loaded during hydration
+    #[ODM\Field(type: 'hash', nullable: true)]
+    private ?array $questionPaper = null;
+
     public function __construct()
     {
-        $this->questionPaper = new DocumentFile();
     }
 
-    public function getQuestionPaper(): DocumentFile
+    /** @return DocumentFile[] */
+    public function getQuestionPapers(): array
     {
-        if ($this->questionPaper === null) {
-            $this->questionPaper = new DocumentFile();
+        // Migrate legacy questionPaper if present
+        if ($this->questionPaper !== null && empty($this->questionPapers)) {
+            $this->migrateLegacyQuestionPaper();
         }
-        return $this->questionPaper;
+
+        if ($this->questionPapers instanceof PersistentCollection) {
+            return $this->questionPapers->toArray();
+        }
+        return $this->questionPapers;
     }
 
-    public function setQuestionPaper(DocumentFile $questionPaper): self
+    public function setQuestionPapers(array|PersistentCollection $questionPapers): self
     {
-        $this->questionPaper = $questionPaper;
+        if ($questionPapers instanceof PersistentCollection) {
+            $this->questionPapers = $questionPapers;
+        } else {
+            $this->questionPapers = $questionPapers;
+        }
         return $this;
+    }
+
+    public function addQuestionPaper(DocumentFile $questionPaper): self
+    {
+        if ($this->questionPapers instanceof PersistentCollection) {
+            $this->questionPapers->add($questionPaper);
+        } else {
+            $this->questionPapers[] = $questionPaper;
+        }
+        return $this;
+    }
+
+    public function removeQuestionPaper(int $index): self
+    {
+        $papers = $this->getQuestionPapers();
+        if (isset($papers[$index])) {
+            unset($papers[$index]);
+            $this->questionPapers = array_values($papers);
+        }
+        return $this;
+    }
+
+    public function getQuestionPaperCount(): int
+    {
+        if ($this->questionPapers instanceof PersistentCollection) {
+            return $this->questionPapers->count();
+        }
+        return count($this->questionPapers);
+    }
+
+    /**
+     * Get the first question paper (for backward compatibility)
+     */
+    public function getQuestionPaper(): ?DocumentFile
+    {
+        $papers = $this->getQuestionPapers();
+        return $papers[0] ?? null;
+    }
+
+    /**
+     * Migrate legacy single questionPaper to questionPapers array
+     */
+    private function migrateLegacyQuestionPaper(): void
+    {
+        if ($this->questionPaper !== null && is_array($this->questionPaper) && $this->questionPaper['fileId'] ?? null) {
+            $legacyPaper = new DocumentFile();
+            $legacyPaper->setFileId($this->questionPaper['fileId'] ?? null);
+            $legacyPaper->setStoredFilename($this->questionPaper['storedFilename'] ?? null);
+            $legacyPaper->setOriginalFilename($this->questionPaper['originalFilename'] ?? null);
+            $legacyPaper->setMimeType($this->questionPaper['mimeType'] ?? null);
+            $legacyPaper->setFileSize($this->questionPaper['fileSize'] ?? null);
+            $legacyPaper->setStatus($this->questionPaper['status'] ?? 'NOT_UPLOADED');
+            $legacyPaper->setPage($this->questionPaper['page'] ?? null);
+            $legacyPaper->setPageCount($this->questionPaper['pageCount'] ?? 1);
+
+            $this->questionPapers = [$legacyPaper];
+            $this->questionPaper = null;
+        }
     }
 
     /** @return DocumentFile[] */
