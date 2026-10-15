@@ -117,6 +117,15 @@ class UserRepository extends ServiceEntityRepository
         return $qb->getQuery()->getOneOrNullResult();
     }
 
+    public function findByEmailIncludingDeleted(string $email): ?User
+    {
+        $qb = $this->createQueryBuilder('u')
+            ->where('u.email = :email')
+            ->setParameter('email', mb_strtolower(trim($email)));
+
+        return $qb->getQuery()->getOneOrNullResult();
+    }
+
     public function emailExists(string $email, ?Uuid $ignoreUser = null): bool
     {
         $qb = $this->createQueryBuilder('u')

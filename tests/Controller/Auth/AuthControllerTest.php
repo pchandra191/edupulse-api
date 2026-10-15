@@ -15,6 +15,7 @@ use App\Enum\InstituteStatus;
 use App\Enum\StudentEnrollmentStatus;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
+use App\Service\Auth\GoogleAuthService;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -26,12 +27,48 @@ class AuthControllerTest extends WebTestCase
     private ?Uuid $testClassId = null;
     private ?Uuid $testClass2Id = null;
     private array $createdEmails = [];
+    private array $mockGooglePayload = [];
 
     protected function setUp(): void
     {
         $this->client = static::createClient();
         $container = $this->client->getContainer();
         $entityManager = $container->get('doctrine')->getManager();
+
+        // Override GoogleAuthService with a mock
+        $testCase = $this;
+        $mockGoogleAuthService = $this->createMock(GoogleAuthService::class);
+        $mockGoogleAuthService->method('verifyIdToken')
+            ->willReturnCallback(function (string $idToken) use ($testCase) {
+                $payload = $testCase->mockGooglePayload;
+                if (empty($payload)) {
+                    throw new \InvalidArgumentException('Invalid Google ID token');
+                }
+                
+                // Perform same validation as real GoogleAuthService
+                if (!isset($payload['email'])) {
+                    throw new \InvalidArgumentException('Google ID token missing email claim');
+                }
+                
+                if (!isset($payload['email_verified']) || !$payload['email_verified']) {
+                    throw new \InvalidArgumentException('Google account email is not verified');
+                }
+                
+                if (!isset($payload['iss']) || !in_array($payload['iss'], ['accounts.google.com', 'https://accounts.google.com'], true)) {
+                    throw new \InvalidArgumentException('Invalid token issuer');
+                }
+                
+                if (!isset($payload['aud']) || $payload['aud'] !== 'test-google-client-id.apps.googleusercontent.com') {
+                    throw new \InvalidArgumentException('Invalid token audience');
+                }
+                
+                if (!isset($payload['exp']) || $payload['exp'] < time()) {
+                    throw new \InvalidArgumentException('Google ID token has expired');
+                }
+                
+                return $payload;
+            });
+        $container->set(GoogleAuthService::class, $mockGoogleAuthService);
 
         $unique = uniqid();
         $this->testInstituteId = Uuid::v7();
@@ -140,6 +177,11 @@ class AuthControllerTest extends WebTestCase
             'HTTP_AUTHORIZATION' => 'Bearer ' . $token,
             'CONTENT_TYPE' => 'application/json',
         ];
+    }
+
+    private function setMockGooglePayload(array $payload): void
+    {
+        $this->mockGooglePayload = $payload;
     }
 
     public function testMeReturnsEnrollmentWithStatusAndClass(): void
@@ -257,6 +299,296 @@ class AuthControllerTest extends WebTestCase
 
         // Verify only student 1's enrollment is returned
         $this->assertNotSame((string) $student2->getId(), $data['data']['id']);
+    }
+
+    public function testGoogleLoginValidStudent(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $class1 = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+        $email = 'google-student-' . uniqid() . '@edupulse.ai';
+        $this->createStudent($email, $class1);
+
+        $this->setMockGooglePayload([
+            'email' => $email,
+            'email_verified' => true,
+            'iss' => 'https://accounts.google.com',
+            'aud' => 'test-google-client-id.apps.googleusercontent.com',
+            'exp' => time() + 3600,
+        ]);
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['idToken' => 'valid-token']));
+
+        $response = $client->getResponse();
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('accessToken', $data['data']);
+        $this->assertArrayHasKey('refresh_token', $data['data']);
+        $this->assertSame($email, $data['data']['user']['email']);
+    }
+
+    public function testGoogleLoginUnknownEmail(): void
+    {
+        $client = $this->client;
+
+        $email = 'unknown-' . uniqid() . '@edupulse.ai';
+        $this->setMockGooglePayload([
+            'email' => $email,
+            'email_verified' => true,
+            'iss' => 'https://accounts.google.com',
+            'aud' => 'test-google-client-id.apps.googleusercontent.com',
+            'exp' => time() + 3600,
+        ]);
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['idToken' => 'valid-token']));
+
+        $response = $client->getResponse();
+        
+        // Debug: print response content on failure
+        $content = $response->getContent();
+        if ($response->getStatusCode() !== 200) {
+            echo "Response status: " . $response->getStatusCode() . "\n";
+            echo "Response content: " . $content . "\n";
+        }
+
+        $this->assertSame(200, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertTrue($data['success']);
+        $this->assertArrayHasKey('accessToken', $data['data']);
+        $this->assertArrayHasKey('refresh_token', $data['data']);
+        $this->assertSame($email, $data['data']['user']['email']);
+        $this->assertSame([UserRole::Student->value], $data['data']['user']['roles']);
+    }
+
+    public function testGoogleLoginWrongRole(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $class1 = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+
+        $teacher = new User();
+        $teacher->setEmail('teacher-google-' . uniqid() . '@edupulse.ai');
+        $teacher->setPassword(password_hash('Teacher123!', PASSWORD_BCRYPT));
+        $teacher->setRoles([UserRole::Teacher->value]);
+        $teacher->setStatus(UserStatus::Active);
+        $teacher->verify();
+        $teacher->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $entityManager->persist($teacher);
+        $entityManager->flush();
+        $this->createdEmails[] = $teacher->getEmail();
+
+        $this->setMockGooglePayload([
+            'email' => $teacher->getEmail(),
+            'email_verified' => true,
+            'iss' => 'https://accounts.google.com',
+            'aud' => 'test-google-client-id.apps.googleusercontent.com',
+            'exp' => time() + 3600,
+        ]);
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['idToken' => 'valid-token']));
+
+        $response = $client->getResponse();
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+        $this->assertStringContainsString('student', strtolower($data['message']));
+    }
+
+    public function testGoogleLoginUnverifiedEmail(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $class1 = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+        $email = 'unverified-google-' . uniqid() . '@edupulse.ai';
+        $this->createStudent($email, $class1);
+
+        $this->setMockGooglePayload([
+            'email' => $email,
+            'email_verified' => false,
+            'iss' => 'https://accounts.google.com',
+            'aud' => 'test-google-client-id.apps.googleusercontent.com',
+            'exp' => time() + 3600,
+        ]);
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['idToken' => 'valid-token']));
+
+        $response = $client->getResponse();
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+    }
+
+    public function testGoogleLoginInvalidToken(): void
+    {
+        $client = $this->client;
+
+        // Set empty payload to simulate invalid token
+        $this->setMockGooglePayload([]);
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['idToken' => 'invalid.token.string']));
+
+        $response = $client->getResponse();
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+    }
+
+    public function testGoogleLoginExpiredToken(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $class1 = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+        $email = 'expired-google-' . uniqid() . '@edupulse.ai';
+        $this->createStudent($email, $class1);
+
+        $this->setMockGooglePayload([
+            'email' => $email,
+            'email_verified' => true,
+            'iss' => 'https://accounts.google.com',
+            'aud' => 'test-google-client-id.apps.googleusercontent.com',
+            'exp' => time() - 3600,
+        ]);
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['idToken' => 'valid-token']));
+
+        $response = $client->getResponse();
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+    }
+
+    public function testGoogleLoginDisabledAccount(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $class1 = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+
+        $student = new User();
+        $student->setEmail('disabled-google-' . uniqid() . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Inactive);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $entityManager->persist($student);
+        $entityManager->flush();
+        $this->createdEmails[] = $student->getEmail();
+
+        $this->setMockGooglePayload([
+            'email' => $student->getEmail(),
+            'email_verified' => true,
+            'iss' => 'https://accounts.google.com',
+            'aud' => 'test-google-client-id.apps.googleusercontent.com',
+            'exp' => time() + 3600,
+        ]);
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['idToken' => 'valid-token']));
+
+        $response = $client->getResponse();
+        $this->assertSame(403, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+    }
+
+    public function testGoogleLoginSoftDeletedAccount(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $class1 = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+
+        $student = new User();
+        $student->setEmail('deleted-google-' . uniqid() . '@edupulse.ai');
+        $student->setPassword(password_hash('Student123!', PASSWORD_BCRYPT));
+        $student->setRoles([UserRole::Student->value]);
+        $student->setStatus(UserStatus::Active);
+        $student->verify();
+        $student->setInstitute($entityManager->getRepository(Institute::class)->find($this->testInstituteId));
+
+        $reflection = new \ReflectionClass($student);
+        $property = $reflection->getProperty('deletedAt');
+        $property->setAccessible(true);
+        $property->setValue($student, new \DateTimeImmutable());
+
+        $entityManager->persist($student);
+        $entityManager->flush();
+        $this->createdEmails[] = $student->getEmail();
+
+        $this->setMockGooglePayload([
+            'email' => $student->getEmail(),
+            'email_verified' => true,
+            'iss' => 'https://accounts.google.com',
+            'aud' => 'test-google-client-id.apps.googleusercontent.com',
+            'exp' => time() + 3600,
+        ]);
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['idToken' => 'valid-token']));
+
+        $response = $client->getResponse();
+        $this->assertSame(401, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+    }
+
+    public function testGoogleLoginMissingIdToken(): void
+    {
+        $client = $this->client;
+
+        $client->request('POST', '/api/v1/auth/google', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode([]));
+
+        $response = $client->getResponse();
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertFalse($data['success']);
+    }
+
+    public function testGoogleLoginRegularLoginUnaffected(): void
+    {
+        $client = $this->client;
+        $entityManager = $client->getContainer()->get('doctrine')->getManager();
+
+        $class1 = $entityManager->getRepository(AcademicClass::class)->find($this->testClassId);
+        $email = 'regular-login-' . uniqid() . '@edupulse.ai';
+        $this->createStudent($email, $class1);
+
+        $token = $this->login($email, 'Student123!');
+
+        $this->assertNotEmpty($token);
     }
 
     protected function tearDown(): void

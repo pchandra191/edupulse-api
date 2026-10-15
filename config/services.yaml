@@ -21,6 +21,7 @@ parameters:
     app.analysis_max_output_tokens: '%env(ANALYSIS_MAX_OUTPUT_TOKENS)%'
     app.analysis_max_total_pages: '%env(int:ANALYSIS_MAX_TOTAL_PAGES)%'
     app.analysis_max_files: '%env(int:ANALYSIS_MAX_FILES)%'
+    app.google_client_id: '%env(GOOGLE_CLIENT_ID)%'
     # EduPulse AI Contact & Social Media Links (configure official URLs here)
     app.contact_email: 'edupulseai11@gmail.com'
     app.website_url: 'https://edupulse-three-xi.vercel.app'
@@ -87,6 +88,11 @@ services:
     App\Service\Auth\AuthService:
         arguments:
             $refreshTokenTtl: '%app.refresh_token_ttl%'
+
+    App\Service\Auth\GoogleAuthService:
+        arguments:
+            $clientId: '%app.google_client_id%'
+            $httpClient: '@http_client'
 
     App\Service\Auth\StudentRegistrationService:
         arguments:

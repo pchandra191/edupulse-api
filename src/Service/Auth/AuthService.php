@@ -20,8 +20,11 @@ use App\Entity\PasswordResetToken;
 use App\Entity\StudentEnrollment;
 use App\Entity\User;
 use App\Enum\InstituteStatus;
+use App\Enum\UserRole;
+use App\Enum\UserStatus;
 use App\Exception\AuthenticationException;
 use App\Exception\ExpiredResetTokenException;
+use App\Exception\GoogleAuthException;
 use App\Exception\InvalidCredentialsException;
 use App\Exception\InvalidRefreshTokenException;
 use App\Exception\InstituteNotActiveException;
@@ -30,8 +33,10 @@ use App\Exception\UserNotVerifiedException;
 use App\Repository\PasswordResetTokenRepository;
 use App\Repository\StudentEnrollmentRepository;
 use App\Repository\UserRepository;
+use App\Service\Auth\GoogleAuthService;
 use App\Service\Notification\EmailServiceInterface;
 use DateTimeInterface;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken;
 use Gesdinet\JWTRefreshTokenBundle\Model\RefreshTokenManagerInterface;
@@ -55,6 +60,7 @@ readonly class AuthService
         private UrlGeneratorInterface $urlGenerator,
         private LoggerInterface $logger,
         private int $refreshTokenTtl,
+        private GoogleAuthService $googleAuthService,
     ) {
     }
 
@@ -81,6 +87,99 @@ readonly class AuthService
         $this->logger->info('Login successful', ['email' => $request->email]);
 
         return $result;
+    }
+
+    public function googleLogin(string $idToken): LoginResponseDTO
+    {
+        $this->logger->info('Google login attempt');
+
+        $payload = $this->googleAuthService->verifyIdToken($idToken);
+        $email = mb_strtolower(trim($payload['email']));
+
+        // Check for soft-deleted account first - never allow bypass
+        $deletedUser = $this->userRepository->findByEmailIncludingDeleted($email);
+        if ($deletedUser && $deletedUser->isDeleted()) {
+            $this->logger->warning('Google login failed: account is soft-deleted', ['email' => $email]);
+            throw InvalidCredentialsException::create();
+        }
+
+        $user = $this->userRepository->findActiveByIdentifier($email);
+
+        if ($user) {
+            // Existing user - verify student role and eligibility
+            if (!in_array(UserRole::Student->value, $user->getRoles(), true)) {
+                $this->logger->warning('Google login failed: user is not a student', ['email' => $email, 'roles' => $user->getRoles()]);
+                throw GoogleAuthException::create('This account is not registered as a student.');
+            }
+
+            $this->validateUser($user);
+
+            $result = $this->authenticate($user);
+
+            $this->logger->info('Google login successful (existing user)', ['email' => $email]);
+
+            return $result;
+        }
+
+        // New user - create student account
+        $this->logger->info('Creating new student account via Google', ['email' => $email]);
+
+        try {
+            $user = $this->createStudentFromGoogle($payload);
+        } catch (UniqueConstraintViolationException $e) {
+            // Race condition: user was created between check and insert
+            $this->logger->info('Race condition detected, retrying login for existing user', ['email' => $email]);
+            $user = $this->userRepository->findActiveByIdentifier($email);
+
+            if (!$user) {
+                throw $e;
+            }
+
+            if (!in_array(UserRole::Student->value, $user->getRoles(), true)) {
+                $this->logger->warning('Google login failed: user is not a student', ['email' => $email, 'roles' => $user->getRoles()]);
+                throw GoogleAuthException::create('This account is not registered as a student.');
+            }
+
+            $this->validateUser($user);
+
+            $result = $this->authenticate($user);
+
+            $this->logger->info('Google login successful (existing user after race)', ['email' => $email]);
+
+            return $result;
+        }
+
+        $result = $this->authenticate($user);
+
+        $this->logger->info('Google login successful (new user created)', ['email' => $email]);
+
+        return $result;
+    }
+
+    private function createStudentFromGoogle(array $payload): User
+    {
+        $email = mb_strtolower(trim($payload['email']));
+        $firstName = $payload['given_name'] ?? null;
+        $lastName = $payload['family_name'] ?? null;
+
+        // Generate a secure random password (not stored/used for Google auth)
+        $randomPassword = bin2hex(random_bytes(32));
+        $tempUser = new User();
+        $hashedPassword = $this->passwordHasher->hashPassword($tempUser, $randomPassword);
+
+        $user = new User();
+        $user->setEmail($email);
+        $user->setFirstName($firstName);
+        $user->setLastName($lastName);
+        $user->setRole(UserRole::Student);
+        $user->setStatus(UserStatus::Active);
+        $user->verify(); // Google email is already verified
+        $user->setPassword($hashedPassword);
+
+        $this->entityManager->persist($user);
+        $this->entityManager->flush();
+
+        return $user;
     }
 
     public function authenticate(User $user): LoginResponseDTO
