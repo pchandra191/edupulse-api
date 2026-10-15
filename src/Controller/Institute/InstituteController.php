@@ -20,8 +20,12 @@ use App\Repository\InstituteRepository;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Component\Security\Http\Attribute\Security;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Uid\Uuid;
+use App\Entity\User;
+use Symfony\Bundle\SecurityBundle\Security as SecurityService;
 
 class InstituteController extends AbstractApiController
 {
@@ -30,6 +34,7 @@ class InstituteController extends AbstractApiController
         private StudentRegistrationService $studentRegistrationService,
         private InstituteRepository $instituteRepository,
         private ValidatorInterface $validator,
+        private SecurityService $security,
         ApiResponseFactory $responseFactory,
     ) {
         parent::__construct($responseFactory);
