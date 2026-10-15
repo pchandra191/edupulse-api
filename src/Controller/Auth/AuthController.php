@@ -8,6 +8,7 @@ use App\DTO\Auth\ChangePasswordRequestDTO;
 use App\DTO\Auth\CurrentUserResponseDTO;
 use App\DTO\Auth\EnrollmentResponseDTO;
 use App\DTO\Auth\ForgotPasswordRequestDTO;
+use App\DTO\Auth\GoogleLoginRequest;
 use App\DTO\Auth\InstituteResponseDTO;
 use App\DTO\Auth\AcademicClassReferenceDTO;
 use App\DTO\Auth\LoginRequest;
@@ -81,6 +82,99 @@ class AuthController
 
         /** @var LoginResponseDTO $result */
         $result = $this->authService->login($loginRequest);
+
+        return new JsonResponse([
+            'success' => true,
+            'message' => 'Login successful.',
+            'data' => [
+                'accessToken' => $result->accessToken,
+                'refresh_token' => $result->refreshToken,
+                'expires_at' => $result->expiresAt?->format(\DateTimeInterface::ATOM),
+                'user' => [
+                    'id' => $result->user->id,
+                    'email' => $result->user->email,
+                    'first_name' => $result->user->firstName,
+                    'last_name' => $result->user->lastName,
+                    'roles' => $result->user->roles,
+                ],
+            ],
+        ], Response::HTTP_OK);
+    }
+
+    #[Route('/api/v1/auth/google', name: 'auth_google_login', methods: ['POST'])]
+    public function googleLogin(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+
+        if (!is_array($data)) {
+            return new JsonResponse([
+                'success' => false,
+                'message' => 'Invalid JSON payload.',
+                'errors' => [],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Accept both 'credential' (Google One Tap / Sign In with Google) and 'idToken'
+        $idToken = $data['credential'] ?? $data['idToken'] ?? '';
+
+        $googleLoginRequest = new GoogleLoginRequest($idToken);
+
+        $errors = $this->validator->validate($googleLoginRequest);
+
+        if (count($errors) > 0) {
+            $formattedErrors = [];
+
+            foreach ($errors as $error) {
+                $formattedErrors[$error->getPropertyPath()][] = $error->getMessage();
+            }
+
+            return new JsonResponse([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors' => $formattedErrors,
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            /** @var LoginResponseDTO $result */
+            $result = $this->authService->googleLogin($googleLoginRequest->idToken);
+        } catch (\App\Exception\InvalidCredentialsException $e) {
+            return new JsonResponse([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'errors' => [],
+            ], Response::HTTP_UNAUTHORIZED);
+        } catch (\App\Exception\UserDisabledException $e) {
+            return new JsonResponse([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'errors' => [],
+            ], Response::HTTP_FORBIDDEN);
+        } catch (\App\Exception\UserNotVerifiedException $e) {
+            return new JsonResponse([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'errors' => [],
+            ], Response::HTTP_FORBIDDEN);
+        } catch (\App\Exception\InstituteNotActiveException $e) {
+            return new JsonResponse([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'errors' => [],
+            ], Response::HTTP_FORBIDDEN);
+        } catch (\App\Exception\GoogleAuthException $e) {
+            return new JsonResponse([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'errors' => [],
+            ], Response::HTTP_BAD_REQUEST);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'errors' => [],
+            ], Response::HTTP_BAD_REQUEST);
+        }
 
         return new JsonResponse([
             'success' => true,
