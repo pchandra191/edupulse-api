@@ -25,6 +25,13 @@
             letter-spacing: 3px;
         }
 
+        .header .logo {
+            max-width: 280px;
+            height: auto;
+            max-height: 80px;
+            margin-bottom: 5px;
+        }
+
         .header .subtitle {
             font-size: 13px;
             font-weight: bold;
@@ -280,20 +287,26 @@
             font-weight: bold;
         }
 
-        .footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+        .footer-last-page {
             text-align: center;
             font-size: 8px;
             color: #999;
             border-top: 1px solid #eee;
-            padding: 5px 0;
+            padding: 10px 0;
+            margin-top: 20px;
+            page-break-before: auto;
         }
 
         @page {
-            margin-bottom: 25mm;
+            margin-bottom: 35mm;
+        }
+
+        @page :last {
+            margin-bottom: 60mm;
+        }
+
+        @page :not(:last) .footer-last-page {
+            display: none;
         }
     </style>
 </head>
@@ -301,7 +314,7 @@
 
     {# Header #}
     <div class="header">
-        <div class="brand">EDUPULSE</div>
+        <img src="{{ logo_path }}" alt="EduPulse AI" class="logo" style="max-width: 280px; height: auto; max-height: 80px;" />
         <div class="subtitle">AI EXAM ANALYSIS</div>
         <div class="tagline">Complete Answer Sheet with Detailed Feedback</div>
     </div>
@@ -368,6 +381,92 @@
             </tr>
         </table>
     </div>
+
+    {# Overall Feedback #}
+    {% if report.strengths|length > 0 or report.weaknesses|length > 0 or report.needsAttention|length > 0 or report.conceptGaps|length > 0 or report.recommendations|length > 0 or report.conceptMastery|length > 0 %}
+    <div class="overall-section">
+        <h3>Overall Feedback from EduPulse AI</h3>
+
+        {% if report.strengths|length > 0 %}
+        <div class="subsection">
+            <h4>Strengths</h4>
+            <ul>
+                {% for strength in report.strengths %}
+                <li>{{ strength|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.weaknesses|length > 0 %}
+        <div class="subsection">
+            <h4>Areas to Improve</h4>
+            <ul>
+                {% for weakness in report.weaknesses %}
+                <li>{{ weakness|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.needsAttention|length > 0 %}
+        <div class="subsection">
+            <h4>Needs Attention</h4>
+            <ul>
+                {% for item in report.needsAttention %}
+                <li>{{ item|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.conceptGaps|length > 0 %}
+        <div class="subsection">
+            <h4>Concept Gaps</h4>
+            <ul>
+                {% for gap in report.conceptGaps %}
+                <li>{{ gap|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.recommendations|length > 0 %}
+        <div class="subsection">
+            <h4>Recommended Next Steps</h4>
+            <ul>
+                {% for rec in report.recommendations %}
+                <li>{{ rec|nl2br }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if report.conceptMastery|length > 0 %}
+        <div class="overall-section">
+            <h3>Concept Mastery</h3>
+            <table class="concept-table">
+                <thead>
+                    <tr>
+                        <th>Concept</th>
+                        <th>Status</th>
+                        <th>Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cm in report.conceptMastery %}
+                    <tr>
+                        <td>{{ cm.concept }}</td>
+                        <td class="status-{{ cm.status|lower }}">{{ cm.status }}</td>
+                        <td>{{ cm.confidence !== null ? (cm.confidence * 100)|number_format(0) ~ '%' : 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
 
     {# Questions #}
     <div class="questions-section">
@@ -486,98 +585,27 @@
         {% endfor %}
     </div>
 
-    {# Overall Feedback #}
-    {% if report.strengths|length > 0 or report.weaknesses|length > 0 or report.needsAttention|length > 0 or report.conceptGaps|length > 0 or report.recommendations|length > 0 %}
-    <div class="overall-section">
-        <h3>Overall Feedback from EduPulse AI</h3>
-
-        {% if report.strengths|length > 0 %}
-        <div class="subsection">
-            <h4>Strengths</h4>
-            <ul>
-                {% for strength in report.strengths %}
-                <li>{{ strength|nl2br }}</li>
-                {% endfor %}
-            </ul>
+    {# Footer - only on last page #}
+    <div class="footer-last-page">
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0 10px 0;" />
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                <a href="mailto:{{ contact_email }}" style="color: #007bff; text-decoration: none; font-size: 8px; font-weight: 500;">{{ contact_email }}</a>
+                <span style="color: #999; font-size: 8px;">|</span>
+                <a href="{{ website_url }}" target="_blank" style="color: #007bff; text-decoration: none; font-size: 8px; font-weight: 500;">{{ website_url }}</a>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <a href="{{ social_linkedin_url }}" target="_blank" style="color: #0077b5; text-decoration: none; font-size: 10px;" title="LinkedIn">in</a>
+                <a href="{{ social_twitter_url }}" target="_blank" style="color: #1da1f2; text-decoration: none; font-size: 10px;" title="Twitter/X">X</a>
+                <a href="{{ social_youtube_url }}" target="_blank" style="color: #ff0000; text-decoration: none; font-size: 10px;" title="YouTube">YT</a>
+                <a href="{{ social_github_url }}" target="_blank" style="color: #333; text-decoration: none; font-size: 10px;" title="GitHub">GH</a>
+            </div>
         </div>
-        {% endif %}
-
-        {% if report.weaknesses|length > 0 %}
-        <div class="subsection">
-            <h4>Areas to Improve</h4>
-            <ul>
-                {% for weakness in report.weaknesses %}
-                <li>{{ weakness|nl2br }}</li>
-                {% endfor %}
-            </ul>
+        <div style="text-align: center; margin-top: 8px; font-size: 7px; color: #999;">
+            Analyzed by EduPulse AI &nbsp;|&nbsp; Page {PAGENO} of {nbpg}
+            <br>
+            "KNOW. PLAN. IMPROVE."
         </div>
-        {% endif %}
-
-        {% if report.needsAttention|length > 0 %}
-        <div class="subsection">
-            <h4>Needs Attention</h4>
-            <ul>
-                {% for item in report.needsAttention %}
-                <li>{{ item|nl2br }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
-
-        {% if report.conceptGaps|length > 0 %}
-        <div class="subsection">
-            <h4>Concept Gaps</h4>
-            <ul>
-                {% for gap in report.conceptGaps %}
-                <li>{{ gap|nl2br }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
-
-        {% if report.recommendations|length > 0 %}
-        <div class="subsection">
-            <h4>Recommended Next Steps</h4>
-            <ul>
-                {% for rec in report.recommendations %}
-                <li>{{ rec|nl2br }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
-    </div>
-    {% endif %}
-
-    {# Concept Mastery #}
-    {% if report.conceptMastery|length > 0 %}
-    <div class="overall-section">
-        <h3>Concept Mastery</h3>
-        <table class="concept-table">
-            <thead>
-                <tr>
-                    <th>Concept</th>
-                    <th>Status</th>
-                    <th>Confidence</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for cm in report.conceptMastery %}
-                <tr>
-                    <td>{{ cm.concept }}</td>
-                    <td class="status-{{ cm.status|lower }}">{{ cm.status }}</td>
-                    <td>{{ cm.confidence !== null ? (cm.confidence * 100)|number_format(0) ~ '%' : 'N/A' }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
-
-    {# Footer #}
-    <div class="footer">
-        Analyzed by EduPulse AI &nbsp;|&nbsp; Page {PAGENO} of {nbpg}
-        <br>
-        "KNOW. PLAN. IMPROVE."
     </div>
 
 </body>

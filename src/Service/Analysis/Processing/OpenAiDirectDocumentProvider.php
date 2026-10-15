@@ -43,6 +43,7 @@ class OpenAiDirectDocumentProvider
     private ExamAnalysisPromptBuilder $promptBuilder;
     private AnalysisSettings $analysisSettings;
     private OpenAiSanitizer $sanitizer;
+    private ImageToPdfConverter $imageToPdfConverter;
 
     // NOTE: pdfDetail is currently reserved for future use.
     // The OpenAI Responses API input_file mechanism does not expose a pdf_detail parameter.
@@ -60,6 +61,7 @@ class OpenAiDirectDocumentProvider
         ExamAnalysisPromptBuilder $promptBuilder,
         AnalysisSettings $analysisSettings,
         OpenAiSanitizer $sanitizer,
+        ImageToPdfConverter $imageToPdfConverter,
     ) {
         $this->httpClient = $httpClient;
         $this->apiKey = $apiKey;
@@ -71,6 +73,7 @@ class OpenAiDirectDocumentProvider
         $this->promptBuilder = $promptBuilder;
         $this->analysisSettings = $analysisSettings;
         $this->sanitizer = $sanitizer;
+        $this->imageToPdfConverter = $imageToPdfConverter;
 
         $this->logger->info('[DIRECT-AI-MODEL]', [
             'configuredModel' => $this->extractionModel,
@@ -78,11 +81,11 @@ class OpenAiDirectDocumentProvider
         ]);
     }
 
-    /**
-      * Stage 1: Extract document data using OpenAI Responses API with input_file
-      *
-      * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
-      */
+/**
+     * Stage 1: Extract document data using OpenAI Responses API with input_file
+     *
+     * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     */
     public function extractDocuments(
         array $answerSheetPaths,
         ?string $questionPaperPath,
@@ -96,12 +99,20 @@ class OpenAiDirectDocumentProvider
             'trusted_metadata_keys' => array_keys($trustedMetadata),
         ]);
 
+        // Convert images to PDF and track for cleanup
+        $convertedFiles = [];
+        $answerSheetPathsForUpload = $this->convertImagesToPdf($answerSheetPaths, $convertedFiles);
+        $questionPaperPathForUpload = $questionPaperPath ? $this->convertImageToPdfIfNeeded($questionPaperPath) : null;
+        if ($questionPaperPathForUpload !== $questionPaperPath) {
+            $convertedFiles[] = $questionPaperPathForUpload;
+        }
+
         // Upload all answer-sheet files to OpenAI Files API (in order)
         $answerSheetFileIds = [];
-        foreach ($answerSheetPaths as $answerSheetPath) {
+        foreach ($answerSheetPathsForUpload as $answerSheetPath) {
             $answerSheetFileIds[] = $this->uploadFile($answerSheetPath);
         }
-        $questionPaperFileId = $questionPaperPath ? $this->uploadFile($questionPaperPath) : null;
+        $questionPaperFileId = $questionPaperPathForUpload ? $this->uploadFile($questionPaperPathForUpload) : null;
 
         try {
             // Build the extraction request with one input_file per answer-sheet file, in order
@@ -138,6 +149,12 @@ class OpenAiDirectDocumentProvider
             if ($questionPaperFileId) {
                 $this->deleteFile($questionPaperFileId);
             }
+            // Clean up converted PDF files
+            foreach ($convertedFiles as $convertedFile) {
+                if (file_exists($convertedFile)) {
+                    @unlink($convertedFile);
+                }
+            }
         }
     }
 
@@ -145,14 +162,14 @@ class OpenAiDirectDocumentProvider
      * Stage 1+2 combined: Extract and analyze in one OpenAI request.
      * Returns extraction result with required question-level analysis.
      *
-     * @param array<string>|string $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     * @param array<string> $questionPaperPaths Ordered question-paper file paths
      */
     public function extractDocumentsWithPreliminaryAnalysis(
-        array|string $answerSheetPaths,
-        ?string $questionPaperPath,
+        array $answerSheetPaths,
+        array $questionPaperPaths,
         array $trustedMetadata = []
     ): DirectExtractionResult {
-        $answerSheetPaths = is_array($answerSheetPaths) ? $answerSheetPaths : [$answerSheetPaths];
         // Calculate total file sizes and page counts for cost check
         $totalFileSize = 0;
         $totalPageCount = 0;
@@ -164,29 +181,29 @@ class OpenAiDirectDocumentProvider
                 $totalPageCount += 1; // Images count as 1 page
             }
         }
-        if ($questionPaperPath) {
-            $totalFileSize += filesize($questionPaperPath);
-            if (strtolower(pathinfo($questionPaperPath, PATHINFO_EXTENSION)) === 'pdf') {
-                $totalPageCount += $this->getPdfPageCount($questionPaperPath);
+        foreach ($questionPaperPaths as $path) {
+            $totalFileSize += filesize($path);
+            if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'pdf') {
+                $totalPageCount += $this->getPdfPageCount($path);
             } else {
                 $totalPageCount += 1;
             }
         }
 
         // Cost safety check
-        $this->performCostCheck($answerSheetPaths, $questionPaperPath, $totalFileSize, $totalPageCount);
+        $this->performCostCheck($answerSheetPaths, $questionPaperPaths, $totalFileSize, $totalPageCount);
 
         $this->logger->info('[DIRECT-AI-START]', [
             'model' => $this->extractionModel,
             'answerSheetCount' => count($answerSheetPaths),
-            'questionPaperPresent' => $questionPaperPath !== null,
+            'questionPaperCount' => count($questionPaperPaths),
         ]);
 
         $this->logger->info('[DIRECT-AI-COST-CHECK]', [
             'analysisId' => $trustedMetadata['analysisId'] ?? 'unknown',
             'model' => $this->extractionModel,
             'answerSheetCount' => count($answerSheetPaths),
-            'questionPaperPresent' => $questionPaperPath !== null,
+            'questionPaperCount' => count($questionPaperPaths),
             'pageCount' => $totalPageCount,
             'totalFileSize' => $totalFileSize,
             'maxOutputTokens' => $this->analysisSettings->getDirectAiMaxOutputTokens(),
@@ -195,22 +212,30 @@ class OpenAiDirectDocumentProvider
         $this->logger->info('Starting OpenAI Direct Document combined extraction+analysis', [
             'answer_sheet_count' => count($answerSheetPaths),
             'answer_sheets' => array_map(fn(string $p): string => basename($p), $answerSheetPaths),
-            'question_paper' => $questionPaperPath,
-            'has_question_paper' => $questionPaperPath !== null,
+            'question_papers' => array_map(fn(string $p): string => basename($p), $questionPaperPaths),
+            'has_question_paper' => !empty($questionPaperPaths),
             'trusted_metadata_keys' => array_keys($trustedMetadata),
         ]);
 
+        // Convert images to PDF and track for cleanup
+        $convertedFiles = [];
+        $answerSheetPathsForUpload = $this->convertImagesToPdf($answerSheetPaths, $convertedFiles);
+        $questionPaperPathsForUpload = $this->convertImagesToPdf($questionPaperPaths, $convertedFiles);
+
         // Upload all answer-sheet files to OpenAI Files API (in order)
         $answerSheetFileIds = [];
-        foreach ($answerSheetPaths as $answerSheetPath) {
+        foreach ($answerSheetPathsForUpload as $answerSheetPath) {
             $answerSheetFileIds[] = $this->uploadFile($answerSheetPath);
         }
-        $questionPaperFileId = $questionPaperPath ? $this->uploadFile($questionPaperPath) : null;
+        $questionPaperFileIds = [];
+        foreach ($questionPaperPathsForUpload as $questionPaperPath) {
+            $questionPaperFileIds[] = $this->uploadFile($questionPaperPath);
+        }
 
         try {
-            // One input_file per answer-sheet file, in order, followed by the optional question paper
+            // One input_file per answer-sheet file, in order, followed by question papers
             $inputFiles = $answerSheetFileIds;
-            if ($questionPaperFileId) {
+            foreach ($questionPaperFileIds as $questionPaperFileId) {
                 $inputFiles[] = $questionPaperFileId;
             }
 
@@ -263,42 +288,54 @@ class OpenAiDirectDocumentProvider
                 language: $extractionResult->language,
                 analysis: $analysis,
                 questionAnalysis: $parsed['questionAnalysis'] ?? null,
-);
+        );
         } finally {
             foreach ($answerSheetFileIds as $answerSheetFileId) {
                 $this->deleteFile($answerSheetFileId);
             }
-            if ($questionPaperFileId) {
+            foreach ($questionPaperFileIds as $questionPaperFileId) {
                 $this->deleteFile($questionPaperFileId);
+            }
+            // Clean up converted PDF files
+            foreach ($convertedFiles as $convertedFile) {
+                if (file_exists($convertedFile)) {
+                    @unlink($convertedFile);
+                }
             }
         }
     }
 
-    /**
-      * Stage 2: Analyze extracted data using OpenAI Responses API
-      * Only called after student confirms metadata and clicks "Start AI Analysis"
-      *
-      * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
-      */
+/**
+     * Stage 2: Analyze extracted data using OpenAI Responses API
+     * Only called after student confirms metadata and clicks "Start AI Analysis"
+     *
+     * @param array<string> $answerSheetPaths Ordered answer-sheet file paths (pages/parts of ONE answer sheet)
+     * @param array<string> $questionPaperPaths Ordered question-paper file paths
+     */
     public function analyzeExtractedData(
         DirectExtractionResult $extractionResult,
         array $answerSheetPaths,
-        ?string $questionPaperPath,
+        array $questionPaperPaths,
         array $trustedMetadata = []
     ): CurrentExamAnalysis {
         $this->logger->info('Starting OpenAI Direct AI analysis', [
             'answers_count' => count($extractionResult->extractedAnswers),
             'questions_count' => count($extractionResult->extractedQuestions),
             'answer_sheet_count' => count($answerSheetPaths),
-            'has_question_paper' => $questionPaperPath !== null,
+            'question_paper_count' => count($questionPaperPaths),
         ]);
+
+        // Convert images to PDF and track for cleanup
+        $convertedFiles = [];
+        $answerSheetPathsForUpload = $this->convertImagesToPdf($answerSheetPaths, $convertedFiles);
+        $questionPaperPathsForUpload = $this->convertImagesToPdf($questionPaperPaths, $convertedFiles);
 
         // If we have original files, we can send them again for analysis context
         $inputFiles = [];
-        foreach ($answerSheetPaths as $answerSheetPath) {
+        foreach ($answerSheetPathsForUpload as $answerSheetPath) {
             $inputFiles[] = $this->uploadFile($answerSheetPath);
         }
-        if ($questionPaperPath) {
+        foreach ($questionPaperPathsForUpload as $questionPaperPath) {
             $inputFiles[] = $this->uploadFile($questionPaperPath);
         }
 
@@ -329,6 +366,12 @@ class OpenAiDirectDocumentProvider
             foreach ($inputFiles as $fileId) {
                 $this->deleteFile($fileId);
             }
+            // Clean up converted PDF files
+            foreach ($convertedFiles as $convertedFile) {
+                if (file_exists($convertedFile)) {
+                    @unlink($convertedFile);
+                }
+            }
         }
     }
 
@@ -337,8 +380,10 @@ class OpenAiDirectDocumentProvider
      */
     private function uploadFile(string $filePath): string
     {
-        $fileName = basename($filePath);
-        $mimeType = $this->getMimeTypeFromExtension($filePath);
+        // Convert images to PDF for OpenAI Responses API compatibility
+        $fileToUpload = $this->convertImageToPdfIfNeeded($filePath);
+        $fileName = basename($fileToUpload);
+        $mimeType = $this->getMimeTypeFromExtension($fileToUpload);
 
         $this->logger->info('[OPENAI-FILES-AUTH]', [
             'apiKeyConfigured' => $this->apiKey !== '',
@@ -347,7 +392,7 @@ class OpenAiDirectDocumentProvider
 
         $this->logger->debug('Uploading file to OpenAI Files API', [
             'file' => $fileName,
-            'size' => filesize($filePath),
+            'size' => filesize($fileToUpload),
             'mime_type' => $mimeType,
         ]);
 
@@ -356,7 +401,7 @@ class OpenAiDirectDocumentProvider
                 'Authorization' => 'Bearer ' . $this->apiKey,
             ],
             'body' => [
-                'file' => fopen($filePath, 'r'),
+                'file' => fopen($fileToUpload, 'r'),
                 'purpose' => 'user_data',
             ],
         ]);
@@ -381,6 +426,52 @@ class OpenAiDirectDocumentProvider
 
         $this->logger->debug('File uploaded to OpenAI', ['file_id' => $fileId, 'file' => $fileName]);
         return $fileId;
+    }
+
+    /**
+     * Convert image to PDF if needed for OpenAI Responses API
+     * Returns the path to use for upload (original or converted PDF)
+     */
+    private function convertImageToPdfIfNeeded(string $filePath): string
+    {
+        $mimeType = mime_content_type($filePath);
+        
+        // Only convert JPEG, PNG, WebP to PDF
+        if (!in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            return $filePath;
+        }
+
+        try {
+            return $this->imageToPdfConverter->convert($filePath);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Image to PDF conversion failed, uploading original', [
+                'file' => $filePath,
+                'error' => $e->getMessage(),
+            ]);
+            return $filePath;
+        }
+    }
+
+    /**
+     * Convert multiple images to PDFs
+     * Returns array of paths to use for upload (PDFs for images, originals for others)
+     * Populates $convertedFiles with paths that need cleanup
+     *
+     * @param array<string> $paths
+     * @param array<string> $convertedFiles
+     * @return array<string>
+     */
+    private function convertImagesToPdf(array $paths, array &$convertedFiles): array
+    {
+        $result = [];
+        foreach ($paths as $path) {
+            $converted = $this->convertImageToPdfIfNeeded($path);
+            $result[] = $converted;
+            if ($converted !== $path) {
+                $convertedFiles[] = $converted;
+            }
+        }
+        return $result;
     }
 
     /**
@@ -487,7 +578,7 @@ class OpenAiDirectDocumentProvider
                     'Content-Type' => 'application/json',
                 ],
                 'json' => $sanitizedPayload,
-                'timeout' => 180,
+                'timeout' => 600,
             ]);
 
             $statusCode = $response->getStatusCode();
@@ -715,17 +806,24 @@ class OpenAiDirectDocumentProvider
         } catch (VisionApiException $e) {
             throw $e;
         } catch (TransportExceptionInterface $e) {
+            $this->logger->error('OpenAI Responses API transport failure', [
+                'analysisId' => $trustedMetadata['analysisId'] ?? 'unknown',
+                'error' => $e->getMessage(),
+                'previous' => $e->getPrevious() ? get_class($e->getPrevious()) : null,
+            ]);
             throw new VisionApiException(
                 'OpenAI Responses API connection failed: ' . $e->getMessage(),
-                null,
+                'transport_failure',
                 0,
                 $e
             );
         } catch (ClientExceptionInterface $e) {
+            $statusCode = $e->getCode() ?: 400;
+            $errorType = $statusCode === 429 ? 'rate_limit' : 'invalid_request_error';
             throw new VisionApiException(
                 'OpenAI Responses API client error: ' . $e->getMessage(),
-                'invalid_request_error',
-                $e->getCode() ?: 400,
+                $errorType,
+                $statusCode,
                 $e
             );
         } catch (ServerExceptionInterface $e) {
@@ -941,20 +1039,9 @@ PROMPT;
             }
         }
 
-        $allowedStatuses = ['STRONG', 'DEVELOPING', 'NEEDS_ATTENTION', 'INSUFFICIENT_EVIDENCE'];
-        $allowedEvaluationStatuses = [
-            'CORRECT', 'PARTIALLY_CORRECT', 'INCORRECT', 'UNANSWERED',
-            'INSUFFICIENT_EVIDENCE', 'NOT_DETERMINABLE', 'UNDETERMINED',
-            'ASSESSED_BY_VISIBLE_MARKING_ONLY', 'MARKED_CORRECT',
-        ];
-        $allowedCorrectness = ['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT', 'UNDETERMINED', 'NOT_DETERMINABLE', 'INSUFFICIENT_EVIDENCE'];
         foreach ($analysis['conceptAssessments'] ?? [] as $idx => $concept) {
             if (!is_array($concept) || !array_key_exists('status', $concept) || !array_key_exists('concept', $concept)) {
                 return ['usable' => false, 'reason' => "Invalid conceptAssessment at index {$idx}"];
-            }
-            $status = $concept['status'] ?? null;
-            if ($status !== null && !in_array($status, $allowedStatuses, true)) {
-                return ['usable' => false, 'reason' => "Invalid concept status '{$concept['status']}' at index {$idx}"];
             }
             $conf = $concept['confidence'] ?? null;
             if ($conf !== null && (!is_numeric($conf) || $conf < 0 || $conf > 1)) {
@@ -983,25 +1070,18 @@ PROMPT;
                 if (!is_array($qa) || !array_key_exists('questionNumber', $qa) || !array_key_exists('status', $qa) || !array_key_exists('evaluation', $qa) || !array_key_exists('concept', $qa) || !array_key_exists('improvement', $qa)) {
                     return ['usable' => false, 'reason' => "Invalid questionAnalysis at index {$idx}"];
                 }
-                $qaStatus = $qa['status'] ?? null;
-                if ($qaStatus !== null && !in_array($qaStatus, $allowedStatuses, true)) {
-                    return ['usable' => false, 'reason' => "Invalid questionAnalysis status '{$qaStatus}' at index {$idx}"];
-                }
 
                 $evaluation = $qa['evaluation'] ?? [];
                 if (!is_array($evaluation) || !array_key_exists('evaluationStatus', $evaluation) || !array_key_exists('correctness', $evaluation)) {
                     return ['usable' => false, 'reason' => "Invalid evaluation in questionAnalysis at index {$idx}"];
                 }
                 $evalStatus = $evaluation['evaluationStatus'] ?? null;
-                if ($evalStatus !== null && !in_array($evalStatus, $allowedEvaluationStatuses, true)) {
-                    return ['usable' => false, 'reason' => "Invalid evaluationStatus '{$evalStatus}' in questionAnalysis at index {$idx}"];
+                if ($evalStatus !== null && !is_string($evalStatus)) {
+                    return ['usable' => false, 'reason' => "Invalid evaluationStatus type in questionAnalysis at index {$idx}"];
                 }
                 $correctness = $evaluation['correctness'] ?? null;
                 if ($correctness !== null && !is_string($correctness)) {
                     return ['usable' => false, 'reason' => "Invalid correctness type in questionAnalysis at index {$idx}"];
-                }
-                if ($correctness !== null && !in_array($correctness, $allowedCorrectness, true)) {
-                    return ['usable' => false, 'reason' => "Invalid correctness '{$correctness}' in questionAnalysis at index {$idx}"];
                 }
                 foreach (['studentAnswer', 'questionText', 'feedback', 'reason'] as $field) {
                     if (array_key_exists($field, $evaluation) && $evaluation[$field] !== null && !is_string($evaluation[$field])) {
@@ -1021,17 +1101,13 @@ PROMPT;
                 if (!is_array($concept) || !array_key_exists('name', $concept) || !array_key_exists('status', $concept)) {
                     return ['usable' => false, 'reason' => "Invalid concept in questionAnalysis at index {$idx}"];
                 }
-                $conceptStatus = $concept['status'] ?? null;
-                if ($conceptStatus !== null && !in_array($conceptStatus, $allowedStatuses, true)) {
-                    return ['usable' => false, 'reason' => "Invalid concept status '{$conceptStatus}' in questionAnalysis at index {$idx}"];
-                }
 
                 $improvement = $qa['improvement'] ?? [];
-                if (!is_array($improvement) || !array_key_exists('whatToLearn', $improvement) || !array_key_exists('whatToPractice', $improvement) || !array_key_exists('recommendedAction', $improvement)) {
+                if (!is_array($improvement)) {
                     return ['usable' => false, 'reason' => "Invalid improvement in questionAnalysis at index {$idx}"];
                 }
                 foreach (['whatToLearn', 'whatToPractice', 'recommendedAction'] as $field) {
-                    if ($improvement[$field] !== null && !is_string($improvement[$field])) {
+                    if (array_key_exists($field, $improvement) && $improvement[$field] !== null && !is_string($improvement[$field])) {
                         return ['usable' => false, 'reason' => "Invalid {$field} in improvement at index {$idx}"];
                     }
                 }
@@ -1222,7 +1298,7 @@ private function buildMetadata(array $extracted, array $trusted): ExtractedAnswe
      */
     private function performCostCheck(
         array $answerSheetPaths,
-        ?string $questionPaperPath,
+        array $questionPaperPaths,
         int $totalFileSize,
         int $totalPageCount
     ): void {
@@ -1267,51 +1343,103 @@ private function buildMetadata(array $extracted, array $trusted): ExtractedAnswe
     /**
      * Get PDF page count using pdftoppm or ImageMagick.
      */
-    private function getPdfPageCount(string $filePath): int
+        private function getPdfPageCount(string $filePath): int
     {
-        // Try pdftoppm first (poppler-utils)
-        if ($this->commandExists('pdftoppm')) {
-            $command = sprintf('pdftoppm -f 1 -l 1 -png "%s" /dev/null 2>&1', $filePath);
-            $output = [];
-            $result = null;
-            exec($command, $output, $result);
-            if ($result === 0) {
-                // Use pdftoppm to count pages
-                $command = sprintf('pdftoppm -png "%s" /tmp/page_count_ 2>&1', $filePath);
-                exec($command, $output, $result);
-                $files = glob('/tmp/page_count_*.png');
-                if (!empty($files)) {
-                    foreach ($files as $f) @unlink($f);
-                    return count($files);
+        $methods = [
+            'pdftoppm' => function () use ($filePath): ?int {
+                if (!$this->commandExists('pdftoppm')) {
+                    return null;
                 }
+                $command = sprintf('pdftoppm -png "%s" /tmp/page_count_ 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0) {
+                    $files = glob('/tmp/page_count_*.png');
+                    if (!empty($files)) {
+                        foreach ($files as $f) @unlink($f);
+                        return count($files);
+                    }
+                }
+                return null;
+            },
+            'identify' => function () use ($filePath): ?int {
+                if (!$this->commandExists('identify')) {
+                    return null;
+                }
+                $command = sprintf('identify -format "%%n" "%s" 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0 && !empty($output[0])) {
+                    return (int) $output[0];
+                }
+                return null;
+            },
+            'magick' => function () use ($filePath): ?int {
+                if (!$this->commandExists('magick')) {
+                    return null;
+                }
+                $command = sprintf('magick identify -format "%%n" "%s" 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0 && !empty($output[0])) {
+                    return (int) $output[0];
+                }
+                return null;
+            },
+            'gs' => function () use ($filePath): ?int {
+                if (!$this->commandExists('gs')) {
+                    return null;
+                }
+                $command = sprintf('gs -q -dNODISPLAY -c "(%s) (r) file runpdfbegin pdfpagecount = quit" 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0 && !empty($output[0]) && is_numeric($output[0])) {
+                    return (int) $output[0];
+                }
+                return null;
+            },
+            'gswin64c' => function () use ($filePath): ?int {
+                if (!$this->commandExists('gswin64c')) {
+                    return null;
+                }
+                $command = sprintf('gswin64c -q -dNODISPLAY -c "(%s) (r) file runpdfbegin pdfpagecount = quit" 2>&1', $filePath);
+                $output = [];
+                $result = null;
+                exec($command, $output, $result);
+                if ($result === 0 && !empty($output[0]) && is_numeric($output[0])) {
+                    return (int) $output[0];
+                }
+                return null;
+            },
+        ];
+
+        foreach ($methods as $name => $method) {
+            try {
+                $count = $method();
+                if ($count !== null && $count > 0) {
+                    $this->logger->debug('PDF page count determined', [
+                        'method' => $name,
+                        'page_count' => $count,
+                        'file' => $filePath,
+                    ]);
+                    return $count;
+                }
+            } catch (\Throwable $e) {
+                $this->logger->debug('PDF page count method failed', [
+                    'method' => $name,
+                    'file' => $filePath,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
-        // Try ImageMagick identify
-        if ($this->commandExists('identify')) {
-            $command = sprintf('identify -format "%%n" "%s"', $filePath);
-            $output = [];
-            $result = null;
-            exec($command, $output, $result);
-            if ($result === 0 && !empty($output[0])) {
-                return (int) $output[0];
-            }
-        }
-
-        // Try magick identify (ImageMagick v7+)
-        if ($this->commandExists('magick')) {
-            $command = sprintf('magick identify -format "%%n" "%s"', $filePath);
-            $output = [];
-            $result = null;
-            exec($command, $output, $result);
-            if ($result === 0 && !empty($output[0])) {
-                return (int) $output[0];
-            }
-        }
-
-        // Fallback: assume 1 page if we can't determine
-        $this->logger->warning('Could not determine PDF page count, assuming 1 page', [
+        $this->logger->warning('Could not determine PDF page count using any available tool, assuming 1 page', [
             'file' => $filePath,
+            'available_tools' => array_keys($methods),
         ]);
         return 1;
     }
