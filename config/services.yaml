@@ -21,6 +21,13 @@ parameters:
     app.analysis_max_output_tokens: '%env(ANALYSIS_MAX_OUTPUT_TOKENS)%'
     app.analysis_max_total_pages: '%env(int:ANALYSIS_MAX_TOTAL_PAGES)%'
     app.analysis_max_files: '%env(int:ANALYSIS_MAX_FILES)%'
+    # EduPulse AI Contact & Social Media Links (configure official URLs here)
+    app.contact_email: 'edupulseai11@gmail.com'
+    app.website_url: 'https://edupulse-three-xi.vercel.app'
+    app.social_linkedin_url: 'https://www.linkedin.com/company/edupulse-ai'
+    app.social_twitter_url: 'https://twitter.com/edupulse_ai'
+    app.social_youtube_url: 'https://www.youtube.com/@edupulseai'
+    app.social_github_url: 'https://github.com/edupulse-ai'
     # OpenAI model pricing (per 1M tokens) - update as pricing changes
     app.openai_model_pricing:
         gpt-5.4-mini:

@@ -40,6 +40,18 @@ readonly class AiAnswerSheetReportService
         private LoggerInterface $logger,
         #[Autowire('%kernel.project_dir%')]
         private string $projectDir,
+        #[Autowire('%app.contact_email%')]
+        private string $contactEmail,
+        #[Autowire('%app.website_url%')]
+        private string $websiteUrl,
+        #[Autowire('%app.social_linkedin_url%')]
+        private string $socialLinkedinUrl,
+        #[Autowire('%app.social_twitter_url%')]
+        private string $socialTwitterUrl,
+        #[Autowire('%app.social_youtube_url%')]
+        private string $socialYoutubeUrl,
+        #[Autowire('%app.social_github_url%')]
+        private string $socialGithubUrl,
     ) {
     }
 
@@ -395,8 +407,17 @@ readonly class AiAnswerSheetReportService
 
     private function renderPdf(AiAnswerSheetReportData $data): string
     {
+        $logoPath = $this->projectDir . '/assets/logo/logo.png';
+        
         $html = $this->twig->render('reports/ai_answer_sheet.html.twig', [
             'report' => $data,
+            'logo_path' => $logoPath,
+            'contact_email' => $this->contactEmail,
+            'website_url' => $this->websiteUrl,
+            'social_linkedin_url' => $this->socialLinkedinUrl,
+            'social_twitter_url' => $this->socialTwitterUrl,
+            'social_youtube_url' => $this->socialYoutubeUrl,
+            'social_github_url' => $this->socialGithubUrl,
         ]);
 
         $defaultConfig = (new \Mpdf\Config\ConfigVariables())->getDefaults();

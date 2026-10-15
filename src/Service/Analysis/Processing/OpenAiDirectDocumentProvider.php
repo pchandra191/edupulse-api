@@ -578,7 +578,7 @@ class OpenAiDirectDocumentProvider
                     'Content-Type' => 'application/json',
                 ],
                 'json' => $sanitizedPayload,
-                'timeout' => 180,
+                'timeout' => 600,
             ]);
 
             $statusCode = $response->getStatusCode();
