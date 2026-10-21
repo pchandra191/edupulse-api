@@ -367,6 +367,9 @@ readonly class AcademicIntelligenceService
                 if ($name === '') {
                     continue;
                 }
+                if (!self::isValidTopicCandidate($name)) {
+                    continue;
+                }
                 $key = $this->normalizeKey($name);
                 if (!isset($candidates[$key])) {
                     $candidates[$key] = ['name' => $name, 'status' => self::CONCEPT_NEEDS_ATTENTION, 'confidence' => null];
@@ -376,6 +379,9 @@ readonly class AcademicIntelligenceService
             foreach ($record['needsAttention'] as $attention) {
                 $name = trim((string) $attention);
                 if ($name === '') {
+                    continue;
+                }
+                if (!self::isValidTopicCandidate($name)) {
                     continue;
                 }
                 $key = $this->normalizeKey($name);
@@ -389,6 +395,9 @@ readonly class AcademicIntelligenceService
                 if ($name === '') {
                     continue;
                 }
+                if (!self::isValidTopicCandidate($name)) {
+                    continue;
+                }
                 $key = $this->normalizeKey($name);
                 if (!isset($candidates[$key])) {
                     $candidates[$key] = ['name' => $name, 'status' => self::CONCEPT_NEEDS_ATTENTION, 'confidence' => null];
@@ -398,6 +407,9 @@ readonly class AcademicIntelligenceService
             foreach ($record['mistakes'] as $mistake) {
                 $name = trim((string) ($mistake['description'] ?? ''));
                 if ($name === '') {
+                    continue;
+                }
+                if (!self::isValidTopicCandidate($name)) {
                     continue;
                 }
                 $key = $this->normalizeKey($name);
@@ -851,6 +863,63 @@ readonly class AcademicIntelligenceService
     private function normalizeKey(string $value): string
     {
         return strtolower(trim($value));
+    }
+
+    /**
+     * Determines whether a candidate topic name is a concise, single-concept
+     * topic title rather than a long assessment-level narrative summary.
+     *
+     * Valid topic names (e.g. "Min-max normalization", "SVM decision boundaries")
+     * are short, contain no internal sentence punctuation, and do not reference
+     * question numbers or assessment-level conclusions.
+     *
+     * Invalid candidates are narrative paragraphs such as:
+     *   "THE VISIBLE ANSWERS DO NOT DEMONSTRATE UNDERSTANDING OF MIN-MAX
+     *    NORMALIZATION, THE DEFINITION AND PURPOSE OF AN SVM DECISION BOUNDARY,
+     *    OR THE DISTINCTION BETWEEN MODEL PARAMETERS AND HYPERPARAMETERS;
+     *    QUESTIONS 30, 33, AND 35 ARE UNANSWERED."
+     */
+    private static function isValidTopicCandidate(string $name): bool
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return false;
+        }
+
+        // Reject overly long summaries (more than 60 chars or 8 words)
+        $wordCount = count(preg_split('/\s+/', $name));
+        if (strlen($name) > 60 || $wordCount > 8) {
+            return false;
+        }
+
+        // Reject candidates containing internal sentence punctuation or semicolons
+        if (preg_match('/[.!?]\s/', $name) || str_contains($name, ';')) {
+            return false;
+        }
+
+        // Reject candidates referencing specific question numbers
+        if (preg_match('/\bquestion[s]?\s+\d+/i', $name)) {
+            return false;
+        }
+
+        // Reject candidates starting with assessment-level narrative phrases
+        $lower = strtolower($name);
+        $narrativePrefixes = [
+            'the visible answers',
+            'the student',
+            'this assessment',
+            'these answers',
+            'the answers',
+            'assessment-wide',
+            'overall performance',
+        ];
+        foreach ($narrativePrefixes as $prefix) {
+            if (str_starts_with($lower, $prefix)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function validNumber(mixed $value): ?int
